@@ -1,6 +1,6 @@
 # The C / Yuga boundary
 
-There is exactly one C runtime in the tree: **`yuga_rt`** (`runtime/yuga_rt.h`,
+There is exactly one C runtime in the tree: **`yuga_rt`** (`packages/compiler/runtime/yuga_rt.h`,
 included into generated C). No library gets a `*_rt.c` of its own as a place
 to hide protocol or widget logic. Zeus layout/paint/hit-test and http
 encode/dispatch live in Yuga. Hosts (Cocoa / UIKit / Canvas / JNI) own the
@@ -8,8 +8,8 @@ event loop and call back into `engine_*` trampolines.
 
 ## Convention
 
-A **boundary module** (today: `std/zeuscore/platform.yuga`, empty `fn`s in
-`std/fmt.yuga` / `std/net.yuga` / `std/sys.yuga`) declares plain, **bodyless** functions:
+A **boundary module** (today: `packages/compiler/std/zeuscore/platform.yuga`, empty `fn`s in
+`packages/compiler/std/fmt.yuga` / `packages/compiler/std/net.yuga` / `packages/compiler/std/sys.yuga`) declares plain, **bodyless** functions:
 
 ```yuga
 fn plat_set_window(title: string, width: int, height: int) {}
@@ -33,7 +33,7 @@ The other direction: C calls compiled Yuga as `yuga_zeus_engine_paint`,
 | Layer | C | Yuga |
 |---|---|---|
 | Language (`yuga_rt`) | Allocator, panic/trap, overflow, wrapping bit ops, `string_from_bytes`, `yuga_fn` `{fn, env, env_size}`, `env_set` / `exit` | — |
-| net (`std/net`) | TCP connect/read/write/close, listen/accept/peek, wasm `fetch_rpc` | — |
+| net (`packages/compiler/std/net`) | TCP connect/read/write/close, listen/accept/peek, wasm `fetch_rpc` | — |
 | Zeus | Host event loop + replay of the draw list; `plat_intern_fn` memcpy's a `yuga_fn` env so click/styled handlers outlive the interned value | Tree, layout, signals, kit, `platform.yuga` signatures |
 | Maya | Host event loop + present (Cocoa blit / 2D discs) | Scene, orbits, camera, CPU tracer, 2D map layout, `sin`/`cos` |
 | http | — | unary gRPC: `#[proto]`, dispatch, path/frame, HTTP/1.1 parse, h2c, `listen`, client `rt_call` / `h2_call`, loopback `h1_read_unary` / `h2_read_unary`, HEADLESS selftest |

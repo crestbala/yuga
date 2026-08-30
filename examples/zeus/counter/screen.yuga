@@ -1,0 +1,35 @@
+//! Shared counter UI. Wasm, iOS, macOS, and Android all pass RPC results in.
+
+import "std:zeus"
+import "../../../packages/zeus/lib/ui.yuga"
+import "../../../packages/zeus/lib/theme.yuga"
+
+/// Page built once from RPC results. `chip` is the host label (Canvas2D / iOS / macOS / Android).
+/// `users`/`jobs`/`uptime` are static strings; `count0`/`load0` seed signals.
+fn Screen(title: string, chip: string, users: string, jobs: string, uptime: string, load0: int, count0: int) -> Node {
+    let count = zeus.signal(count0)
+    let load = zeus.signal(load0)
+    let dialogOpen = zeus.signal(0)
+    return theme.Page("Zeus", 560, 520).child(
+        zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).child(
+            zeus.text(title).style(zeus.heading()),
+            ui.Chip(ChipProps { label: chip, color: theme.accent() }),
+            ui.Badge(BadgeProps { label: "live", color: theme.success() }),
+        ),
+        ui.Alert(AlertProps { title: "RPC", body: "Count is Counter.Hello. Cards are Counter.Stats.", color: theme.accent() }),
+        ui.Stats(StatsProps { users_t: "Users", users: users, jobs_t: "Jobs", jobs: jobs, uptime_t: "Uptime", uptime: uptime, ticks_t: "Count", ticks: count }),
+        ui.Card().child(
+            ui.CardHeader(CardHeaderProps { title: "Count", subtitle: "Buttons write a signal. The starting value came from protobuf." }),
+            zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).child(
+                ui.Ghost(ButtonProps { label: "-1", on_press: || { zeus.set(count, zeus.get(count) - 1) } }),
+                zeus.label("").bind(count).font(16),
+                ui.Prominent(ButtonProps { label: "+1", on_press: || { zeus.set(count, zeus.get(count) + 1) } }),
+            ),
+            ui.Progress(ProgressProps { sig: count }),
+            ui.Divider(),
+            ui.Primary(ButtonProps { label: "Open Dialog", on_press: || { dialogOpen.set(1) } }),
+            ui.Dialog(DialogProps { title: "Dialog", body: "How are you feel today", cancel: "Close", discard: "Save", open: dialogOpen }),
+            zeus.row().gap(theme.space_md()).txt("Load", theme.label(), 13).child(ui.Progress(ProgressProps { sig: load })).bound(load, theme.muted(), 13),
+        ),
+    )
+}

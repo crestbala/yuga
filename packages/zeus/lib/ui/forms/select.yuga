@@ -1,0 +1,111 @@
+import "std:zeus"
+import "../../theme/spacing.yuga"
+import "../display/icons.yuga"
+import "../../theme/colors.yuga"
+
+// A select is a trigger plus a menu, not a list with a caption on top: the
+// closed face states the current value, and the options live on a separate
+// card that opens under it.
+//
+// Trigger and menu read the same width from one place, so the card can never
+// open narrower or wider than the face it hangs off.
+
+struct SelectProps {
+    a: string,
+    b: string,
+    c: string,
+    sig: Signal,
+}
+
+struct SelectValueProps {
+    label: string,
+    sig: Signal,
+    value: int,
+}
+
+struct SelectOptionProps {
+    label: string,
+    sig: Signal,
+    value: int,
+    open: Signal,
+}
+
+/// The last option's index. Three options ship, so arrow navigation stops here.
+fn last() -> int {
+    return 2
+}
+
+fn width() -> int {
+    return spacing.popover_w()
+}
+
+/// Clear space between the trigger and the card it opens.
+fn menu_gap() -> int {
+    return spacing.space_snug()
+}
+
+/// A row's corners stay concentric with the card: the card's radius, brought in
+/// by the pad the card holds its rows at.
+fn row_radius() -> int {
+    return spacing.inset_radius(spacing.surface_radius(), spacing.menu_pad())
+}
+
+/// The closed face. Shaped and toned like a text field so a form of fields and
+/// selects reads as one system. `edge` lights while the menu is open.
+fn face(edge: int, open: Signal) -> Node {
+    return zeus.row().w(width()).h(spacing.input_height()).bg(colors.card()).padX(spacing.input_pad_x()).padY(spacing.input_pad_y()).gap(spacing.space_sm()).radius(spacing.button_radius()).border(1).border_color(edge).align(zeus.flex_center()).justify(zeus.flex_between()).on_click_toggle(open).shrink(0)
+}
+
+/// One label in the trigger, shown only while its value is the selected one.
+fn Value(p: SelectValueProps) -> Node {
+    return zeus.label(p.label).fg(colors.text()).font(13).show_eq(p.sig, p.value)
+}
+
+/// Fill a face with the current value and the chevron.
+fn fill(f: Node, a: string, b: string, c: string, sig: Signal) -> Node {
+    f.child(Value(SelectValueProps { label: a, sig: sig, value: 0 }))
+    f.child(Value(SelectValueProps { label: b, sig: sig, value: 1 }))
+    f.child(Value(SelectValueProps { label: c, sig: sig, value: 2 }))
+    f.child(icons.Glyph(GlyphProps { markup: icons.alt_arrow_down(), color: colors.muted(), size: spacing.icon_sm() }))
+    return f
+}
+
+/// The card the options sit on. Padded by menu_pad, which is what row_radius
+/// reads to stay concentric with it.
+fn Menu(open: Signal) -> Node {
+    return zeus.col().show(open).enter_fade().w(width()).bg(colors.card()).pad(spacing.menu_pad()).gap(spacing.space_2xs()).border(1).border_color(colors.line()).radius(spacing.surface_radius()).position(zeus.pos_absolute()).left(0).top(spacing.input_height() + menu_gap()).z_index(20).shrink(0)
+}
+
+/// One option. Full-width hit target, label on the start edge. Choosing a
+/// value also dismisses the menu.
+fn Option(p: SelectOptionProps) -> Node {
+    let wrap = zeus.col()
+    let on = wrap.add(zeus.row().bg(colors.ink()).padX(spacing.menu_row_pad_x()).padY(spacing.menu_row_pad_y()).radius(row_radius()).align(zeus.flex_center()).justify(zeus.flex_start()).show_eq(p.sig, p.value).on_click_set(p.sig, p.value).on_click_also_set(p.open, 0))
+    on.child(zeus.label(p.label).fg(colors.text()).font(13).shrink(0))
+    let off = wrap.add(zeus.row().bg(-1).padX(spacing.menu_row_pad_x()).padY(spacing.menu_row_pad_y()).radius(row_radius()).align(zeus.flex_center()).justify(zeus.flex_start()).show_ne(p.sig, p.value).on_click_set(p.sig, p.value).on_click_also_set(p.open, 0))
+    off.child(zeus.label(p.label).fg(colors.muted()).font(13).shrink(0))
+    return wrap
+}
+
+fn List(p: SelectProps) -> Node {
+    let open = zeus.signal(0)
+    let n = zeus.col().align_self(zeus.flex_start()).position(zeus.pos_relative())
+    n.key("down", "select.next").key("up", "select.prev").key("enter", "select.toggle").key("escape", "select.close")
+    n.on_range("select.next", p.sig, 1, 0, last())
+    n.on_range("select.prev", p.sig, -1, 0, last())
+    n.on_key_toggle("select.toggle", open)
+    n.on_key_set("select.close", open, 0)
+
+    let mut edge = colors.line()
+    if zeus.get(open) != 0 {
+        edge = colors.text()
+    }
+    let f = n.add(face(edge, open).overflow(zeus.overflow_hidden()))
+    fill(f, p.a, p.b, p.c, p.sig)
+
+    let menu = n.add(Menu(open))
+    menu.child(Option(SelectOptionProps { label: p.a, sig: p.sig, value: 0, open: open }))
+    menu.child(Option(SelectOptionProps { label: p.b, sig: p.sig, value: 1, open: open }))
+    menu.child(Option(SelectOptionProps { label: p.c, sig: p.sig, value: 2, open: open }))
+    return n
+}

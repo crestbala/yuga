@@ -1,0 +1,10 @@
+import "std:fmt"
+
+fn main() {
+    let b = Box::new(7)
+    let c = b
+    fmt.println(*c)
+    let mut d = Box::new(1)
+    *d += 10
+    fmt.println(*d)
+}

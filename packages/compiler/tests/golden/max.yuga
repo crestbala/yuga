@@ -1,0 +1,17 @@
+import "std:fmt"
+
+fn max2(a: int, b: int) -> int {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+fn main() {
+    let xs = [5]int { 3, 9, 1, 14, 7 }
+    let mut m = xs[0]
+    for i in 1..5 {
+        m = max2(m, xs[i])
+    }
+    fmt.println(m)
+}

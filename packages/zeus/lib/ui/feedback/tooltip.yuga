@@ -1,0 +1,23 @@
+import "std:zeus"
+import "../display/kbd.yuga"
+import "../../theme/spacing.yuga"
+import "../../theme/colors.yuga"
+import "../../theme/motion.yuga"
+
+struct TooltipProps {
+    label: string,
+    message: string,
+    shortcut: string,
+}
+
+/// Appears after 500ms. The pointer does not travel into the tip.
+fn On(p: TooltipProps) -> Node {
+    let open = zeus.signal(0)
+    let n = zeus.col().position(zeus.pos_relative()).align_self(zeus.flex_start())
+    let trig = n.add(zeus.row().hover(open).hover_delay(motion.hover_open_ms()).align(zeus.flex_center()).hover_fade())
+    trig.txt(p.label, colors.text(), 13)
+    let tip = n.add(zeus.row().show(open).enter_fade().bg(colors.card()).padX(spacing.space_sm()).padY(spacing.space_tight()).gap(spacing.space_sm()).border(1).border_color(colors.line()).radius(spacing.surface_radius()).align(zeus.flex_center()).position(zeus.pos_absolute()).left(0).top(spacing.space_2xl()).z_index(30).shrink(0))
+    tip.txt(p.message, colors.text(), 12)
+    tip.child(kbd.Kbd(KbdProps { key: p.shortcut }))
+    return n
+}

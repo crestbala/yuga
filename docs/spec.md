@@ -44,7 +44,7 @@ fn main() {
 |---|---|
 | Bindings | `let` immutable, `let mut` mutable. Ownership is still the safety mechanism. |
 | Functions | `fn name(params) -> T { ... }` |
-| Closures | `|x| { x + 1 }` as a value. Params between pipes; body is always `{ ... }`. Zero-arg: `|| { ... }`. Types are inferred from the expected `fn` type, or written `|x: int|`. Optional `-> T` after the pipes. Last expression is the return value. No `fn() { }` as a value (`fn` is only for named items). Type: `fn(T, U) -> R`. Captures Copy locals into a heap env; the `fn` value owns that env (not Copy). Dropped like `Box<T>`. May escape (return, store, pass). Host intern (`plat_intern_fn`) memcpy's the env so a stored handler outlives the `fn` value. |
+| Closures | `|x| { x + 1 }` as a value. Params between pipes; body is always `{ ... }`. Zero-arg: `|| { ... }`. Types are inferred from the expected `fn` type, or written `|x: int|`. Optional `-> T` after the pipes. Last expression is the return value. No `fn() { }` as a value (`fn` is only for named items). Type: `fn(T, U) -> R`. Captures Copy locals into a heap env; the `fn` value owns that env (not Copy). Dropped like `Box<T>`. May escape (return, store, pass). Host intern (`plat_intern_fn`) memcpy's the env so a stored handler outlives the `fn` value. `(x, y) => { ... }` / `() => { ... }` is accepted as sugar for `|x, y| { ... }` / `|| { ... }` — same closure either way, no typed params (write `|x: int|` for that). A parenthesized expression or tuple `(2 + 3)` / `(1, 2)` still parses exactly as before; the parser only takes the arrow reading when a bare identifier list is immediately followed by `=>`. |
 | Tuples | Not a value type. `.child(a, b, c)` takes extra args (expanded to nested `.child` calls). |
 | Generics | Functions and structs: `fn id<T>(x: T) -> T`, `struct Pair<T> { a: T, b: T }`. Monomorphized. Struct literals infer type args (`Pair { a: 1, b: 2 }`). |
 | References | `&T` shared, `&mut T` exclusive. `&x` / `&mut x`. Deref: `*x`. |
@@ -53,7 +53,7 @@ fn main() {
 | Imports | Quoted only: `import "std:fmt"` or `import "path/file.yuga"`. Symbols used as `name.symbol`. No glob imports. |
 | Backend | Transpile to C99, then `cc -O2` (no unwind tables, dead-strip). |
 | Strings | Fat pointer `{ptr, len}`, UTF-8. Copy. `s[i]` is the unsigned byte at `i` (traps out of range). Heap strings: `string_from_bytes([]int)`. |
-| Integers | `int` is `int64_t`. `+ - *` trap on overflow. `/ %` trap on div-by-zero. Builtins: `wrapping_add`, `saturating_add`, `wrapping_shr` / `wrapping_shl` / `wrapping_or` / `wrapping_and`. |
+| Integers | `int` is `int64_t`. `+ - *` trap on overflow. `/ %` trap on div-by-zero. Builtins: `wrapping_add`, `saturating_add`, `wrapping_shr` / `wrapping_shl` / `wrapping_or` / `wrapping_and`. Literals: decimal (`42`), or `0x`/`0X` hex (`0xff`, `0x505050` — e.g. a packed `zeus` RGB color, same layout as `rgb(r, g, b)`). No octal — a leading `0` before another digit is still decimal, not C-style octal. |
 | Floats | `float` is IEEE `double`. `+ - * /` are unchecked. `%` is not defined. `n as float` / `x as int` (trunc toward zero). Integer literals coerce when the expected type is `float` (`let x: float = 1`). |
 | Booleans | `bool` is `true` / `false`. `&&` `||` `!`. `b as int` is 0 or 1. |
 | Match | `match x { 0 \| 1 => { ... } _ => { ... } }`. Patterns: int/float/bool/string literals, or-patterns, `_`. Exhaustive: bool needs both arms or `_`; other types need `_`. |
@@ -70,7 +70,7 @@ fn main() {
 import_item = "import" STRING ;
 ```
 
-`import "std:foo"` loads `std/foo.yuga` from the compiler std directory. The module name is `foo`.
+`import "std:foo"` loads `packages/compiler/std/foo.yuga` from the compiler std directory. The module name is `foo`.
 
 `import "rel/path.yuga"` is relative to the importing file. The module name is the file stem (`header`, `math`).
 
@@ -94,7 +94,7 @@ fn add(a: int, b: int) -> int {
 
 `////` is a normal comment, not a doc. Docs are for humans and `yuga-lsp`; they do not change types or codegen.
 
-`import "std:maya"` is a small engine: 3D analytic spheres (integer world units `1024 = 1.0`) with orbit-camera mouse/scroll control, and optional top-down 2D discs (`maya.flat` / `name` / `orbit`). Scene, tracer, and map live in Yuga (`std/maya.yuga`, `std/mayacore/`); C is the host event loop and present. Scene data (planets, AU, periods) lives in the app. `sin`/`cos` use 1024-turns (result `-1024..1024`). On macOS, present is Cocoa 2D (no Metal). `MAYA_HEADLESS=1` updates once and exits.
+`import "std:maya"` is a small engine: 3D analytic spheres (integer world units `1024 = 1.0`) with orbit-camera mouse/scroll control, and optional top-down 2D discs (`maya.flat` / `name` / `orbit`). Scene, tracer, and map live in Yuga (`packages/compiler/std/maya.yuga`, `packages/compiler/std/mayacore/`); C is the host event loop and present. Scene data (planets, AU, periods) lives in the app. `sin`/`cos` use 1024-turns (result `-1024..1024`). On macOS, present is Cocoa 2D (no Metal). `MAYA_HEADLESS=1` updates once and exits.
 
 ## Grammar (EBNF)
 

@@ -1,0 +1,13 @@
+import "std:fmt"
+
+fn countdown(n: int) {
+    fmt.println(n)
+    if n == 0 {
+        return
+    }
+    countdown(n - 1)
+}
+
+fn main() {
+    countdown(3)
+}

@@ -1,0 +1,6 @@
+import "std:zeus"
+import "../../theme/colors.yuga"
+
+fn Line() -> Node {
+    return zeus.box().h(1).bg(colors.line())
+}

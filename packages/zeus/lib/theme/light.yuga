@@ -1,0 +1,71 @@
+import "std:zeus"
+
+// Exact light RGB. colors.yuga registers these against dark.yuga.
+
+fn bg() -> int {
+    return 0xfafafa
+}
+
+fn panel() -> int {
+    return 0xffffff
+}
+
+fn line() -> int {
+    return 0xe4e4e4
+}
+
+fn line_strong() -> int {
+    return 0xc8c8c8
+}
+
+fn text() -> int {
+    return 0x171717
+}
+
+fn muted() -> int {
+    return 0x525252
+}
+
+fn faint() -> int {
+    return 0x8c8c8c
+}
+
+fn ink() -> int {
+    return 0xf4f4f4
+}
+
+fn on_solid() -> int {
+    return 0xfafafa
+}
+
+fn accent() -> int {
+    return 0x171717
+}
+
+fn purple() -> int {
+    return 0x525252
+}
+
+fn danger_fill() -> int {
+    return 0xb91c1c
+}
+
+fn success_fill() -> int {
+    return 0xdcfce7
+}
+
+fn success_text() -> int {
+    return 0x166534
+}
+
+fn warning_fill() -> int {
+    return 0xfef3c7
+}
+
+fn warning_text() -> int {
+    return 0x92400e
+}
+
+fn scrim() -> int {
+    return 0x000000
+}

@@ -1,0 +1,95 @@
+import "std:zeus"
+import "../../theme/spacing.yuga"
+import "../../theme/colors.yuga"
+import "../../theme/scale.yuga"
+
+struct TabProps {
+    label: string,
+    sig: Signal,
+    value: int,
+}
+
+struct TabsProps {
+    a: string,
+    b: string,
+    c: string,
+    sig: Signal,
+}
+
+struct TabParts {
+    n: Node,
+    on_btn: Node,
+    off_btn: Node,
+    under: Node,
+}
+
+fn style_tab(p: TabParts) {
+    let size = p.n.size_of()
+    let variant = p.n.look_of()
+    let mut on_bg = -1
+    let mut on_fg = colors.text()
+    if variant == 0 {
+        on_bg = colors.text()
+        on_fg = colors.app()
+    }
+    if variant == 1 {
+        on_bg = colors.ink()
+    }
+    p.n.gap(0).position(zeus.pos_relative()).align_self(zeus.flex_start()).shrink(0)
+    p.on_btn.bg(on_bg).fg(on_fg).padX(scale.tab_px(size)).padTop(scale.tab_py(size)).padBottom(scale.tab_py(size)).radius(scale.radius_of(size)).font(scale.font_px(size)).shrink(0)
+    p.off_btn.bg(-1).fg(colors.muted()).padX(scale.tab_px(size)).padTop(scale.tab_py(size)).padBottom(scale.tab_py(size)).radius(scale.radius_of(size)).font(scale.font_px(size)).shrink(0)
+    if variant == 2 {
+        p.under.h(spacing.underline()).bg(colors.text()).position(zeus.pos_absolute()).left(0).right(0).bottom(0)
+    }
+}
+
+fn TabAt(p: TabProps, size: int, variant: int) -> Node {
+    let n = zeus.col().with_size(size).with_look(variant)
+    let on_btn = n.add(zeus.button(p.label).show_eq(p.sig, p.value).on_click_set(p.sig, p.value))
+    let off_btn = n.add(zeus.button(p.label).show_ne(p.sig, p.value).on_click_set(p.sig, p.value))
+    let mut under = zeus.box()
+    if variant == 2 {
+        under = n.add(zeus.box().show_eq(p.sig, p.value))
+    }
+    if variant == 3 {
+        n.child(zeus.box().h(0))
+    }
+    n.styled(|| { style_tab(TabParts { n: n, on_btn: on_btn, off_btn: off_btn, under: under }) })
+    return n
+}
+
+fn Tab(p: TabProps) -> Node {
+    return TabAt(p, scale.md(), scale.outline())
+}
+
+struct TabsSpec {
+    n: Node,
+    t0: Node,
+    t1: Node,
+    t2: Node,
+}
+
+fn style_tabs(p: TabsSpec) {
+    let size = p.n.size_of()
+    let variant = p.n.look_of()
+    p.n.gap(spacing.space_2xs()).align(zeus.flex_center()).flex_wrap()
+    p.t0.with_size(size).with_look(variant)
+    p.t1.with_size(size).with_look(variant)
+    p.t2.with_size(size).with_look(variant)
+}
+
+fn BarAt(p: TabsProps, size: int, variant: int) -> Node {
+    let n = zeus.row().with_size(size).with_look(variant)
+    n.key("right", "tab.next").key("left", "tab.prev")
+    n.on_range("tab.next", p.sig, 1, 0, 2)
+    n.on_range("tab.prev", p.sig, -1, 0, 2)
+    let t0 = n.add(TabAt(TabProps { label: p.a, sig: p.sig, value: 0 }, size, variant))
+    let t1 = n.add(TabAt(TabProps { label: p.b, sig: p.sig, value: 1 }, size, variant))
+    let t2 = n.add(TabAt(TabProps { label: p.c, sig: p.sig, value: 2 }, size, variant))
+    n.styled(|| { style_tabs(TabsSpec { n: n, t0: t0, t1: t1, t2: t2 }) })
+    return n
+}
+
+fn Bar(p: TabsProps) -> Node {
+    return BarAt(p, scale.md(), scale.outline())
+}

@@ -1,0 +1,28 @@
+import "std:zeus"
+
+struct Row {
+    a: string,
+    b: string,
+}
+
+fn main() {
+    let mut rows = []Row {}
+    push(rows, Row { a: "bezel.toml", b: "Config" })
+    push(rows, Row { a: "kit.yuga", b: "Source" })
+    let open = zeus.signal(1)
+    let mut nums = []int {}
+    for i in 1..4 {
+        push(nums, i)
+    }
+    let col = zeus.col()
+    col.each(nums, (i) => {
+        zeus.label("n").bind_n(i).font(11)
+    })
+    col.each_i(rows, (i, r) => {
+        zeus.label(r.a).bind_n(i).font(12)
+    })
+    col.child(zeus.when(open, || {
+        zeus.label("shown").font(12)
+    }))
+    zeus.window_root("each", 240, 160).child(col).run()
+}

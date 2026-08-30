@@ -1,0 +1,21 @@
+import "std:fmt"
+
+fn is_prime(n: int) -> bool {
+    if n < 2 {
+        return false
+    }
+    for d in 2..n {
+        if n % d == 0 {
+            return false
+        }
+    }
+    return true
+}
+
+fn main() {
+    for n in 1..16 {
+        if is_prime(n) {
+            fmt.println(n)
+        }
+    }
+}

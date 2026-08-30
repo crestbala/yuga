@@ -1,5 +1,0 @@
-import fmt
-
-fn main() {
-    fmt.println("hello, yuga")
-}

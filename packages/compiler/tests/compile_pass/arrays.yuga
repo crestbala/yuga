@@ -1,0 +1,9 @@
+import "std:fmt"
+
+fn main() {
+    let a = [4]int { 10, 20, 30, 40 }
+    fmt.println(a[1])
+    for i in 0..4 {
+        fmt.println(a[i])
+    }
+}

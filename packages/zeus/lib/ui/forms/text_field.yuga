@@ -1,0 +1,23 @@
+import "std:zeus"
+import "../../theme/colors.yuga"
+import "../../theme/scale.yuga"
+import "../shared/look.yuga"
+
+struct TextFieldProps {
+    placeholder: string,
+}
+
+fn style_text(n: Node) {
+    let size = n.size_of()
+    look.field(n, n.look_of()).fg(colors.text()).radius(scale.radius_of(size)).padX(scale.input_px(size)).padY(scale.input_py(size)).font(scale.font_px(size))
+}
+
+fn Face(p: TextFieldProps) -> Node {
+    let n = zeus.input(p.placeholder).with_size(scale.md()).with_look(scale.soft())
+    n.styled(|| { style_text(n) })
+    return n
+}
+
+fn Box(p: TextFieldProps) -> Node {
+    return Face(p)
+}

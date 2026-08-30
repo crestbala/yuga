@@ -1,0 +1,31 @@
+import "std:zeus"
+import "../../theme/spacing.yuga"
+import "../../theme/colors.yuga"
+import "../../theme/scale.yuga"
+import "../shared/look.yuga"
+
+struct InputGroupProps {
+    prefix: string,
+    placeholder: string,
+}
+
+struct InputGroupParts {
+    n: Node,
+    pre: Node,
+    face: Node,
+}
+
+fn style_group(p: InputGroupParts) {
+    let size = p.n.size_of()
+    look.field(p.n, p.n.look_of()).padX(scale.input_px(size)).padY(scale.input_py(size)).gap(scale.gap_of(size)).radius(scale.radius_of(size)).align(zeus.flex_center())
+    p.pre.fg(colors.muted()).font(scale.font_px(size))
+    p.face.grow(1).fg(colors.text()).bg(-1).font(scale.font_px(size))
+}
+
+fn Group(p: InputGroupProps) -> Node {
+    let n = zeus.row().with_size(scale.md()).with_look(scale.soft())
+    let pre = n.add(zeus.label(p.prefix))
+    let face = n.add(zeus.input(p.placeholder))
+    n.styled(|| { style_group(InputGroupParts { n: n, pre: pre, face: face }) })
+    return n
+}

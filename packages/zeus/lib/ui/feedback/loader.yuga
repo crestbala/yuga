@@ -1,0 +1,166 @@
+import "std:zeus"
+import "../../theme/spacing.yuga"
+import "../../theme/colors.yuga"
+
+// Bezel `crates/ui/src/loaders.rs` + `motion::phase`. Circles only.
+// Size 44, eight ring dots, three cluster seats, sunrise matrix tints.
+
+struct LoaderDotProps {
+    size: int,
+}
+
+struct LoaderOrbProps {
+    shape: int,
+}
+
+struct LoaderWordProps {
+    text: string,
+}
+
+fn box_size() -> int {
+    return 44
+}
+
+fn sunrise_top() -> int {
+    return 0xb6d3ef
+}
+
+fn sunrise_mid() -> int {
+    return 0xedb185
+}
+
+fn sunrise_bot() -> int {
+    return 0xf888a0
+}
+
+fn cluster() -> int {
+    return 0
+}
+
+fn ring() -> int {
+    return 1
+}
+
+fn converge() -> int {
+    return 2
+}
+
+fn bloom() -> int {
+    return 3
+}
+
+fn fill_dot(d: int, cx: int, cy: int, alpha: int) -> Node {
+    return zeus.box().size(d).bg(colors.accent()).radius(d / 2).opacity(alpha).position(zeus.pos_absolute()).left(cx - d / 2).top(cy - d / 2).pulse().shrink(0)
+}
+
+fn ring_line(d: int, cx: int, cy: int, alpha: int) -> Node {
+    return zeus.box().size(d).bg(colors.card()).border(2).border_color(colors.accent()).opacity(alpha).radius(d / 2).position(zeus.pos_absolute()).left(cx - d / 2).top(cy - d / 2).pulse().shrink(0)
+}
+
+fn cell(size: int, rgb: int, alpha: int) -> Node {
+    return zeus.box().size(size).bg(rgb).radius(size / 2).opacity(alpha).pulse().shrink(0)
+}
+
+fn slot(size: int, rgb: int, alpha: int) -> Node {
+    return zeus.box().size(size).bg(rgb).radius(size / 4).opacity(alpha).pulse().shrink(0)
+}
+
+fn Dot(p: LoaderDotProps) -> Node {
+    return cell(p.size, colors.text(), 100)
+}
+
+fn Cluster() -> Node {
+    return zeus.box().size(box_size()).shrink(0)
+        .child(fill_dot(27, 16, 16, 100))
+        .child(fill_dot(14, 28, 14, 65))
+        .child(fill_dot(6, 21, 29, 40))
+}
+
+fn Ring() -> Node {
+    return zeus.box().size(box_size()).shrink(0)
+        .child(fill_dot(7, 22, 7, 100))
+        .child(fill_dot(7, 33, 11, 88))
+        .child(fill_dot(7, 37, 22, 76))
+        .child(fill_dot(7, 33, 33, 64))
+        .child(fill_dot(7, 22, 37, 52))
+        .child(fill_dot(7, 11, 33, 42))
+        .child(fill_dot(7, 7, 22, 55))
+        .child(fill_dot(7, 11, 11, 78))
+}
+
+fn Converge() -> Node {
+    return zeus.box().size(box_size()).shrink(0)
+        .child(fill_dot(7, 22, 16, 90))
+        .child(fill_dot(7, 26, 18, 90))
+        .child(fill_dot(7, 28, 22, 90))
+        .child(fill_dot(7, 26, 26, 90))
+        .child(fill_dot(7, 22, 28, 90))
+        .child(fill_dot(7, 18, 26, 90))
+        .child(fill_dot(7, 16, 22, 90))
+        .child(fill_dot(7, 18, 18, 90))
+}
+
+fn Bloom() -> Node {
+    return zeus.box().size(box_size()).shrink(0)
+        .child(ring_line(44, 22, 22, 22))
+        .child(ring_line(28, 22, 22, 50))
+        .child(ring_line(12, 22, 22, 90))
+}
+
+fn Orb(p: LoaderOrbProps) -> Node {
+    if p.shape == 1 {
+        return Ring()
+    }
+    if p.shape == 2 {
+        return Converge()
+    }
+    if p.shape == 3 {
+        return Bloom()
+    }
+    return Cluster()
+}
+
+fn Pulse() -> Node {
+    let s = spacing.space_sm()
+    let g = s / 2
+    return zeus.row().gap(g).align(zeus.flex_center()).shrink(0)
+        .child(slot(s, colors.text(), 20))
+        .child(slot(s, colors.text(), 45))
+        .child(slot(s, colors.text(), 70))
+        .child(slot(s, colors.text(), 90))
+        .child(slot(s, colors.text(), 100))
+}
+
+fn Matrix() -> Node {
+    let s = spacing.space_xs() + 1
+    let g = 2
+    return zeus.col().gap(g).shrink(0)
+        .child(zeus.row().gap(g).shrink(0).child(cell(s, sunrise_top(), 100)).child(cell(s, sunrise_top(), 55)).child(cell(s, sunrise_top(), 25)))
+        .child(zeus.row().gap(g).shrink(0).child(cell(s, sunrise_mid(), 70)).child(cell(s, sunrise_mid(), 100)).child(cell(s, sunrise_mid(), 40)))
+        .child(zeus.row().gap(g).shrink(0).child(cell(s, sunrise_bot(), 30)).child(cell(s, sunrise_bot(), 60)).child(cell(s, sunrise_bot(), 100)))
+}
+
+fn Mini() -> Node {
+    let s = spacing.space_xs()
+    let g = 2
+    return zeus.col().gap(g).shrink(0)
+        .child(zeus.row().gap(g).shrink(0).child(cell(s, sunrise_top(), 100)).child(cell(s, sunrise_top(), 40)))
+        .child(zeus.row().gap(g).shrink(0).child(cell(s, sunrise_mid(), 30)).child(cell(s, sunrise_mid(), 85)))
+        .child(zeus.row().gap(g).shrink(0).child(cell(s, sunrise_bot(), 55)).child(cell(s, sunrise_bot(), 20)))
+}
+
+fn Word(p: LoaderWordProps) -> Node {
+    return zeus.label(p.text).fg(colors.muted()).font(11).opacity(70).shrink(0)
+}
+
+fn Bar() -> Node {
+    return Pulse()
+}
+
+fn Grid() -> Node {
+    return Matrix()
+}
+
+fn Stack() -> Node {
+    return Mini()
+}

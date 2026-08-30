@@ -1,0 +1,31 @@
+import "std:zeus"
+import "../../theme/spacing.yuga"
+import "../../theme/colors.yuga"
+import "../../theme/scale.yuga"
+import "../shared/look.yuga"
+
+struct AvatarProps {
+    initials: string,
+    color: int,
+}
+
+struct AvatarParts {
+    n: Node,
+    lab: Node,
+    color: int,
+}
+
+fn style_avatar(p: AvatarParts) {
+    let size = p.n.size_of()
+    let variant = p.n.look_of()
+    let d = scale.avatar_of(size)
+    look.paint(p.n, variant, p.color).size(d).radius(d / 2).center().shrink(0)
+    p.lab.fg(look.fg_of(variant, p.color)).font(scale.caption_px(size))
+}
+
+fn Avatar(p: AvatarProps) -> Node {
+    let n = zeus.row().with_size(scale.md()).with_look(scale.solid())
+    let lab = n.add(zeus.label(p.initials))
+    n.styled(|| { style_avatar(AvatarParts { n: n, lab: lab, color: p.color }) })
+    return n
+}

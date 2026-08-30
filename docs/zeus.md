@@ -22,14 +22,14 @@ it isn't reserved for "the web one" anymore.
 
 Yuga has **no traits**, so `Node(B: Backend)` / `impl(B: Backend)` from
 §2 is the long-term sketch, not what we compile today. Backend is the
-`--target` flag: same `std:zeus` + `std/zeuscore` Yuga, different C
+`--target` flag: same `std:zeus` + `packages/compiler/std/zeuscore` Yuga, different C
 `plat_*` (Cocoa vs Canvas2D). Do not add `View`, `impl View`, or a
 second tree type.
 
 | Item | State |
 |---|---|
 | `import "std:zeus"` only | done |
-| `std/zeuscore/*.yuga` tree / layout / hit-test | done |
+| `packages/compiler/std/zeuscore/*.yuga` tree / layout / hit-test | done |
 | `.child()` / `.run()` / `.mount()` chain | done |
 | PascalCase composers (`Wrap`, `Note`, `Orb`, `Card`, …) | done |
 | Buttons take `fn()`, not `Signal` | done |
@@ -128,7 +128,8 @@ Rules this locks in:
    re-run that node's `.styled()` closure. Never a parallel arg bag — no `keep`, `tag`,
    or dummy `""` / `0` slots.
 8. **`.each` maps items, not indexes.** `parent.each(jobs, |j| { ui.ScrollRow(j.title, j.meta) })`.
-   Integer sequences use `zeus.range(lo, hi)`: `row.each(zeus.range(1, last + 1), |i| { Page(i) })`.
+   An integer sequence isn't an item list — loop it directly:
+   `for i in 1..(last + 1) { row.child(Page(i)) }`.
 9. **One `*Props` struct per widget file.** Constructors take that struct
    (`ChipProps`, `ButtonProps`). Size/look stay chained. Names are global
    (`find_struct` is name-only), so do not reuse `Props`. Apps write
@@ -141,7 +142,7 @@ targets" is done via **target selection**, never a trait object. Yuga
 has no traits: do not introduce `Node(B: Backend)` until the language
 can express it. Today `--target=native` links Cocoa and `--target=wasm32`
 links Canvas2D; both fill the same `plat_*` declarations in
-`std/zeuscore/platform.yuga`. The generic sketch below is the shape to
+`packages/compiler/std/zeuscore/platform.yuga`. The generic sketch below is the shape to
 aim at later, not current source.
 
 **`zeuscore` is real implementation, not a wrapper.** This is
@@ -221,8 +222,8 @@ leaked out of `zeuscore`.
 ## 4. Migration plan
 
 **Phase 1 — Extract `zeuscore` — done.**
-Tree, layout, scene, input, and geometry live in `std/zeuscore/*.yuga`.
-C is only `plat_*` FFI (`runtime/zeus_plat.c`, `zeus/desktop/mac.m`, `zeus/web/wasm.c`).
+Tree, layout, scene, input, and geometry live in `packages/compiler/std/zeuscore/*.yuga`.
+C is only `plat_*` FFI (`packages/compiler/runtime/zeus_plat.c`, `packages/zeus/desktop/mac.m`, `packages/zeus/web/wasm.c`).
 No `Backend` trait: Yuga cannot express `Node(B: Backend)` yet.
 
 **Phase 2 — Builder chain over `zeuscore` — done.**
@@ -246,8 +247,9 @@ of Zeus. Zeus Kit compiles native and wasm32 from this source.
 
 **Phase 5 — `each` / `when` combinators — done.**
 `parent.each(items, |item| { ... })` maps a list into children (keyed by
-index; lists are built once, matching the retained-tree contract).
-`zeus.range(lo, hi)` is the integer sequence for pagination and calendars.
+index; lists are built once, matching the retained-tree contract). An
+integer sequence (pagination, calendar cells) is a native `for i in lo..hi`
+loop calling `.child(...)` directly — not a list, so not `.each`.
 `zeus.when(sig, || { ... })` is the show combinator: it builds the child
 once and uses `n.show(sig)` to hide it from layout while the signal is 0.
 (`show` on `Node` stays the modifier — Yuga has no overloading.)
@@ -272,14 +274,14 @@ canvas-sizing call under `--target=wasm32` — same call, backend-specific
 effect), `.run()` stays the terminal chain method on every target.
 
 The counter example serves its wasm page with Vite in
-`zeus/examples/counter` (`npm run dev` on `:5173`).
+`examples/zeus/counter` (`npm run dev` on `:5173`).
 
 **Phase 7 — Delete deprecated parent-mutation API** once every call site
 is converted, and delete any leftover `std:zeus` references in the
 codebase entirely.
 
 **Phase 8 — Fine-grained `.styled()` — done.**
-Tracking scopes in `std/zeuscore/track.yuga`: `get(sig)` inside `.styled`
+Tracking scopes in `packages/compiler/std/zeuscore/track.yuga`: `get(sig)` inside `.styled`
 records a dependency; `set(sig)` re-runs only those closures. Catalog
 widgets build children once. Theme and `.size()` / `.look()` update paint
 in place. `on_restyle` / public `drop_children` are gone.

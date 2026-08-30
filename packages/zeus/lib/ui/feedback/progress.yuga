@@ -1,0 +1,34 @@
+import "std:zeus"
+import "../../theme/spacing.yuga"
+import "../../theme/colors.yuga"
+import "../../theme/scale.yuga"
+
+struct ProgressProps {
+    sig: Signal,
+}
+
+fn tone(variant: int) -> int {
+    if variant == 4 {
+        return colors.danger()
+    }
+    if variant == 3 {
+        return colors.muted()
+    }
+    if variant == 1 {
+        return colors.accent()
+    }
+    return colors.text()
+}
+
+fn style_progress(n: Node) {
+    let size = n.size_of()
+    let h = scale.track_h(size)
+    n.grow(1).h(h).radius(h / 2).bg(colors.line()).fg(tone(n.look_of()))
+}
+
+fn Bar(p: ProgressProps) -> Node {
+    let n = zeus.progress().with_size(scale.md()).with_look(scale.solid())
+    n.styled(|| { style_progress(n) })
+    n.bind(p.sig)
+    return n
+}

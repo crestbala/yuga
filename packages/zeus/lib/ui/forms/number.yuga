@@ -1,0 +1,57 @@
+import "std:zeus"
+import "../../theme/spacing.yuga"
+import "../display/icons.yuga"
+import "../../theme/colors.yuga"
+import "../../theme/scale.yuga"
+import "../shared/look.yuga"
+
+struct NumberProps {
+    label: string,
+    sig: Signal,
+    min: int,
+    max: int,
+}
+
+/// Step `sig` by `delta`, clamped to `min..max` — shared by the keyboard
+/// (`on_range`) and the `-`/`+` buttons, so neither path can run past the
+/// bound the other respects.
+fn step_clamped(sig: Signal, delta: int, min: int, max: int) {
+    let mut v = sig.get() + delta
+    if v < min {
+        v = min
+    }
+    if v > max {
+        v = max
+    }
+    sig.set(v)
+}
+
+struct NumberParts {
+    n: Node,
+    lab: Node,
+    num: Node,
+    minus: Node,
+    plus: Node,
+}
+
+fn style_number(p: NumberParts) {
+    let size = p.n.size_of()
+    look.field(p.n, p.n.look_of()).padX(scale.input_px(size)).padY(scale.input_py(size)).gap(scale.gap_of(size)).radius(scale.radius_of(size)).align(zeus.flex_center())
+    p.lab.fg(colors.label()).font(scale.caption_px(size))
+    p.num.fg(colors.text()).font(scale.title_px(size))
+    p.minus.bg(-1).fg(colors.muted()).padX(scale.gap_of(size)).padY(2).radius(scale.radius_of(size)).font(scale.font_px(size)).shrink(0)
+    p.plus.size(scale.hit_of(size)).radius(scale.radius_of(size))
+}
+
+fn Field(p: NumberProps) -> Node {
+    let n = zeus.row().with_size(scale.md()).with_look(scale.ghost())
+    n.key("up", "number.inc").key("down", "number.dec")
+    n.on_range("number.inc", p.sig, 1, p.min, p.max)
+    n.on_range("number.dec", p.sig, -1, p.min, p.max)
+    let lab = n.add(zeus.label(p.label))
+    let num = n.add(zeus.label("0").bind(p.sig))
+    let minus = n.add(zeus.button("-").on(zeus.click(), || { step_clamped(p.sig, -1, p.min, p.max) }))
+    let plus = n.add(icons.Hit(HitProps { markup: icons.plus(), color: colors.text(), hit: scale.hit_of(scale.md()), size: scale.icon_of(scale.md()) }).on(zeus.click(), || { step_clamped(p.sig, 1, p.min, p.max) }))
+    n.styled(|| { style_number(NumberParts { n: n, lab: lab, num: num, minus: minus, plus: plus }) })
+    return n
+}
