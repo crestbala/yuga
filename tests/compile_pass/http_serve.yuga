@@ -1,0 +1,30 @@
+import "std:http"
+import "std:fmt"
+
+fn must(ok: bool) {
+    if !ok {
+        let xs = [1]int { 0 }
+        let z = xs[1]
+        fmt.println(z)
+    }
+}
+
+fn main() {
+    must(http.request_ready("GET / HTTP/1.1\r\nHost: x\r\n\r\n") == 1)
+    must(http.request_ready("GET / HTTP/1.1\r\nHost: x\r\n") == 0)
+    must(http.request_ready("POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 4\r\n\r\nab") == 0)
+    must(http.request_ready("POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 4\r\n\r\nabcd") == 1)
+    let r404 = http.http_reply(404, "text/plain; charset=utf-8", "Not Found")
+    must(r404[0] == 72)
+    must(r404[9] == 52)
+    must(r404[10] == 48)
+    must(r404[11] == 52)
+    let app = http.app()
+    let get = http.serve_h1(app, "GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+    must(get[9] == 52)
+    let bad = http.serve_h1(app, "TRACE / HTTP/1.1\r\nHost: x\r\n\r\n")
+    must(bad[9] == 52)
+    must(bad[10] == 48)
+    must(bad[11] == 53)
+    fmt.println(r404[9], get[9])
+}

@@ -1,0 +1,26 @@
+import "std:zeus"
+import "../theme/spacing.yuga"
+import "../theme/colors.yuga"
+
+struct ListItemProps {
+    title: string,
+    meta: string,
+    sig: Signal,
+    value: int,
+}
+
+fn row_radius() -> int {
+    return spacing.inset_radius(spacing.surface_radius(), spacing.menu_pad())
+}
+
+fn Box() -> Node {
+    return zeus.col().pad(spacing.menu_pad()).gap(spacing.space_2xs())
+}
+
+fn Item(p: ListItemProps) -> Node {
+    let n = zeus.row().gap(spacing.menu_row_gap()).padX(spacing.menu_row_pad_x()).padY(spacing.menu_row_pad_y()).radius(row_radius()).bg(colors.app()).align(zeus.flex_center()).on_click_set(p.sig, p.value)
+    n.child(zeus.label(p.title).fg(colors.text()).font(13))
+    n.child(zeus.spacer())
+    n.txt(p.meta, colors.muted(), 12)
+    return n
+}

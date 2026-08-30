@@ -1,0 +1,27 @@
+import fmt
+
+struct Counter {
+    name: string,
+    count: int,
+}
+
+fn increment(c: &mut Counter) {
+    c.count += 1
+}
+
+fn greet(c: &Counter) {
+    fmt.println("hello,", c.name)
+}
+
+fn main() {
+    let mut c = Counter { name: "tick", count: 0 }
+
+    increment(&mut c)
+    increment(c)
+    greet(c)
+
+    fmt.println("count:", c.count)
+
+    let b = Box::new(42)
+    fmt.println("boxed:", *b)
+}

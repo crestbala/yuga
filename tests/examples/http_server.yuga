@@ -1,0 +1,21 @@
+import "std:http"
+import "std:fmt"
+
+#[proto]
+struct Ping {
+}
+
+#[proto]
+struct Pong {
+    msg: string,
+}
+
+fn main() {
+    let app = http.app()
+    app.rpc("Health.Ping", |body| {
+        let req = decode_Ping(body)
+        encode_Pong(Pong { msg: "ok" })
+    })
+    fmt.println("http rpc (127.0.0.1). gRPC-Web / h2c")
+    app.listen(8080)
+}

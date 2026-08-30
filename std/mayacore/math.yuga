@@ -1,0 +1,151 @@
+//! Integer-turn and float trig for Maya. No C libm.
+
+let PI: float = 3.141592653589793
+let TAU: float = 6.283185307179586
+
+fn wrap1024(t: int) -> int {
+    let mut x = t % 1024
+    if x < 0 {
+        x += 1024
+    }
+    return x
+}
+
+fn fabs(x: float) -> float {
+    if x < 0.0 {
+        return -x
+    }
+    return x
+}
+
+fn fsqrt(x: float) -> float {
+    if x <= 0.0 {
+        return 0.0
+    }
+    let mut g = x
+    if g < 1.0 {
+        g = 1.0
+    }
+    for i in 0..20 {
+        g = 0.5 * (g + x / g)
+    }
+    return g
+}
+
+fn fsin(x: float) -> float {
+    let mut t = x
+    while t > PI {
+        t = t - TAU
+    }
+    while t < -PI {
+        t = t + TAU
+    }
+    let x2 = t * t
+    let a = 0.0001984126984126984 - x2 * 0.0000027557319223985893
+    let b = 0.008333333333333333 - x2 * a
+    let c = 0.16666666666666666 - x2 * b
+    return t * (1.0 - x2 * c)
+}
+
+fn fcos(x: float) -> float {
+    return fsin(x + PI * 0.5)
+}
+
+fn ftan(x: float) -> float {
+    let c = fcos(x)
+    if fabs(c) < 1e-12 {
+        if c < 0.0 {
+            return -1e12
+        }
+        return 1e12
+    }
+    return fsin(x) / c
+}
+
+fn fatan(z: float) -> float {
+    if z < 0.0 {
+        return -fatan(-z)
+    }
+    if z > 1.0 {
+        return PI * 0.5 - fatan(1.0 / z)
+    }
+    let z2 = z * z
+    let a = 0.085133 - z2 * 0.020835
+    let b = 0.180141 - z2 * a
+    let c = 0.3302995 - z2 * b
+    return z * (0.999866 - z2 * c)
+}
+
+fn fatan2(y: float, x: float) -> float {
+    if x > 0.0 {
+        return fatan(y / x)
+    }
+    if x < 0.0 {
+        if y >= 0.0 {
+            return fatan(y / x) + PI
+        }
+        return fatan(y / x) - PI
+    }
+    if y > 0.0 {
+        return PI * 0.5
+    }
+    if y < 0.0 {
+        return -PI * 0.5
+    }
+    return 0.0
+}
+
+fn fexp(x: float) -> float {
+    let mut t = x
+    let mut k = 1.0
+    while t > 1.0 {
+        t = t - 1.0
+        k = k * 2.718281828459045
+    }
+    while t < -1.0 {
+        t = t + 1.0
+        k = k / 2.718281828459045
+    }
+    let mut s = 1.0
+    let mut term = 1.0
+    for i in 1..12 {
+        term = term * t / (i as float)
+        s = s + term
+    }
+    return s * k
+}
+
+/// Sine. `turns` is 1024 = 360°. Result is -1024..1024. Exact at cardinals.
+fn sin_turns(turns: int) -> int {
+    let t = wrap1024(turns)
+    if t == 0 {
+        return 0
+    }
+    if t == 256 {
+        return 1024
+    }
+    if t == 512 {
+        return 0
+    }
+    if t == 768 {
+        return -1024
+    }
+    let s = fsin((t as float) * TAU / 1024.0) * 1024.0
+    let mut n = 0
+    if s >= 0.0 {
+        n = (s + 0.5) as int
+    } else {
+        n = (s - 0.5) as int
+    }
+    if n > 1024 {
+        n = 1024
+    }
+    if n < -1024 {
+        n = -1024
+    }
+    return n
+}
+
+fn cos_turns(turns: int) -> int {
+    return sin_turns(turns + 256)
+}

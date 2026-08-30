@@ -1,0 +1,25 @@
+import "std:http"
+import "std:fmt"
+
+#[proto]
+struct Inc {
+    by: int,
+}
+
+#[proto]
+struct Count {
+    n: int,
+}
+
+fn main() {
+    let r = http.ok(3)
+    fmt.println(r.ok, r.val)
+    let e = http.fail(7, "no")
+    fmt.println(e.code)
+    let rpc: Rpc<Inc, Count> = Rpc { name: "Counter.Inc" }
+    fmt.println(rpc.name)
+    let m = Inc { by: 2 }
+    let buf = encode_Inc(m)
+    let d = decode_Inc(buf)
+    fmt.println(d.by)
+}

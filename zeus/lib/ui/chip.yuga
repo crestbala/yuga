@@ -1,0 +1,37 @@
+import "std:zeus"
+import "../theme/spacing.yuga"
+import "icons.yuga"
+import "../theme/colors.yuga"
+import "../theme/scale.yuga"
+import "look.yuga"
+
+struct ChipProps {
+    label: string,
+    color: int,
+}
+
+struct ChipParts {
+    n: Node,
+    dot: Node,
+    lab: Node,
+    ico: Node,
+    color: int,
+}
+
+fn style_chip(p: ChipParts) {
+    let size = p.n.size_of()
+    let variant = p.n.look_of()
+    look.paint(p.n, variant, p.color).padLeft(scale.pad_x(size)).padRight(scale.gap_of(size)).padY(scale.pad_y(size) / 2).gap(scale.gap_of(size)).h(scale.chip_h(size)).radius(scale.radius_of(size)).align(zeus.flex_center()).shrink(0).overflow(zeus.overflow_hidden()).hover_fade()
+    p.dot.w(spacing.dot()).h(spacing.dot()).bg(p.color).radius(spacing.dot() / 2).shrink(0)
+    p.lab.fg(look.fg_of(variant, p.color)).font(scale.caption_px(size)).shrink(0)
+    p.ico.w(scale.icon_of(size) - 2).h(scale.icon_of(size) - 2).fg(colors.label())
+}
+
+fn Chip(p: ChipProps) -> Node {
+    let n = zeus.row().with_size(scale.md()).with_look(scale.soft())
+    let dot = n.add(zeus.box())
+    let lab = n.add(zeus.label(p.label))
+    let ico = n.add(icons.Glyph(GlyphProps { markup: icons.close(), color: colors.label(), size: scale.icon_of(scale.md()) - 2 }))
+    n.styled(|| { style_chip(ChipParts { n: n, dot: dot, lab: lab, ico: ico, color: p.color }) })
+    return n
+}

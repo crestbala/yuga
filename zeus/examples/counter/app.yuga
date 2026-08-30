@@ -1,0 +1,14 @@
+import "std:zeus"
+import "std:http"
+import "api.yuga"
+import "../../apps/dashboard/dashboard.yuga"
+
+fn main() {
+    let body = http.client_get(api.stats_path())
+    let users = http.json_get_string(body, api.users_key())
+    let jobs = http.json_get_string(body, api.jobs_key())
+    let uptime = http.json_get_string(body, api.uptime_key())
+    let load = http.json_get_int(body, api.load_key())
+    let ticks = http.json_get_int(body, api.ticks_key())
+    dashboard.Dashboard(users, jobs, uptime, load, ticks).run()
+}

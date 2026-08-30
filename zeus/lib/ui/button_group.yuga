@@ -1,0 +1,8 @@
+import "std:zeus"
+import "../theme/spacing.yuga"
+
+/// Horizontal cluster; children keep intrinsic width.
+
+fn Group() -> Node {
+    return zeus.row().gap(spacing.space_sm()).align(zeus.flex_center())
+}

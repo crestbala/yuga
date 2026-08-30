@@ -1,0 +1,12 @@
+struct Counter {
+    count: int,
+}
+
+fn inc(c: &Counter) {
+    c.count += 1
+}
+
+fn main() {
+    let mut c = Counter { count: 0 }
+    inc(c)
+}

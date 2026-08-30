@@ -1,0 +1,17 @@
+//! iOS Simulator counter UI. Same Zeus tree as wasm, macOS, and Android; HTTP is gRPC-Web sockets.
+//!
+//! `main` POSTs `Counter.Hello` and `Counter.Stats` to the native backend on
+//! `127.0.0.1:8080` (Simulator shares the Mac loopback). Start the backend
+//! first: `../backend/run.sh`, or use `./run.sh`.
+
+import "std:zeus"
+import "std:http"
+import "../backend/api.yuga"
+import "../screen.yuga"
+
+fn main() {
+    let c = http.client(api.native_addr())
+    let hello = api.decode_HelloResp(c.call(api.hello_rpc(), api.encode_HelloReq(HelloReq {})))
+    let stats = api.decode_StatsResp(c.call(api.stats_rpc(), api.encode_StatsReq(StatsReq {})))
+    screen.Screen("API", "iOS", stats.users, stats.jobs, stats.uptime, stats.load, hello.count).run()
+}

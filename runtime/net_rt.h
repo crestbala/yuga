@@ -1,0 +1,20 @@
+/* net_rt.h — declarations for `std/net.yuga` (`yuga_net_*`). */
+#ifndef NET_RT_H
+#define NET_RT_H
+
+#ifdef YUGA_RT_H
+#else
+#include "yuga_rt.h"
+#endif
+
+int64_t yuga_net_tcp_connect(yuga_str host, int64_t port);
+int64_t yuga_net_tcp_write(int64_t fd, yuga_str data);
+yuga_str yuga_net_tcp_read(int64_t fd, int64_t max);
+void yuga_net_tcp_close(int64_t fd);
+int64_t yuga_net_tcp_listen(int64_t port);
+int64_t yuga_net_tcp_accept(int64_t fd);
+int64_t yuga_net_tcp_bound_port(int64_t fd);
+yuga_str yuga_net_tcp_peek(int64_t fd, int64_t max);
+yuga_str yuga_net_fetch_rpc(yuga_str path, yuga_str body);
+
+#endif

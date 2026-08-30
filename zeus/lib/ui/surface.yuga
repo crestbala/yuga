@@ -1,0 +1,7 @@
+import "std:zeus"
+import "../theme/spacing.yuga"
+import "../theme/colors.yuga"
+
+fn Surface() -> Node {
+    return zeus.col().bg(colors.card()).pad(spacing.space_md()).gap(spacing.space_sm()).radius(spacing.surface_radius())
+}

@@ -1,0 +1,28 @@
+import "std:zeus"
+import "../theme/spacing.yuga"
+import "../theme/colors.yuga"
+import "../theme/scale.yuga"
+import "look.yuga"
+
+struct KbdProps {
+    key: string,
+}
+
+struct KbdParts {
+    n: Node,
+    lab: Node,
+}
+
+fn style_kbd(p: KbdParts) {
+    let size = p.n.size_of()
+    let variant = p.n.look_of()
+    look.paint(p.n, variant, colors.muted()).padX(scale.gap_of(size)).padY(1).h(scale.kbd_h(size)).radius(spacing.kbd_radius()).align(zeus.flex_center()).shrink(0)
+    p.lab.fg(look.fg_of(variant, colors.muted())).font(scale.caption_px(size))
+}
+
+fn Kbd(p: KbdProps) -> Node {
+    let n = zeus.row().with_size(scale.md()).with_look(scale.outline())
+    let lab = n.add(zeus.label(p.key))
+    n.styled(|| { style_kbd(KbdParts { n: n, lab: lab }) })
+    return n
+}

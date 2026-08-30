@@ -1,0 +1,14 @@
+import "std:fmt"
+
+fn take(b: Box<int>) -> int {
+    return *b
+}
+
+fn main() {
+    let b = Box::new(1)
+    if true {
+        fmt.println(take(b))
+    } else {
+        fmt.println(take(b))
+    }
+}

@@ -1,0 +1,10 @@
+import "std:fmt"
+
+fn id<T>(x: T) -> T {
+    return x
+}
+
+fn main() {
+    fmt.println(id(42))
+    fmt.println(id("hi"))
+}

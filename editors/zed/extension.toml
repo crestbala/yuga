@@ -1,0 +1,18 @@
+id = "yuga"
+name = "Yuga"
+version = "0.1.9"
+schema_version = 1
+authors = ["Yuga"]
+description = "Yuga language: syntax highlighting and diagnostics via yuga-lsp"
+
+[grammars.yuga]
+repository = "file:///Users/bala_mani/Documents/yuga/tree-sitter-yuga"
+rev = "1fc2686f418b6909938abac0e691bf87e87981b6"
+
+[language_servers.yuga-lsp]
+name = "Yuga LSP"
+language = "Yuga"
+languages = ["Yuga"]
+
+[language_servers.yuga-lsp.language_ids]
+Yuga = "yuga"

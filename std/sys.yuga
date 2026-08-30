@@ -1,0 +1,9 @@
+//! Language-level seam (`docs/boundary.md`).
+//!
+//! Bodyless `fn`s resolve to `yuga_sys_<name>` in `yuga_rt`. No protocol here.
+
+/// `1` if the environment variable is set and non-empty.
+fn env_set(name: string) -> int {}
+
+/// Exit the process with `code`.
+fn exit(code: int) {}

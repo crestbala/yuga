@@ -1,0 +1,1134 @@
+//! arena — retained tree, signals, window/frame state (GPUI arena.rs).
+//! Layout, scene, and input read and write these globals as arena.nodes.
+//!
+//! UiNode.kind: 1 box, 2 grid, 3 label, 4 button, 5 spacer, 6 progress,
+//! 7 toggle, 8 check, 9 overlay, 10 input, 11 scroll, 12 svg, 13 slider.
+//! overflow: 0 visible, 1 hidden, 2 scroll-y auto, 3 scroll-xy auto.
+
+import "geometry.yuga"
+import "platform.yuga"
+import "track.yuga"
+
+struct UiNode {
+    kind: int,
+    dir: int,
+    kids: []int,
+    pad: int,
+    padx: int,
+    pady: int,
+    pad_t: int,
+    pad_r: int,
+    pad_b: int,
+    pad_l: int,
+    gap: int,
+    grow: int,
+    shrink: int,
+    bg: int,
+    fg: int,
+    radius: int,
+    ew: int,
+    eh: int,
+    font: int,
+    justify: int,
+    align: int,
+    min_w: int,
+    max_w: int,
+    min_h: int,
+    max_h: int,
+    w_pct: int,
+    h_pct: int,
+    text: string,
+    bind_sig: int,
+    click_sig: int,
+    click_mode: int,
+    click_set: int,
+    click2_sig: int,
+    click2_mode: int,
+    click2_set: int,
+    show_sig: int,
+    show_mode: int,
+    show_val: int,
+    hover_sig: int,
+    x: int,
+    y: int,
+    w: int,
+    h: int,
+    iw: int,
+    ih: int,
+    nid: int,
+    pos: int,
+    overflow: int,
+    opacity: int,
+    span: int,
+    grid_cols: int,
+    grid_min: int,
+    m_t: int,
+    m_r: int,
+    m_b: int,
+    m_l: int,
+    border_w: int,
+    border_c: int,
+    gap_row: int,
+    gap_col: int,
+    aspect_w: int,
+    aspect_h: int,
+    wrap: int,
+    reverse: int,
+    align_self: int,
+    pin_t: int,
+    pin_r: int,
+    pin_b: int,
+    pin_l: int,
+    z_index: int,
+    grid_auto: int,
+    scroll_x: int,
+    scroll_y: int,
+    tw: int,
+    th: int,
+    pulse: int,
+    aw: int,
+    ah: int,
+    bar_t: int,
+    parent: int,
+    key_ctx: int,
+    focusable: int,
+    capture_text: int,
+    edit_slot: int,
+    click_fn: int,
+    ui_size: int,
+    ui_look: int,
+    restyle_fn: int,
+    hover_fade: int,
+    hover_amt: int,
+    tween: int,
+    enter_fade: int,
+    show_amt: int,
+}
+
+let mut nodes: []UiNode = []UiNode {}
+let mut sigs: []int = []int {}
+let mut root_id: int = 0
+let mut win_w: int = 640
+let mut win_h: int = 480
+let mut appearance_sid: int = 0
+let mut inited: int = 0
+let mut theme_l: []int = []int {}
+let mut theme_d: []int = []int {}
+let mut szbuf: []int = []int {}
+let mut szlay: []int = []int {}
+let mut focus_id: int = 0
+let mut focus_at: int = -1
+let mut chain_nodes: []int = []int {}
+let mut chain_ctxs: []int = []int {}
+let mut focus_ring: []int = []int {}
+let mut paint_sy: int = 0
+let mut paint_sx: int = 0
+let mut drag_id: int = 0
+let mut drag_ay: int = 0
+let mut drag_as: int = 0
+let mut drag_bar: int = 0
+let mut pulse_t: int = 0
+let mut ptr_x: int = 0
+let mut ptr_y: int = 0
+let mut paint_skip_z: int = 1
+let mut safe_t: int = 0
+let mut safe_r: int = 0
+let mut safe_b: int = 0
+let mut safe_l: int = 0
+
+fn blank_node() -> UiNode {
+    return UiNode {
+        kind: 0, dir: 0, kids: []int {}, pad: 0, padx: 0, pady: 0,
+        pad_t: 0, pad_r: 0, pad_b: 0, pad_l: 0, gap: 0, grow: 0, shrink: 1,
+        bg: -1, fg: -1, radius: 0, ew: -1, eh: -1, font: 0, justify: 0, align: 0,
+        min_w: -1, max_w: -1, min_h: -1, max_h: -1, w_pct: 100, h_pct: -1,
+        text: "", bind_sig: 0, click_sig: 0, click_mode: 0, click_set: 0,
+        click2_sig: 0, click2_mode: 0, click2_set: 0,
+        show_sig: 0, show_mode: 0, show_val: 0, hover_sig: 0,
+        x: 0, y: 0, w: 0, h: 0, iw: 0, ih: 0, nid: 0, pos: 0, overflow: 0,
+        opacity: 100, span: 1, grid_cols: 0, grid_min: 0,
+        m_t: 0, m_r: 0, m_b: 0, m_l: 0, border_w: 0, border_c: -1,
+        gap_row: 0, gap_col: 0, aspect_w: 0, aspect_h: 0,
+        wrap: 0, reverse: 0, align_self: -1,
+        pin_t: -1, pin_r: -1, pin_b: -1, pin_l: -1,
+        z_index: 0, grid_auto: 0, scroll_x: 0, scroll_y: 0, tw: 0, th: 0, pulse: 0,
+        aw: 0, ah: 0, bar_t: 0, parent: 0, key_ctx: 0, focusable: 0, capture_text: 0, edit_slot: -1,
+        click_fn: 0, ui_size: 1, ui_look: 1, restyle_fn: 0,
+        hover_fade: 0, hover_amt: 0, tween: -1, enter_fade: 0, show_amt: 0,
+    }
+}
+
+fn ensure() {
+    if inited != 0 {
+        return
+    }
+    inited = 1
+    if nodes.len == 0 {
+        push(nodes, blank_node())
+    }
+    if sigs.len == 0 {
+        push(sigs, 0)
+    }
+}
+
+let mut scroll_save: []int = []int {}
+let mut scroll_save_x: []int = []int {}
+
+fn snapshot_scroll() {
+    scroll_save = []int {}
+    scroll_save_x = []int {}
+    let n = nodes.len
+    for i in 0..n {
+        push(scroll_save, nodes[i].scroll_y)
+        push(scroll_save_x, nodes[i].scroll_x)
+    }
+}
+
+fn reset_tree() {
+    nodes = []UiNode {}
+    push(nodes, blank_node())
+    root_id = 0
+    focus_id = 0
+    paint_sy = 0
+    paint_sx = 0
+    drag_id = 0
+    drag_bar = 0
+}
+
+fn restore_scroll() {
+    let n = nodes.len
+    let m = scroll_save.len
+    let mx = scroll_save_x.len
+    for i in 1..n {
+        if i < m {
+            nodes[i].scroll_y = scroll_save[i]
+        }
+        if i < mx {
+            nodes[i].scroll_x = scroll_save_x[i]
+        }
+    }
+}
+
+fn drop_children(id: int) {
+    nodes[id].kids = []int {}
+}
+
+fn store_sig(id: int, value: int) {
+    if id <= 0 {
+        return
+    }
+    if id >= sigs.len {
+        return
+    }
+    if sigs[id] == value {
+        return
+    }
+    sigs[id] = value
+    track.notify(id)
+}
+
+fn alloc_node(kind: int) -> int {
+    ensure()
+    let mut n = blank_node()
+    n.kind = kind
+    n.nid = nodes.len
+    push(nodes, n)
+    return nodes.len - 1
+}
+
+// --- app ---
+
+fn theme_grow(slot: int) {
+    if slot < 0 {
+        return
+    }
+    let need = slot + 1
+    if need <= theme_l.len {
+        return
+    }
+    let n = need - theme_l.len
+    for i in 0..n {
+        push(theme_l, 0)
+        push(theme_d, 0)
+    }
+}
+
+/// Paint-time color. The app registers light/dark RGB per slot; paint
+/// resolves against appearance().
+fn paint_rgb(c: int) -> int {
+    if c < 0 {
+        return 0
+    }
+    if c < 2130706432 {
+        return c
+    }
+    let slot = c - 2130706432
+    if slot < 0 {
+        return 0
+    }
+    let mut dark = 0
+    if appearance_sid > 0 {
+        if appearance_sid < sigs.len {
+            dark = sigs[appearance_sid]
+        }
+    }
+    if dark != 0 {
+        if slot < theme_d.len {
+            return theme_d[slot]
+        }
+        return 0
+    }
+    if slot < theme_l.len {
+        return theme_l[slot]
+    }
+    return 0
+}
+
+fn sig_val(id: int) -> int {
+    if id <= 0 {
+        return 0
+    }
+    if id >= sigs.len {
+        return 0
+    }
+    return sigs[id]
+}
+
+fn bound_num(id: int) -> int {
+    if nodes[id].bind_sig > 0 {
+        return sig_val(nodes[id].bind_sig)
+    }
+    if nodes[id].bind_sig < 0 {
+        return nodes[id].click_set
+    }
+    return 0
+}
+
+fn has_bound_num(id: int) -> int {
+    if nodes[id].bind_sig != 0 {
+        return 1
+    }
+    return 0
+}
+
+fn box_pad_x(id: int) -> int {
+    return nodes[id].pad_l + nodes[id].pad_r + nodes[id].border_w + nodes[id].border_w
+}
+fn box_pad_y(id: int) -> int {
+    return nodes[id].pad_t + nodes[id].pad_b + nodes[id].border_w + nodes[id].border_w
+}
+fn gap_x(id: int) -> int {
+    if nodes[id].gap_col > 0 {
+        return nodes[id].gap_col
+    }
+    return nodes[id].gap
+}
+fn gap_y(id: int) -> int {
+    if nodes[id].gap_row > 0 {
+        return nodes[id].gap_row
+    }
+    return nodes[id].gap
+}
+fn content_x(id: int) -> int {
+    let mut x = nodes[id].x + nodes[id].pad_l + nodes[id].border_w
+    if id == root_id {
+        x = x + safe_l
+    }
+    return x
+}
+fn content_y(id: int) -> int {
+    let mut y = nodes[id].y + nodes[id].pad_t + nodes[id].border_w
+    if id == root_id {
+        y = y + safe_t
+    }
+    return y
+}
+fn inner_w(id: int) -> int {
+    let mut extra = 0
+    if id == root_id {
+        extra = safe_l + safe_r
+    }
+    return geometry.max2(nodes[id].w - box_pad_x(id) - extra, 0)
+}
+fn inner_h(id: int) -> int {
+    let mut extra = 0
+    if id == root_id {
+        extra = safe_t + safe_b
+    }
+    return geometry.max2(nodes[id].h - box_pad_y(id) - extra, 0)
+}
+
+fn clamp_w(id: int, w: int) -> int {
+    let mut v = w
+    if nodes[id].min_w >= 0 {
+        if v < nodes[id].min_w {
+            v = nodes[id].min_w
+        }
+    }
+    if nodes[id].max_w >= 0 {
+        if v > nodes[id].max_w {
+            v = nodes[id].max_w
+        }
+    }
+    return geometry.max2(v, 0)
+}
+fn clamp_h(id: int, h: int) -> int {
+    let mut v = h
+    if nodes[id].min_h >= 0 {
+        if v < nodes[id].min_h {
+            v = nodes[id].min_h
+        }
+    }
+    if nodes[id].max_h >= 0 {
+        if v > nodes[id].max_h {
+            v = nodes[id].max_h
+        }
+    }
+    return geometry.max2(v, 0)
+}
+
+fn child_align(p: int, c: int) -> int {
+    if nodes[c].align_self >= 0 {
+        return nodes[c].align_self
+    }
+    return nodes[p].align
+}
+
+fn has_w(id: int) -> int {
+    if nodes[id].ew >= 0 {
+        return 1
+    }
+    if nodes[id].w_pct >= 0 {
+        return 1
+    }
+    return 0
+}
+fn has_h(id: int) -> int {
+    if nodes[id].eh >= 0 {
+        return 1
+    }
+    if nodes[id].h_pct >= 0 {
+        return 1
+    }
+    return 0
+}
+
+/// Default w_pct is 100: fill the parent in a column. In a row the same
+/// default means content width so siblings sit side by side; `.w(px)` and
+/// any width_pct other than 100 still win.
+fn sized_w(c: int, avail: int, row: int) -> int {
+    let mut w = nodes[c].iw
+    if nodes[c].ew >= 0 {
+        w = nodes[c].ew
+    } else if nodes[c].w_pct >= 0 {
+        if row != 0 {
+            if nodes[c].w_pct == 100 {
+                w = nodes[c].iw
+            } else {
+                w = avail * nodes[c].w_pct / 100
+            }
+        } else {
+            w = avail * nodes[c].w_pct / 100
+        }
+    }
+    return clamp_w(c, w)
+}
+fn sized_h(c: int, avail: int, w: int) -> int {
+    let mut h = nodes[c].ih
+    if nodes[c].aspect_w > 0 {
+        if nodes[c].aspect_h > 0 {
+            if nodes[c].eh < 0 {
+                h = w * nodes[c].aspect_h / nodes[c].aspect_w
+            }
+        }
+    }
+    if nodes[c].h_pct >= 0 {
+        h = avail * nodes[c].h_pct / 100
+    } else if nodes[c].eh >= 0 {
+        h = nodes[c].eh
+    }
+    return clamp_h(c, h)
+}
+
+fn skip_flow(id: int) -> int {
+    if id <= 0 {
+        return 1
+    }
+    if want_show(id) == 0 {
+        return 1
+    }
+    if nodes[id].kind == 9 {
+        return 1
+    }
+    if nodes[id].pos == 1 {
+        return 1
+    }
+    return 0
+}
+
+fn fills_cross(c: int, row: int) -> int {
+    let k = nodes[c].kind
+    if k == 3 {
+        if row == 0 {
+            return 1
+        }
+        return 0
+    }
+    if k == 1 {
+        return 1
+    }
+    if k == 2 {
+        return 1
+    }
+    if k == 5 {
+        return 1
+    }
+    if k == 6 {
+        return 1
+    }
+    if k == 10 {
+        return 1
+    }
+    if k == 11 {
+        return 1
+    }
+    if k == 13 {
+        return 1
+    }
+    return 0
+}
+
+fn sz_fit(n: int) {
+    let have = szbuf.len
+    if n > have {
+        let extra = n - have
+        for i in 0..extra {
+            push(szbuf, 0)
+        }
+    }
+    let have2 = szlay.len
+    if n > have2 {
+        let extra = n - have2
+        for i in 0..extra {
+            push(szlay, 0)
+        }
+    }
+}
+
+/// Copy szbuf into szlay so nested flex layout can reuse szbuf.
+fn sz_commit(n: int) {
+    sz_fit(n)
+    let have = szlay.len
+    if n > have {
+        let extra = n - have
+        for i in 0..extra {
+            push(szlay, 0)
+        }
+    }
+    for i in 0..n {
+        szlay[i] = szbuf[i]
+    }
+}
+
+fn axis_frozen(c: int, row: int) -> int {
+    if row != 0 {
+        if nodes[c].ew >= 0 {
+            return 1
+        }
+        return 0
+    }
+    if nodes[c].eh >= 0 {
+        return 1
+    }
+    return 0
+}
+
+fn want_show(id: int) -> int {
+    if id <= 0 {
+        return 0
+    }
+    if nodes[id].show_sig <= 0 {
+        return 1
+    }
+    if nodes[id].show_sig >= sigs.len {
+        return 1
+    }
+    let vv = sigs[nodes[id].show_sig]
+    let mode = nodes[id].show_mode
+    let val = nodes[id].show_val
+    if mode == 0 {
+        if vv == 0 {
+            return 0
+        }
+        return 1
+    }
+    if mode == 1 {
+        if vv == val {
+            return 1
+        }
+        return 0
+    }
+    if mode == 2 {
+        if vv != val {
+            return 1
+        }
+        return 0
+    }
+    if mode == 3 {
+        if vv >= val {
+            return 1
+        }
+        return 0
+    }
+    if mode == 4 {
+        if vv <= val {
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+fn ease_out(t: int) -> int {
+    if t <= 0 {
+        return 0
+    }
+    if t >= 100 {
+        return 100
+    }
+    let u = 100 - t
+    return 100 - u * u / 100
+}
+
+fn hover_paint(id: int) -> int {
+    return ease_out(nodes[id].hover_amt)
+}
+
+fn hover_rgb() -> int {
+    let mut dark = 0
+    if appearance_sid > 0 {
+        if appearance_sid < sigs.len {
+            dark = sigs[appearance_sid]
+        }
+    }
+    if dark != 0 {
+        return 16777215
+    }
+    return 0
+}
+
+fn is_hot(id: int) -> int {
+    if want_show(id) == 0 {
+        return 0
+    }
+    let k = nodes[id].kind
+    if k == 9 {
+        return 0
+    }
+    if k == 11 {
+        return 0
+    }
+    if nodes[id].hover_fade != 0 {
+        return 1
+    }
+    if nodes[id].click_sig > 0 {
+        return 1
+    }
+    if nodes[id].click_fn > 0 {
+        return 1
+    }
+    if k == 4 {
+        return 1
+    }
+    if k == 7 {
+        return 1
+    }
+    if k == 8 {
+        return 1
+    }
+    if k == 13 {
+        return 1
+    }
+    return 0
+}
+
+fn ptr_in(id: int) -> int {
+    if want_show(id) == 0 {
+        return 0
+    }
+    let mut px = ptr_x
+    let mut py = ptr_y
+    let mut skip = 0
+    if nodes[id].kind == 9 {
+        skip = 1
+    }
+    let mut p = nodes[id].parent
+    for i in 0..32 {
+        if p > 0 {
+            if nodes[p].kind == 9 {
+                skip = 1
+            }
+            if skip == 0 {
+                if nodes[p].kind == 11 {
+                    px = px + nodes[p].scroll_x
+                    py = py + nodes[p].scroll_y
+                }
+            }
+            p = nodes[p].parent
+        }
+    }
+    return in_box(id, px, py)
+}
+
+fn paint_alpha(id: int) -> int {
+    let mut a = nodes[id].opacity
+    if nodes[id].pulse != 0 {
+        let mut p = (pulse_t + nodes[id].nid * 5) % 144
+        if p > 72 {
+            p = 144 - p
+        }
+        a = 8 + p * 92 / 72
+    }
+    if nodes[id].enter_fade != 0 {
+        a = a * nodes[id].show_amt / 100
+    }
+    if a < 0 {
+        a = 0
+    }
+    if a > 100 {
+        a = 100
+    }
+    return a * 255 / 100
+}
+
+fn draw_x(id: int) -> int {
+    return nodes[id].x - paint_sx
+}
+fn draw_y(id: int) -> int {
+    return nodes[id].y - paint_sy
+}
+
+fn in_box(id: int, px: int, py: int) -> int {
+    if px < nodes[id].x {
+        return 0
+    }
+    if py < nodes[id].y {
+        return 0
+    }
+    if px >= nodes[id].x + nodes[id].w {
+        return 0
+    }
+    if py >= nodes[id].y + nodes[id].h {
+        return 0
+    }
+    return 1
+}
+
+fn scroll_max(id: int) -> int {
+    return geometry.max2(nodes[id].ih - nodes[id].h, 0)
+}
+
+fn scroll_max_x(id: int) -> int {
+    return geometry.max2(nodes[id].iw - nodes[id].w, 0)
+}
+
+/// 1 if this scroll node may overflow horizontally (`scroll_xy` / overflow 3).
+fn scrolls_x(id: int) -> int {
+    if id <= 0 {
+        return 0
+    }
+    if id >= nodes.len {
+        return 0
+    }
+    if nodes[id].kind != 11 {
+        return 0
+    }
+    if nodes[id].overflow == 3 {
+        return 1
+    }
+    return 0
+}
+
+fn clamp_scroll(id: int) {
+    if id <= 0 {
+        return
+    }
+    if id >= nodes.len {
+        return
+    }
+    let mx = scroll_max_x(id)
+    let my = scroll_max(id)
+    if nodes[id].scroll_x < 0 {
+        nodes[id].scroll_x = 0
+    }
+    if nodes[id].scroll_x > mx {
+        nodes[id].scroll_x = mx
+    }
+    if nodes[id].scroll_y < 0 {
+        nodes[id].scroll_y = 0
+    }
+    if nodes[id].scroll_y > my {
+        nodes[id].scroll_y = my
+    }
+}
+
+fn bar_hide() -> int {
+    return 54
+}
+
+fn bar_on(id: int) {
+    if id <= 0 {
+        return
+    }
+    if id >= nodes.len {
+        return
+    }
+    nodes[id].bar_t = pulse_t
+    if nodes[id].bar_t == 0 {
+        nodes[id].bar_t = 1
+    }
+}
+
+fn bar_visible(id: int) -> int {
+    if id <= 0 {
+        return 0
+    }
+    if id >= nodes.len {
+        return 0
+    }
+    if nodes[id].kind != 11 {
+        return 0
+    }
+    if scroll_max(id) <= 0 {
+        return 0
+    }
+    return 1
+}
+
+fn bar_visible_x(id: int) -> int {
+    if id <= 0 {
+        return 0
+    }
+    if id >= nodes.len {
+        return 0
+    }
+    if scrolls_x(id) == 0 {
+        return 0
+    }
+    if scroll_max_x(id) <= 0 {
+        return 0
+    }
+    return 1
+}
+
+fn bar_alpha(id: int) -> int {
+    if platform.plat_overlay_scroll() != 0 {
+        return 0
+    }
+    if bar_visible(id) == 0 {
+        if bar_visible_x(id) == 0 {
+            return 0
+        }
+    }
+    return 150
+}
+
+fn bar_w() -> int {
+    return 7
+}
+
+fn bar_x(id: int, ox: int) -> int {
+    return ox + nodes[id].w - bar_w() - 3
+}
+
+fn bar_y(id: int, oy: int) -> int {
+    return oy + 4
+}
+
+fn bar_track_h(id: int) -> int {
+    let mut th = nodes[id].h - 8
+    if bar_visible_x(id) != 0 {
+        th = th - bar_w() - 2
+    }
+    return geometry.max2(th, 8)
+}
+
+fn bar_thumb_h(id: int) -> int {
+    let th = bar_track_h(id)
+    let mut thh = 32
+    if nodes[id].ih > 0 {
+        thh = geometry.max2(th * nodes[id].h / nodes[id].ih, 32)
+    }
+    if thh > th {
+        thh = th
+    }
+    return thh
+}
+
+fn bar_thumb_y(id: int, oy: int) -> int {
+    let maxs = scroll_max(id)
+    let th = bar_track_h(id)
+    let thh = bar_thumb_h(id)
+    if maxs <= 0 {
+        return bar_y(id, oy)
+    }
+    return bar_y(id, oy) + (th - thh) * nodes[id].scroll_y / maxs
+}
+
+fn bar_hx(id: int, ox: int) -> int {
+    return ox + 4
+}
+
+fn bar_hy(id: int, oy: int) -> int {
+    return oy + nodes[id].h - bar_w() - 3
+}
+
+fn bar_track_w(id: int) -> int {
+    let mut tw = nodes[id].w - 8
+    if bar_visible(id) != 0 {
+        tw = tw - bar_w() - 2
+    }
+    return geometry.max2(tw, 8)
+}
+
+fn bar_thumb_w(id: int) -> int {
+    let tw = bar_track_w(id)
+    let mut thw = 32
+    if nodes[id].iw > 0 {
+        thw = geometry.max2(tw * nodes[id].w / nodes[id].iw, 32)
+    }
+    if thw > tw {
+        thw = tw
+    }
+    return thw
+}
+
+fn bar_thumb_x(id: int, ox: int) -> int {
+    let maxs = scroll_max_x(id)
+    let tw = bar_track_w(id)
+    let thw = bar_thumb_w(id)
+    if maxs <= 0 {
+        return bar_hx(id, ox)
+    }
+    return bar_hx(id, ox) + (tw - thw) * nodes[id].scroll_x / maxs
+}
+
+fn fg_of(id: int) -> int {
+    if nodes[id].fg >= 0 {
+        return paint_rgb(nodes[id].fg)
+    }
+    return 0
+}
+
+fn bind_pct(id: int) -> int {
+    let mut v = sig_val(nodes[id].bind_sig)
+    if v < 0 {
+        v = 0
+    }
+    if v > 100 {
+        v = 100
+    }
+    return v
+}
+
+fn is_floater(id: int) -> int {
+    if id <= 0 {
+        return 0
+    }
+    if nodes[id].kind == 9 {
+        return 1
+    }
+    if nodes[id].z_index > 0 {
+        return 1
+    }
+    return 0
+}
+
+fn is_focusable(id: int) -> int {
+    if id <= 0 {
+        return 0
+    }
+    if id >= nodes.len {
+        return 0
+    }
+    if nodes[id].focusable != 0 {
+        return 1
+    }
+    if nodes[id].kind == 10 {
+        return 1
+    }
+    return 0
+}
+
+fn collect_focus(id: int) {
+    if id <= 0 {
+        return
+    }
+    if id >= nodes.len {
+        return
+    }
+    if want_show(id) == 0 {
+        return
+    }
+    if is_focusable(id) != 0 {
+        push(focus_ring, id)
+    }
+    let nk = nodes[id].kids.len
+    for i in 0..nk {
+        collect_focus(nodes[id].kids[i])
+    }
+}
+
+fn snapshot_focus() {
+    focus_ring = []int {}
+    collect_focus(root_id)
+    focus_at = -1
+    let n = focus_ring.len
+    for i in 0..n {
+        if focus_ring[i] == focus_id {
+            focus_at = i
+        }
+    }
+}
+
+fn restore_focus() {
+    focus_ring = []int {}
+    collect_focus(root_id)
+    if focus_at < 0 {
+        focus_id = 0
+        return
+    }
+    if focus_at >= focus_ring.len {
+        focus_id = 0
+        return
+    }
+    focus_id = focus_ring[focus_at]
+}
+
+fn claim_focus(id: int) {
+    if id <= 0 {
+        return
+    }
+    if id >= nodes.len {
+        return
+    }
+    if is_focusable(id) != 0 {
+        focus_id = id
+        return
+    }
+    claim_focus(nodes[id].parent)
+}
+
+fn walk_focus_chain(id: int) {
+    if id <= 0 {
+        return
+    }
+    if id >= nodes.len {
+        return
+    }
+    push(chain_nodes, id)
+    push(chain_ctxs, nodes[id].key_ctx)
+    walk_focus_chain(nodes[id].parent)
+}
+
+fn fill_focus_chain() {
+    chain_nodes = []int {}
+    chain_ctxs = []int {}
+    walk_focus_chain(focus_id)
+    let depth = chain_nodes.len
+    if depth == 0 {
+        push(chain_nodes, 0)
+        push(chain_ctxs, 0)
+        return
+    }
+    if depth < 2 {
+        return
+    }
+    let n = depth - 1
+    for k in 0..n {
+        let i = depth - 2 - k
+        if chain_ctxs[i] == 0 {
+            chain_ctxs[i] = chain_ctxs[i + 1]
+        }
+    }
+}
+
+fn focus_captures_text() -> int {
+    if focus_id <= 0 {
+        return 0
+    }
+    if focus_id >= nodes.len {
+        return 0
+    }
+    if want_show(focus_id) == 0 {
+        return 0
+    }
+    if nodes[focus_id].capture_text != 0 {
+        return 1
+    }
+    if nodes[focus_id].kind == 10 {
+        return 1
+    }
+    return 0
+}
+
+fn focus_step(back: int) -> int {
+    focus_ring = []int {}
+    collect_focus(root_id)
+    let count = focus_ring.len
+    if count == 0 {
+        return 0
+    }
+    let mut at = -1
+    for i in 0..count {
+        if focus_ring[i] == focus_id {
+            at = i
+        }
+    }
+    let mut next = 0
+    if at < 0 {
+        if back != 0 {
+            next = count - 1
+        } else {
+            next = 0
+        }
+    } else if back != 0 {
+        next = at - 1
+        if next < 0 {
+            next = count - 1
+        }
+    } else {
+        next = at + 1
+        if next >= count {
+            next = 0
+        }
+    }
+    if focus_ring[next] == focus_id {
+        return 0
+    }
+    focus_id = focus_ring[next]
+    return 1
+}
+
+fn stamp_edits() {
+    let n = nodes.len
+    let mut slot = 0
+    for i in 0..n {
+        if nodes[i].kind == 10 {
+            nodes[i].edit_slot = slot
+            slot = slot + 1
+        }
+    }
+}
+
+fn input_shown(id: int) -> string {
+    let slot = nodes[id].edit_slot
+    if slot < 0 {
+        return nodes[id].text
+    }
+    if platform.plat_edit_len(slot) > 0 {
+        return platform.plat_edit_text(slot)
+    }
+    return nodes[id].text
+}
+

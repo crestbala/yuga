@@ -1,0 +1,15 @@
+name = "Yuga"
+grammar = "yuga"
+path_suffixes = ["yuga"]
+# Queries must match the grammar compiled from extension.toml [grammars.yuga].rev.
+language_servers = ["yuga-lsp"]
+line_comments = ["// "]
+block_comment = { start = "/*", prefix = "* ", end = "*/", tab_size = 1 }
+tab_size = 4
+hard_tabs = false
+brackets = [
+    { start = "{", end = "}", close = true, newline = true },
+    { start = "(", end = ")", close = true, newline = true },
+    { start = "[", end = "]", close = true, newline = false },
+    { start = "\"", end = "\"", close = true, newline = false, not_in = ["string", "comment"] },
+]

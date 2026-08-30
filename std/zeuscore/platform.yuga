@@ -1,0 +1,36 @@
+//! platform — OS seam. Bodyless `fn`s are the link boundary (docs/boundary.md).
+//! Compiler emits `yuga_platform_plat_*` declarations only; the host / yuga_rt
+//! provides the symbols. No widget or layout logic here.
+
+fn plat_run() {}
+fn plat_headless() -> int {}
+fn plat_fill(x: int, y: int, w: int, h: int, rgb: int, radius: int) {}
+fn plat_fill_a(x: int, y: int, w: int, h: int, rgb: int, radius: int, alpha: int) {}
+fn plat_text(x: int, y: int, s: string, rgb: int, font: int) {}
+fn plat_text_int(x: int, y: int, v: int, rgb: int, font: int) {}
+fn plat_measure(s: string, px: int, w: &mut int, h: &mut int) {}
+fn plat_measure_int(v: int, px: int, w: &mut int, h: &mut int) {}
+fn plat_measure_wrap(s: string, px: int, max_w: int, w: &mut int, h: &mut int) {}
+fn plat_text_wrap(x: int, y: int, s: string, rgb: int, font: int, max_w: int) {}
+fn plat_set_window(title: string, width: int, height: int) {}
+fn plat_svg(x: int, y: int, w: int, h: int, markup: string, rgb: int, alpha: int) {}
+fn plat_save() {}
+fn plat_clip(x: int, y: int, w: int, h: int) {}
+fn plat_restore() {}
+fn plat_key_intern(name: string) -> int {}
+fn plat_key_intern_action(action: string) -> int {}
+fn plat_key_reset() {}
+fn plat_map_key(spec: string, action: string, ctx: int) {}
+fn plat_key_ev(key: int, mods: int) -> int {}
+fn plat_edit_append(slot: int, key: int) -> int {}
+fn plat_edit_back(slot: int) -> int {}
+fn plat_edit_len(slot: int) -> int {}
+fn plat_edit_text(slot: int) -> string {}
+fn plat_intern_fn(handler: fn()) -> int {}
+fn plat_invoke_fn(id: int) {}
+fn plat_overlay_scroll() -> int {}
+fn plat_inset_top() -> int {}
+fn plat_inset_right() -> int {}
+fn plat_inset_bottom() -> int {}
+fn plat_inset_left() -> int {}
+

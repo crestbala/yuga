@@ -1,0 +1,38 @@
+import "std:http"
+import "std:fmt"
+
+fn must(ok: bool) {
+    if !ok {
+        let xs = [1]int { 0 }
+        let z = xs[1]
+        fmt.println(z)
+    }
+}
+
+fn main() {
+    let a = http.put_varint(0)
+    must(a.len == 1)
+    must(a[0] == 0)
+    let b = http.put_varint(127)
+    must(b.len == 1)
+    must(b[0] == 127)
+    let c = http.put_varint(128)
+    must(c.len == 2)
+    must(c[0] == 128)
+    must(c[1] == 1)
+    let d = http.put_varint(300)
+    must(d.len == 2)
+    must(d[0] == 172)
+    must(d[1] == 2)
+    let g = http.get_varint(d, 0)
+    must(g.val == 300)
+    must(g.next == 2)
+    let framed = http.frame(d)
+    must(framed.len == 7)
+    must(framed[0] == 0)
+    must(framed[4] == 2)
+    let payload = http.unframe(framed)
+    must(payload.len == 2)
+    must(payload[0] == 172)
+    fmt.println(g.val, payload.len)
+}

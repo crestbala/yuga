@@ -1,0 +1,39 @@
+import "std:http"
+import "std:fmt"
+
+fn must(ok: bool) {
+    if !ok {
+        let xs = [1]int { 0 }
+        let z = xs[1]
+        fmt.println(z)
+    }
+}
+
+fn main() {
+    let hp = http.parse_addr("127.0.0.1:8080")
+    must(http.eq(hp.host, "127.0.0.1"))
+    must(hp.port == 8080)
+    let loc = http.parse_addr("localhost:9")
+    must(http.eq(loc.host, "localhost"))
+    must(loc.port == 9)
+    let bad = http.parse_addr("nope")
+    must(bad.port == 0)
+    let nohost = http.parse_addr(":8080")
+    must(nohost.port == 0)
+    let noport = http.parse_addr("127.0.0.1:")
+    must(noport.port == 0)
+    let req = http.client_post("127.0.0.1", 8080, "/S/M", "hi")
+    must(req[0] == 80)
+    must(req[1] == 79)
+    must(req[2] == 83)
+    must(req[3] == 84)
+    let resp = http.concat_str("HTTP/1.1 200 OK\r\n\r\n", "BODY")
+    must(http.eq(http.http_payload(resp), "BODY"))
+    let nosplit = http.http_payload("no splitter")
+    must(nosplit.len == 0)
+    let miss = http.call(http.client("256.0.0.1:9"), "Nope.Missing", "")
+    must(miss.len == 0)
+    let h2miss = http.h2_call("256.0.0.1:9", "Nope.Missing", "")
+    must(h2miss.len == 0)
+    fmt.println(hp.port, loc.host)
+}

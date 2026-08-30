@@ -1,0 +1,17 @@
+//! Canvas2D counter UI. Same Zeus tree as iOS, macOS, and Android; HTTP is gRPC-Web.
+//!
+//! `main` POSTs `Counter.Hello` and `Counter.Stats` (protobuf) through
+//! `http.client("").call`, then passes the decoded fields into `screen.Screen`.
+//! Vite serves this wasm and proxies `/Counter` to `:8080`.
+
+import "std:zeus"
+import "std:http"
+import "../backend/api.yuga"
+import "../screen.yuga"
+
+fn main() {
+    let c = http.client("")
+    let hello = api.decode_HelloResp(c.call(api.hello_rpc(), api.encode_HelloReq(HelloReq {})))
+    let stats = api.decode_StatsResp(c.call(api.stats_rpc(), api.encode_StatsReq(StatsReq {})))
+    screen.Screen("API", "Canvas2D", stats.users, stats.jobs, stats.uptime, stats.load, hello.count).run()
+}

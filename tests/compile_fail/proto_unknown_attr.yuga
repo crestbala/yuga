@@ -1,0 +1,7 @@
+#[foo]
+struct X {
+    n: int,
+}
+
+fn main() {
+}

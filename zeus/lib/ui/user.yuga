@@ -1,0 +1,38 @@
+import "std:zeus"
+import "avatar.yuga"
+import "../theme/spacing.yuga"
+import "../theme/colors.yuga"
+import "../theme/scale.yuga"
+
+struct UserProps {
+    initials: string,
+    name: string,
+    role: string,
+    color: int,
+}
+
+struct UserParts {
+    n: Node,
+    av: Node,
+    name: Node,
+    role: Node,
+}
+
+fn style_user(p: UserParts) {
+    let size = p.n.size_of()
+    let variant = p.n.look_of()
+    p.n.gap(scale.gap_of(size)).align(zeus.flex_center()).shrink(0)
+    p.av.with_size(size).with_look(variant)
+    p.name.fg(colors.text()).font(scale.font_px(size))
+    p.role.fg(colors.muted()).font(scale.caption_px(size))
+}
+
+fn User(p: UserProps) -> Node {
+    let n = zeus.row().with_size(scale.md()).with_look(scale.solid())
+    let av = n.add(avatar.Avatar(AvatarProps { initials: p.initials, color: p.color }))
+    let col = n.add(zeus.col().gap(spacing.space_2xs()).shrink(0))
+    let nm = col.add(zeus.label(p.name))
+    let rl = col.add(zeus.label(p.role))
+    n.styled(|| { style_user(UserParts { n: n, av: av, name: nm, role: rl }) })
+    return n
+}

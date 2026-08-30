@@ -1,0 +1,12 @@
+import "std:zeus"
+import "../theme/spacing.yuga"
+import "../theme/colors.yuga"
+
+struct SkeletonProps {
+    width: int,
+    height: int,
+}
+
+fn Block(p: SkeletonProps) -> Node {
+    return zeus.box().w(p.width).h(p.height).bg(colors.card()).radius(spacing.control_radius())
+}

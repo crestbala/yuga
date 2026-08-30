@@ -1,0 +1,7 @@
+#[proto]
+struct Bad {
+    ok: bool,
+}
+
+fn main() {
+}

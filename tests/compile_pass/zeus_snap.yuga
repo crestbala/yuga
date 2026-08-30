@@ -1,0 +1,17 @@
+import "std:fmt"
+import "std:zeus"
+
+fn main() {
+    let count = zeus.signal(0)
+    zeus.snapshot(320, 200, || {
+        let mut n = zeus.stack().class("container")
+        n = n.child(zeus.text("Hello").style(zeus.heading()))
+        n = n.child(zeus.button("Click").on_click_inc(count))
+        n
+    })
+    if zeus.draw_count() < 1 {
+        let z = 0
+        let boom = 1 / z
+        fmt.println(boom)
+    }
+}

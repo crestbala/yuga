@@ -1,0 +1,58 @@
+import "std:http"
+import "std:fmt"
+
+fn must(ok: bool) {
+    if !ok {
+        let xs = [1]int { 0 }
+        let z = xs[1]
+        fmt.println(z)
+    }
+}
+
+fn st(raw: string) -> int {
+    let r = http.parse_http11(raw)
+    return r.err
+}
+
+fn main() {
+    let d = http.pct_decode("ok")
+    must(d.ok == 1)
+    must(http.eq(d.val, "ok"))
+    let pct = http.pct_decode("%2e%2e")
+    must(pct.ok == 1)
+    must(pct.val[0] == 46)
+    must(pct.val[1] == 46)
+    let nul = http.pct_decode("a%00b")
+    must(nul.ok == 0)
+    let np = http.norm_path("/public/ok.txt")
+    must(np.ok == 1)
+    must(http.eq(np.val, "/public/ok.txt"))
+    let dot = http.norm_path("/public/../ok.txt")
+    must(dot.ok == 0)
+    let enc = http.norm_path("/public/%2e%2e/ok.txt")
+    must(enc.ok == 0)
+    let ok = http.parse_http11("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+    must(ok.err == 0)
+    must(http.eq(ok.method, "GET"))
+    must(http.eq(ok.path, "/"))
+    must(http.eq(ok.host, "127.0.0.1"))
+    must(st("GET /missing HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n") == 0)
+    must(st("GET /public/../ok.txt HTTP/1.1\r\nHost: x\r\n\r\n") == 400)
+    must(st("GET /public/%2e%2e/ok.txt HTTP/1.1\r\nHost: x\r\n\r\n") == 400)
+    must(st("GET /%2e%2e/%2e%2e/etc/passwd HTTP/1.1\r\nHost: x\r\n\r\n") == 400)
+    must(st("GET /public/ok.txt%00.txt HTTP/1.1\r\nHost: x\r\n\r\n") == 400)
+    must(st("TRACE / HTTP/1.1\r\nHost: x\r\n\r\n") == 405)
+    must(st("CONNECT 127.0.0.1:80 HTTP/1.1\r\nHost: x\r\n\r\n") == 405)
+    must(st("GET / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n") == 400)
+    must(st("POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 4\r\nTransfer-Encoding: chunked\r\n\r\nabcd") == 400)
+    must(st("GET / HTTP/1.1\r\n\r\n") == 400)
+    must(st("GET / HTTP/1.1\r\nHost: x\r\nX-A: one\r\n two\r\n\r\n") == 400)
+    must(st("GET / HTTP/1.1\r\nHost: x\r\nX-A: one\r\nX-B: two\r\n\r\nGET /admin HTTP/1.1\r\nHost: x\r\n\r\n") == 400)
+    must(st("POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 70000\r\n\r\n") == 413)
+    let post = http.parse_http11("POST /S/M HTTP/1.1\r\nHost: x\r\nContent-Type: application/grpc-web+proto\r\nContent-Length: 2\r\n\r\nab")
+    must(post.err == 0)
+    must(http.eq(post.path, "/S/M"))
+    must(post.body.len == 2)
+    must(post.body[0] == 97)
+    fmt.println(ok.path, post.err)
+}

@@ -1,0 +1,23 @@
+import "std:maya"
+
+fn main() {
+    maya.init()
+    maya.window("Maya — studio", 960, 540)
+    maya.clear(maya.rgb(6, 8, 16))
+    maya.ambient(maya.rgb(28, 22, 40))
+    maya.fov(55000)
+    maya.look(0, 1400, 4600, 0, 200, 0)
+
+    maya.sphere(20).add().scale(360).pos(200, 2400, -900).tint(maya.rgb(255, 228, 140)).glow(256)
+
+    let core = maya.sphere(24).add().scale(620).pos(0, 0, 0).tint(maya.rgb(62, 132, 214))
+    maya.sphere(10).add().scale(110).tint(maya.rgb(210, 210, 220)).orbit(core, 1100, 4500)
+
+    maya.sphere(18).add().scale(340).pos(-1500, -180, 700).tint(maya.rgb(214, 72, 58))
+    maya.sphere(16).add().scale(280).pos(1700, 80, 350).tint(maya.rgb(64, 186, 128))
+    maya.sphere(14).add().scale(200).pos(520, 980, -1100).tint(maya.rgb(240, 196, 72))
+    maya.sphere(14).add().scale(240).pos(-720, 520, 1300).tint(maya.rgb(168, 122, 214))
+    maya.sphere(12).add().scale(140).pos(200, -420, 900).tint(maya.rgb(90, 110, 140))
+
+    maya.run()
+}

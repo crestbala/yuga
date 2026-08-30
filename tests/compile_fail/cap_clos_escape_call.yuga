@@ -1,0 +1,8 @@
+fn id(f: fn(int) -> int) -> fn(int) -> int {
+    return f
+}
+
+fn main() {
+    let n = 1
+    let g = id(fn(x: int) -> int { return x + n })
+}

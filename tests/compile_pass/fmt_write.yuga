@@ -1,0 +1,10 @@
+import "std:fmt"
+
+fn main() {
+    fmt.write("n=")
+    fmt.write_int(42)
+    fmt.write(" ")
+    fmt.write_bool(true)
+    fmt.writeln()
+    fmt.println(-1, "ok")
+}

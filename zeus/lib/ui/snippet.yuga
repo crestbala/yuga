@@ -1,0 +1,13 @@
+import "std:zeus"
+import "../theme/spacing.yuga"
+import "../theme/colors.yuga"
+
+struct SnippetProps {
+    text: string,
+}
+
+fn Code(p: SnippetProps) -> Node {
+    return zeus.col().bg(colors.card()).pad(spacing.space_md()).gap(spacing.space_xs()).radius(spacing.button_radius()).child(
+        zeus.label(p.text).fg(colors.muted()).font(12).flex_wrap(),
+    )
+}

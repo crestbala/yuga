@@ -1,0 +1,66 @@
+import "std:zeus"
+import "../theme/spacing.yuga"
+import "icons.yuga"
+import "../theme/colors.yuga"
+import "../theme/scale.yuga"
+
+struct PaginationProps {
+    page: Signal,
+    last: int,
+}
+
+fn PageAt(page: Signal, n: int, size: int) -> Node {
+    let lab = zeus.signal(n)
+    let d = scale.hit_of(size)
+    let wrap = zeus.row().gap(0).shrink(0)
+    wrap.child(zeus.button("0").bind(lab).bg(colors.text()).fg(colors.app()).w(d).h(d).padX(0).padY(0).radius(scale.radius_of(size)).center().font(scale.font_px(size)).show_eq(page, n).on_click_set(page, n).shrink(0))
+    wrap.child(zeus.button("0").bind(lab).bg(-1).fg(colors.muted()).w(d).h(d).padX(0).padY(0).radius(scale.radius_of(size)).center().font(scale.font_px(size)).show_ne(page, n).on_click_set(page, n).shrink(0))
+    return wrap
+}
+
+fn Page(page: Signal, n: int) -> Node {
+    return PageAt(page, n, scale.md())
+}
+
+struct PaginationSpec {
+    n: Node,
+    page: Signal,
+    last: int,
+}
+
+fn style_pages(n: Node) {
+    n.gap(scale.gap_of(n.size_of())).align_self(zeus.flex_start())
+}
+
+fn build_pages(p: PaginationSpec) {
+    let size = p.n.size_of()
+    p.n.key("right", "page.next").key("left", "page.prev").focusable()
+    p.n.on_range("page.next", p.page, 1, 1, p.last)
+    p.n.on_range("page.prev", p.page, -1, 1, p.last)
+    let d = scale.hit_of(size)
+    let row = p.n.add(zeus.row().gap(spacing.space_xs()).align(zeus.flex_center()).flex_wrap())
+    row.child(icons.Hit(HitProps { markup: icons.alt_arrow_left(), color: colors.muted(), hit: d, size: scale.icon_of(size) }).radius(scale.radius_of(size)).show_eq(p.page, 1))
+    row.child(icons.Hit(HitProps { markup: icons.alt_arrow_left(), color: colors.text(), hit: d, size: scale.icon_of(size) }).radius(scale.radius_of(size)).show_ne(p.page, 1).on_click_add(p.page, -1))
+    row.each(zeus.range(1, p.last + 1), |i| {
+        PageAt(p.page, i, size)
+    })
+    row.child(icons.Hit(HitProps { markup: icons.alt_arrow_right(), color: colors.muted(), hit: d, size: scale.icon_of(size) }).radius(scale.radius_of(size)).show_eq(p.page, p.last))
+    row.child(icons.Hit(HitProps { markup: icons.alt_arrow_right(), color: colors.text(), hit: d, size: scale.icon_of(size) }).radius(scale.radius_of(size)).show_ne(p.page, p.last).on_click_add(p.page, 1))
+    let tot = zeus.signal(p.last)
+    let cap = p.n.add(zeus.row().gap(spacing.space_snug()).align(zeus.flex_center()))
+    cap.txt("page", colors.muted(), scale.caption_px(size))
+    cap.bound(p.page, colors.muted(), scale.caption_px(size))
+    cap.txt("of", colors.muted(), scale.caption_px(size))
+    cap.bound(tot, colors.muted(), scale.caption_px(size))
+}
+
+fn BarAt(p: PaginationProps, size: int) -> Node {
+    let n = zeus.col().with_size(size).with_look(scale.soft())
+    n.styled(|| { style_pages(n) })
+    build_pages(PaginationSpec { n: n, page: p.page, last: p.last })
+    return n
+}
+
+fn Bar(p: PaginationProps) -> Node {
+    return BarAt(p, scale.md())
+}

@@ -1,0 +1,32 @@
+import "std:zeus"
+import "card.yuga"
+import "../theme/spacing.yuga"
+import "../theme/colors.yuga"
+
+struct MetricProps {
+    title: string,
+    value: string,
+    color: int,
+}
+
+struct LiveMetricProps {
+    title: string,
+    sig: Signal,
+    color: int,
+}
+
+fn Static(p: MetricProps) -> Node {
+    let n = card.Card()
+    n.child(zeus.box().w(spacing.tile()).h(spacing.space_xs()).bg(p.color).radius(spacing.space_2xs()))
+    n.txt(p.title, colors.label(), 12)
+    n.txt(p.value, colors.text(), 26)
+    return n
+}
+
+fn Live(p: LiveMetricProps) -> Node {
+    let n = card.Card()
+    n.child(zeus.box().w(spacing.tile()).h(spacing.space_xs()).bg(p.color).radius(spacing.space_2xs()))
+    n.txt(p.title, colors.label(), 12)
+    n.bound(p.sig, colors.text(), 26)
+    return n
+}

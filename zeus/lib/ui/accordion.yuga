@@ -1,0 +1,40 @@
+import "std:zeus"
+import "icons.yuga"
+import "../theme/colors.yuga"
+import "../theme/scale.yuga"
+import "look.yuga"
+
+struct AccordionProps {
+    title: string,
+    body: string,
+    open: Signal,
+}
+
+struct Acc {
+    n: Node,
+    trig: Node,
+    title: Node,
+}
+
+fn style_acc(p: Acc) {
+    let size = p.n.size_of()
+    look.field(p.n, p.n.look_of()).padX(scale.pad_x(size)).padY(scale.pad_y(size)).gap(scale.gap_of(size)).radius(scale.radius_of(size))
+    p.trig.gap(scale.gap_of(size)).align(zeus.flex_center())
+    p.title.fg(colors.text()).font(scale.font_px(size)).grow(1)
+}
+
+fn Item(p: AccordionProps) -> Node {
+    let n = zeus.col().with_size(scale.md()).with_look(scale.ghost())
+    n.key("enter", "accordion.toggle").key("space", "accordion.toggle").focusable()
+    n.on_key_toggle("accordion.toggle", p.open)
+    let size = n.size_of()
+    let trig = n.add(zeus.row().align(zeus.flex_center()).on_click_toggle(p.open).hover_fade())
+    trig.child(icons.Hit(HitProps { markup: icons.alt_arrow_right(), color: colors.muted(), hit: scale.icon_of(size), size: scale.icon_of(size) }).show_eq(p.open, 0))
+    trig.child(icons.Hit(HitProps { markup: icons.alt_arrow_down(), color: colors.muted(), hit: scale.icon_of(size), size: scale.icon_of(size) }).show_ne(p.open, 0))
+    let lab = trig.add(zeus.label(p.title).grow(1))
+    n.child(zeus.when(p.open, || {
+        zeus.col().enter_fade().child(zeus.label(p.body).fg(colors.muted()).font(scale.font_px(size)).flex_wrap())
+    }))
+    n.styled(|| { style_acc(Acc { n: n, trig: trig, title: lab }) })
+    return n
+}

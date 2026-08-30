@@ -1,0 +1,12 @@
+{
+  "name": "zeus-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:kit": "ZEUS_APP=apps/kit vite"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5"
+  }
+}

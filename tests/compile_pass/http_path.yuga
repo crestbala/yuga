@@ -1,0 +1,36 @@
+import "std:http"
+import "std:fmt"
+
+fn must(ok: bool) {
+    if !ok {
+        let xs = [1]int { 0 }
+        let z = xs[1]
+        fmt.println(z)
+    }
+}
+
+fn main() {
+    must(http.eq(http.path_to_name("/Counter/Increment"), "Counter.Increment"))
+    must(http.eq(http.name_to_path("Counter.Increment"), "/Counter/Increment"))
+    must(http.eq(http.path_to_name("/a/b/c"), "a/b.c"))
+    must(http.eq(http.name_to_path("a.b.c"), "/a.b/c"))
+    let bad_path = http.path_to_name("/x")
+    must(bad_path.len == 0)
+    let bad_slash = http.path_to_name("Counter/Increment")
+    must(bad_slash.len == 0)
+    let bad_name = http.name_to_path("Increment")
+    must(bad_name.len == 0)
+    let d = http.put_varint(300)
+    let s = http.string_of(d)
+    let framed = http.frame_str(s)
+    must(framed.len == 7)
+    must(framed[0] == 0)
+    must(framed[4] == 2)
+    let back = http.unframe_str(framed)
+    must(http.eq(back, s))
+    let g = http.grpc_web_frame("", 12)
+    must(g[0] == 0)
+    must(g[5] == 128)
+    must(g.len == 27)
+    fmt.println(http.path_to_name("/Counter/Increment"), g.len)
+}

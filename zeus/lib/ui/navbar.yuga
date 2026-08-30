@@ -1,0 +1,27 @@
+import "std:zeus"
+import "switch.yuga"
+import "../theme/spacing.yuga"
+import "../theme/colors.yuga"
+
+struct NavbarProps {
+    brand: string,
+    a: string,
+    b: string,
+    c: string,
+    appearance: string,
+}
+
+fn Bar(p: NavbarProps) -> Node {
+    let n = zeus.col().gap(0)
+    let top = n.add(zeus.row().gap(spacing.space_lg()).h(spacing.titlebar_height()).align(zeus.flex_center()).flex_wrap())
+    top.child(zeus.box().w(spacing.space_sm()).h(spacing.status_strip_height() - spacing.space_xs()).bg(colors.text()).radius(spacing.space_xs()))
+    top.txt(p.brand, colors.text(), 16)
+    top.txt(p.a, colors.muted(), 13)
+    top.txt(p.b, colors.text(), 13)
+    top.txt(p.c, colors.muted(), 13)
+    top.child(zeus.spacer())
+    top.txt(p.appearance, colors.muted(), 13)
+    top.child(switch.Switch(SwitchProps { sig: zeus.appearance() }))
+    n.child(zeus.box().h(1).bg(colors.line()))
+    return n
+}

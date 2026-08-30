@@ -1,0 +1,12 @@
+import fmt
+
+fn main() {
+    fmt.println(true)
+    fmt.println(false)
+    fmt.println(1 < 2)
+    fmt.println(2 < 1)
+    fmt.println(1 < 2 && 3 > 0)
+    fmt.println(1 < 2 && false)
+    fmt.println(false || true)
+    fmt.println(!false)
+}

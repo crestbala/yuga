@@ -1,0 +1,24 @@
+import "std:fmt"
+
+fn make() -> fn(int) -> int {
+    let n = 1
+    return |x| { x + n }
+}
+
+fn id(f: fn(int) -> int) -> fn(int) -> int {
+    return f
+}
+
+struct Holder {
+    f: fn(int) -> int,
+}
+
+fn main() {
+    let a = make()
+    fmt.println(a(10))
+    let n = 3
+    let b = id(|x| { x + n })
+    fmt.println(b(4))
+    let h = Holder { f: |x| { x * n } }
+    fmt.println(h.f(5))
+}

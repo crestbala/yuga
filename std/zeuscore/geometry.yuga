@@ -1,0 +1,94 @@
+//! geometry — sizes, colors, flex/overflow constants (GPUI geometry.rs / color.rs).
+
+fn max2(a: int, b: int) -> int {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+fn flex_start() -> int {
+    return 0
+}
+
+fn flex_center() -> int {
+    return 1
+}
+
+fn flex_end() -> int {
+    return 2
+}
+
+fn flex_between() -> int {
+    return 3
+}
+
+fn flex_around() -> int {
+    return 4
+}
+
+fn flex_evenly() -> int {
+    return 5
+}
+
+fn flex_stretch() -> int {
+    return 6
+}
+
+fn pos_relative() -> int {
+    return 0
+}
+
+fn pos_absolute() -> int {
+    return 1
+}
+
+fn overflow_visible() -> int {
+    return 0
+}
+
+fn overflow_hidden() -> int {
+    return 1
+}
+
+/// Vertical auto on a `scroll()` node (page container).
+fn overflow_scroll() -> int {
+    return 2
+}
+
+/// Both-axis auto. `zeus.scroll_xy()` sets this; tables use it so a narrow
+/// viewport can show a horizontal bar without the page scrolling sideways.
+fn overflow_auto() -> int {
+    return 3
+}
+
+fn rgb(r: int, g: int, b: int) -> int {
+    return r * 65536 + g * 256 + b
+}
+
+fn min2(a: int, b: int) -> int {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+fn fit_avail(w: int, avail: int) -> int {
+    if avail < 0 {
+        return 0
+    }
+    if w > avail {
+        return avail
+    }
+    return w
+}
+
+fn cross_origin(al: int, origin: int, inner: int, size: int) -> int {
+    if al == 1 {
+        return origin + max2(inner - size, 0) / 2
+    }
+    if al == 2 {
+        return origin + max2(inner - size, 0)
+    }
+    return origin
+}

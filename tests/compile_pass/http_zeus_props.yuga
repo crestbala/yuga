@@ -1,0 +1,44 @@
+import "std:fmt"
+import "std:http"
+import "std:zeus"
+
+#[proto]
+struct HelloReq {
+}
+
+#[proto]
+struct HelloResp {
+    count: int,
+}
+
+fn Panel(initial: int) -> Node {
+    zeus.col()
+        .child(zeus.label("count").bind_n(initial).font(18))
+}
+
+fn fail() {
+    let z = 0
+    fmt.println(1 / z)
+}
+
+fn main() {
+    let app = http.app()
+    app.rpc("Counter.Hello", |body| {
+        let req = decode_HelloReq(body)
+        encode_HelloResp(HelloResp { count: 7 })
+    })
+    let out = http.dispatch(app, "Counter.Hello", encode_HelloReq(HelloReq {}))
+    let hello = decode_HelloResp(out)
+    let initial = hello.count
+    if initial < 7 {
+        fail()
+    }
+    if 7 < initial {
+        fail()
+    }
+    Panel(initial).mount("Zeus", 480, 320).run()
+    zeus.engine_paint()
+    if zeus.draw_count() < 1 {
+        fail()
+    }
+}

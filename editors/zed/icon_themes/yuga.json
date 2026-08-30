@@ -1,0 +1,27 @@
+{
+  "$schema": "https://zed.dev/schema/icon_themes/v0.3.0.json",
+  "name": "Yuga",
+  "author": "Yuga",
+  "themes": [
+    {
+      "name": "Yuga",
+      "appearance": "dark",
+      "file_suffixes": {
+        "yuga": "yuga"
+      },
+      "file_icons": {
+        "yuga-file": { "path": "./icons/yuga.svg" }
+      }
+    },
+    {
+      "name": "Yuga",
+      "appearance": "light",
+      "file_suffixes": {
+        "yuga": "yuga-file"
+      },
+      "file_icons": {
+        "yuga-file": { "path": "./icons/yuga-file.svg" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+import "std:maya"
+import "std:fmt"
+
+fn main() {
+    fmt.println(maya.sin(0), maya.sin(256), maya.sin(512), maya.sin(768))
+    fmt.println(maya.cos(0), maya.cos(256), maya.cos(512), maya.cos(768))
+    maya.init()
+    maya.window("maya", 160, 90)
+    let sun = maya.sphere(16).add().scale(500).tint(maya.rgb(255, 221, 102)).glow(256)
+    maya.look(0, 800, 2800, 0, 0, 0)
+    maya.run()
+}

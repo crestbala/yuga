@@ -1,0 +1,24 @@
+import "std:zeus"
+
+fn Readout(n: int) -> Node {
+    return zeus.text("").bind_n(n)
+}
+
+fn CounterPanel(initial: int) -> Node {
+    let mut count = initial
+    zeus.col()
+        .class("container")
+        .child((
+            zeus.text("Counter").style(zeus.heading()),
+            zeus.row().gap(8).child((
+                zeus.button("+1").on(zeus.click(), || { count = count + 1 }),
+                Readout(count),
+            )),
+        ))
+}
+
+fn main() {
+    zeus.app("Counter", 400, 240, || {
+        CounterPanel(0)
+    })
+}

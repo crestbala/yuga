@@ -1,0 +1,106 @@
+//! Protobuf varint and gRPC 5-byte framing. Bytes are 0..255 in `[]int`.
+//! `http.put_varint` is the proto3 codec (signed bits); this copy is the
+//! non-negative helper used by `frame` tests.
+
+/// Decoded varint and the index after it.
+struct Varint {
+    val: int,
+    next: int,
+}
+
+/// Encode `v` as a proto3 varint. `v < 0` is stored as 0.
+fn put_varint(v: int) -> []int {
+    let mut out = []int {}
+    let mut u = v
+    if u < 0 {
+        u = 0
+    }
+    let mut more = 1
+    for k in 0..10 {
+        if more == 1 {
+            let b = u % 128
+            u = u / 128
+            if u == 0 {
+                out.push(b)
+                more = 0
+            }
+            if u != 0 {
+                out.push(b + 128)
+            }
+        }
+    }
+    return out
+}
+
+/// Read a varint starting at `i`. Truncated input yields `val: 0`.
+fn get_varint(buf: &[]int, i: int) -> Varint {
+    let mut n = 0
+    let mut shift = 1
+    let mut pos = i
+    let mut done = 0
+    let mut val = 0
+    for k in 0..10 {
+        if done == 0 {
+            if pos >= buf.len {
+                done = 1
+            }
+            if done == 0 {
+                let b = buf[pos]
+                pos += 1
+                n += (b % 128) * shift
+                if b < 128 {
+                    val = n
+                    done = 1
+                }
+                if b >= 128 {
+                    shift *= 128
+                }
+            }
+        }
+    }
+    if done == 0 {
+        val = n
+    }
+    return Varint { val: val, next: pos }
+}
+
+fn push_u32be(out: &mut []int, n: int) {
+    out.push(n / 16777216)
+    out.push((n / 65536) % 256)
+    out.push((n / 256) % 256)
+    out.push(n % 256)
+}
+
+/// gRPC data frame: 1-byte compressed flag (0) + 4-byte big-endian length + payload.
+fn frame(payload: &[]int) -> []int {
+    let mut out = []int {}
+    out.push(0)
+    push_u32be(out, payload.len)
+    for i in 0..payload.len {
+        out.push(payload[i])
+    }
+    return out
+}
+
+/// Strip a gRPC data frame header. Short input yields an empty buffer.
+fn unframe(buf: &[]int) -> []int {
+    let mut out = []int {}
+    if buf.len >= 5 {
+        let n = buf[1] * 16777216 + buf[2] * 65536 + buf[3] * 256 + buf[4]
+        let mut i = 5
+        let mut left = n
+        for k in 0..n {
+            if left > 0 {
+                if i < buf.len {
+                    out.push(buf[i])
+                    i += 1
+                    left -= 1
+                }
+                if i >= buf.len {
+                    left = 0
+                }
+            }
+        }
+    }
+    return out
+}

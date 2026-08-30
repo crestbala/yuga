@@ -1,0 +1,9 @@
+import "std:zeus"
+import "colors.yuga"
+import "spacing.yuga"
+
+// App chrome: window + a vertical-only page scroller (no horizontal bar).
+fn page(title: string, width: int, height: int) -> Node {
+    zeus.window(title, width, height)
+    return zeus.root(zeus.scroll().bg(colors.app()).pad(spacing.page()).gap(spacing.section()))
+}

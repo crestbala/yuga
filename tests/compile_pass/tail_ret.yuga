@@ -1,0 +1,21 @@
+import "std:fmt"
+
+fn add1(n: int) -> int {
+    n + 1
+}
+
+fn fail() {
+    let z = 0
+    fmt.println(1 / z)
+}
+
+fn main() {
+    let v = add1(1)
+    if v < 2 {
+        fail()
+    }
+    if 2 < v {
+        fail()
+    }
+    fmt.println("tail")
+}

@@ -1,0 +1,40 @@
+import "std:zeus"
+import "../theme/spacing.yuga"
+import "../theme/colors.yuga"
+import "../theme/scale.yuga"
+import "look.yuga"
+
+struct AlertProps {
+    title: string,
+    body: string,
+    color: int,
+}
+
+struct AlertParts {
+    n: Node,
+    bar: Node,
+    copy: Node,
+    title: Node,
+    body: Node,
+    color: int,
+}
+
+fn style_alert(p: AlertParts) {
+    let size = p.n.size_of()
+    let variant = p.n.look_of()
+    look.paint(p.n, variant, p.color).padX(scale.surface_x(size)).padY(scale.surface_y(size)).gap(scale.gap_of(size)).radius(scale.radius_of(size)).align(zeus.flex_stretch())
+    p.bar.w(spacing.space_xs()).bg(p.color).radius(spacing.space_2xs()).shrink(0)
+    p.copy.gap(scale.gap_of(size)).grow(1).align_self(zeus.flex_start())
+    p.title.fg(colors.text()).font(scale.font_px(size) + 1).shrink(0)
+    p.body.fg(colors.muted()).font(scale.font_px(size)).flex_wrap().shrink(0)
+}
+
+fn Banner(p: AlertProps) -> Node {
+    let n = zeus.row().with_size(scale.md()).with_look(scale.soft())
+    let bar = n.add(zeus.box())
+    let copy = n.add(zeus.col().grow(1).align_self(zeus.flex_start()))
+    let t = copy.add(zeus.label(p.title))
+    let b = copy.add(zeus.label(p.body))
+    n.styled(|| { style_alert(AlertParts { n: n, bar: bar, copy: copy, title: t, body: b, color: p.color }) })
+    return n
+}

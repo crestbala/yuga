@@ -1,0 +1,572 @@
+//! scene — GPUI-style draw list. Paint records primitives; present() submits
+//! them through platform (Cocoa 2D fill/text, not a GPU).
+
+import "arena.yuga"
+import "geometry.yuga"
+import "platform.yuga"
+
+struct Draw {
+    kind: int,
+    x: int,
+    y: int,
+    w: int,
+    h: int,
+    rgb: int,
+    radius: int,
+    alpha: int,
+    font: int,
+    text: string,
+    value: int,
+}
+
+let mut draws: []Draw = []Draw {}
+
+fn emit(kind: int, x: int, y: int, w: int, h: int, rgb: int, radius: int, alpha: int, font: int, text: string, value: int) {
+    push(draws, Draw {
+        kind: kind, x: x, y: y, w: w, h: h,
+        rgb: rgb, radius: radius, alpha: alpha, font: font,
+        text: text, value: value,
+    })
+}
+
+fn fill(x: int, y: int, w: int, h: int, rgb: int, radius: int) {
+    emit(0, x, y, w, h, rgb, radius, 255, 0, "", 0)
+}
+
+fn fill_a(x: int, y: int, w: int, h: int, rgb: int, radius: int, alpha: int) {
+    emit(1, x, y, w, h, rgb, radius, alpha, 0, "", 0)
+}
+
+fn text(x: int, y: int, s: string, rgb: int, font: int) {
+    emit(2, x, y, 0, 0, rgb, 0, 255, font, s, 0)
+}
+
+fn text_int(x: int, y: int, v: int, rgb: int, font: int) {
+    emit(3, x, y, 0, 0, rgb, 0, 255, font, "", v)
+}
+
+fn text_wrap(x: int, y: int, s: string, rgb: int, font: int, max_w: int) {
+    emit(4, x, y, max_w, 0, rgb, 0, 255, font, s, 0)
+}
+
+fn svg(x: int, y: int, w: int, h: int, markup: string, rgb: int, alpha: int) {
+    emit(5, x, y, w, h, rgb, 0, alpha, 0, markup, 0)
+}
+
+fn save() {
+    emit(6, 0, 0, 0, 0, 0, 0, 0, 0, "", 0)
+}
+
+fn clip(x: int, y: int, w: int, h: int) {
+    emit(7, x, y, w, h, 0, 0, 0, 0, "", 0)
+}
+
+fn restore() {
+    emit(8, 0, 0, 0, 0, 0, 0, 0, 0, "", 0)
+}
+
+fn present() {
+    let n = draws.len
+    for i in 0..n {
+        let d = draws[i]
+        if d.kind == 0 {
+            platform.plat_fill(d.x, d.y, d.w, d.h, d.rgb, d.radius)
+        } else if d.kind == 1 {
+            platform.plat_fill_a(d.x, d.y, d.w, d.h, d.rgb, d.radius, d.alpha)
+        } else if d.kind == 2 {
+            platform.plat_text(d.x, d.y, d.text, d.rgb, d.font)
+        } else if d.kind == 3 {
+            platform.plat_text_int(d.x, d.y, d.value, d.rgb, d.font)
+        } else if d.kind == 4 {
+            platform.plat_text_wrap(d.x, d.y, d.text, d.rgb, d.font, d.w)
+        } else if d.kind == 5 {
+            platform.plat_svg(d.x, d.y, d.w, d.h, d.text, d.rgb, d.alpha)
+        } else if d.kind == 6 {
+            platform.plat_save()
+        } else if d.kind == 7 {
+            platform.plat_clip(d.x, d.y, d.w, d.h)
+        } else if d.kind == 8 {
+            platform.plat_restore()
+        }
+    }
+}
+
+fn prepaint() {
+    arena.paint_sy = 0
+    arena.paint_sx = 0
+}
+
+fn paint_hover_wash(id: int) {
+    let t = arena.hover_paint(id)
+    if t <= 0 {
+        return
+    }
+    fill_a(arena.draw_x(id), arena.draw_y(id), arena.nodes[id].w, arena.nodes[id].h, arena.hover_rgb(), arena.nodes[id].radius, t * 36 / 100)
+}
+
+fn paint_fill_box(id: int) {
+    let mut x = arena.draw_x(id)
+    let mut y = arena.draw_y(id)
+    let mut w = arena.nodes[id].w
+    let mut h = arena.nodes[id].h
+    let a = arena.paint_alpha(id)
+    if arena.nodes[id].bg < 0 {
+        paint_hover_wash(id)
+        return
+    }
+    let mut inner_r = arena.nodes[id].radius
+    if arena.nodes[id].border_w > 0 {
+        if arena.nodes[id].border_c >= 0 {
+            let bc = arena.paint_rgb(arena.nodes[id].border_c)
+            if a < 255 {
+                fill_a(x, y, w, h, bc, arena.nodes[id].radius, a)
+            } else {
+                fill(x, y, w, h, bc, arena.nodes[id].radius)
+            }
+            x = x + arena.nodes[id].border_w
+            y = y + arena.nodes[id].border_w
+            w = geometry.max2(w - arena.nodes[id].border_w * 2, 0)
+            h = geometry.max2(h - arena.nodes[id].border_w * 2, 0)
+            inner_r = geometry.max2(arena.nodes[id].radius - arena.nodes[id].border_w, 0)
+        }
+    }
+    let rgb = arena.paint_rgb(arena.nodes[id].bg)
+    if a < 255 {
+        fill_a(x, y, w, h, rgb, inner_r, a)
+    } else {
+        fill(x, y, w, h, rgb, inner_r)
+    }
+    paint_hover_wash(id)
+}
+
+fn paint_input(id: int) {
+    let x = arena.draw_x(id)
+    let y = arena.draw_y(id)
+    let w = arena.nodes[id].w
+    let h = arena.nodes[id].h
+    let tx = x + arena.nodes[id].pad_l + arena.nodes[id].border_w
+    let ty = y + geometry.max2(h - arena.nodes[id].th, 0) / 2
+    let tw = arena.nodes[id].tw
+    let th = arena.nodes[id].th
+    let fg = arena.fg_of(id)
+    save()
+    clip(x, y, w, h)
+    text(tx, ty, arena.input_shown(id), fg, arena.nodes[id].font)
+    if arena.focus_id == id {
+        let mut cx = tx
+        if platform.plat_edit_len(arena.nodes[id].edit_slot) > 0 {
+            cx = tx + tw
+        }
+        if cx > x + w - 2 {
+            cx = x + w - 2
+        }
+        fill(cx, ty, 1, geometry.max2(th, 1), fg, 0)
+    }
+    restore()
+}
+
+fn paint_label(id: int) {
+    let x = arena.draw_x(id) + arena.nodes[id].pad_l + arena.nodes[id].border_w
+    let fg = arena.fg_of(id)
+    if arena.has_bound_num(id) != 0 {
+        let y = arena.draw_y(id) + arena.nodes[id].pad_t + geometry.max2(arena.nodes[id].h - arena.nodes[id].pad_t - arena.nodes[id].pad_b - arena.nodes[id].th, 0) / 2
+        text_int(x, y, arena.bound_num(id), fg, arena.nodes[id].font)
+        return
+    }
+    let inner = arena.inner_w(id)
+    if arena.nodes[id].wrap != 0 {
+        if inner > 0 {
+            if inner < arena.nodes[id].tw {
+                text_wrap(x, arena.draw_y(id) + arena.nodes[id].pad_t + arena.nodes[id].border_w, arena.nodes[id].text, fg, arena.nodes[id].font, inner)
+                return
+            }
+        }
+    }
+    let y = arena.draw_y(id) + arena.nodes[id].pad_t + geometry.max2(arena.nodes[id].h - arena.nodes[id].pad_t - arena.nodes[id].pad_b - arena.nodes[id].th, 0) / 2
+    text(x, y, arena.nodes[id].text, fg, arena.nodes[id].font)
+}
+
+fn paint_button(id: int) {
+    if arena.nodes[id].bg >= 0 {
+        fill(arena.draw_x(id), arena.draw_y(id), arena.nodes[id].w, arena.nodes[id].h, arena.paint_rgb(arena.nodes[id].bg), arena.nodes[id].radius)
+    }
+    let tw = arena.nodes[id].tw
+    let th = arena.nodes[id].th
+    let tx = arena.draw_x(id) + geometry.max2(arena.nodes[id].w - tw, 0) / 2
+    let ty = arena.draw_y(id) + geometry.max2(arena.nodes[id].h - th, 0) / 2
+    if arena.has_bound_num(id) != 0 {
+        text_int(tx, ty, arena.bound_num(id), arena.fg_of(id), arena.nodes[id].font)
+    } else {
+        text(tx, ty, arena.nodes[id].text, arena.fg_of(id), arena.nodes[id].font)
+    }
+    paint_hover_wash(id)
+}
+
+fn paint_scrollbar(id: int) {
+    let ox = arena.draw_x(id)
+    let oy = arena.draw_y(id)
+    let a = arena.bar_alpha(id)
+    if a <= 0 {
+        return
+    }
+    if arena.bar_visible(id) != 0 {
+        let tw = arena.bar_w()
+        let tx = arena.bar_x(id, ox)
+        let thh = arena.bar_thumb_h(id)
+        let thy = arena.bar_thumb_y(id, oy)
+        fill_a(tx, thy, tw, thh, 0, tw / 2, a)
+    }
+    if arena.bar_visible_x(id) != 0 {
+        let th = arena.bar_w()
+        let ty = arena.bar_hy(id, oy)
+        let thw = arena.bar_thumb_w(id)
+        let tx = arena.bar_thumb_x(id, ox)
+        fill_a(tx, ty, thw, th, 0, th / 2, a)
+    }
+}
+
+fn paint_node(id: int) {
+    if id <= 0 {
+        return
+    }
+    if arena.paint_skip_z != 0 {
+        if arena.is_floater(id) != 0 {
+            return
+        }
+    }
+    if arena.want_show(id) == 0 {
+        return
+    }
+    let k = arena.nodes[id].kind
+    let x = arena.draw_x(id)
+    let y = arena.draw_y(id)
+    let w = arena.nodes[id].w
+    let h = arena.nodes[id].h
+    if k == 9 {
+        if arena.nodes[id].bg >= 0 {
+            fill_a(x, y, w, h, arena.paint_rgb(arena.nodes[id].bg), 0, arena.paint_alpha(id))
+        }
+        let nk = arena.nodes[id].kids.len
+        for i in 0..nk {
+            paint_node(arena.nodes[id].kids[i])
+        }
+        return
+    }
+    if k == 11 {
+        if arena.nodes[id].bg >= 0 {
+            fill(x, y, w, h, arena.paint_rgb(arena.nodes[id].bg), arena.nodes[id].radius)
+        }
+        save()
+        clip(x, y, w, h)
+        let prev_y = arena.paint_sy
+        let prev_x = arena.paint_sx
+        arena.paint_sy = arena.paint_sy + arena.nodes[id].scroll_y
+        arena.paint_sx = arena.paint_sx + arena.nodes[id].scroll_x
+        let nk = arena.nodes[id].kids.len
+        for i in 0..nk {
+            let c = arena.nodes[id].kids[i]
+            if arena.nodes[c].kind != 9 {
+                paint_node(c)
+            }
+        }
+        arena.paint_sy = prev_y
+        arena.paint_sx = prev_x
+        restore()
+        paint_scrollbar(id)
+        let saved_skip = arena.paint_skip_z
+        arena.paint_sy = arena.paint_sy + arena.nodes[id].scroll_y
+        arena.paint_sx = arena.paint_sx + arena.nodes[id].scroll_x
+        arena.paint_skip_z = 0
+        paint_floaters(id)
+        arena.paint_skip_z = saved_skip
+        arena.paint_sy = prev_y
+        arena.paint_sx = prev_x
+        return
+    }
+    if k == 4 {
+        paint_button(id)
+    } else if k == 6 {
+        let mut track = 0
+        if arena.nodes[id].bg >= 0 {
+            track = arena.paint_rgb(arena.nodes[id].bg)
+        }
+        fill(x, y, w, h, track, arena.nodes[id].radius)
+        let fw = w * arena.bind_pct(id) / 100
+        if fw > 0 {
+            fill(x, y, fw, h, arena.fg_of(id), arena.nodes[id].radius)
+        }
+        paint_hover_wash(id)
+    } else if k == 13 {
+        let mut th = 4
+        if th > h {
+            th = h
+        }
+        let ty = y + (h - th) / 2
+        let mut kd = 14
+        if kd > h {
+            kd = h
+        }
+        let travel = geometry.max2(w - kd, 0)
+        let kx = x + travel * arena.bind_pct(id) / 100
+        let mut track = 0
+        if arena.nodes[id].bg >= 0 {
+            track = arena.paint_rgb(arena.nodes[id].bg)
+        }
+        fill(x, ty, w, th, track, th / 2)
+        let fw = kx + kd / 2 - x
+        if fw > 0 {
+            fill(x, ty, fw, th, arena.fg_of(id), th / 2)
+        }
+        let mut knob = arena.fg_of(id)
+        if arena.nodes[id].border_c >= 0 {
+            knob = arena.paint_rgb(arena.nodes[id].border_c)
+        }
+        fill(kx, y + (h - kd) / 2, kd, kd, knob, kd / 2)
+        paint_hover_wash(id)
+    } else if k == 7 {
+        let mut on = arena.nodes[id].tween
+        if on < 0 {
+            on = 0
+            if arena.bind_pct(id) > 0 {
+                on = 100
+            }
+        }
+        let mut track = 0
+        if arena.nodes[id].bg >= 0 {
+            track = arena.paint_rgb(arena.nodes[id].bg)
+        }
+        if on > 50 {
+            if arena.nodes[id].fg >= 0 {
+                track = arena.paint_rgb(arena.nodes[id].fg)
+            }
+        }
+        fill(x, y, w, h, track, arena.nodes[id].radius)
+        let pad = geometry.max2(h / 6, 1)
+        let th = geometry.max2(h - pad * 2, 1)
+        let t0 = x + pad
+        let mut t1 = x + w - th - pad
+        if t1 < t0 {
+            t1 = t0
+        }
+        let tx = t0 + (t1 - t0) * on / 100
+        let mut knob = 0
+        if arena.nodes[id].border_c >= 0 {
+            knob = arena.paint_rgb(arena.nodes[id].border_c)
+        }
+        fill(tx, y + (h - th) / 2, th, th, knob, th / 2)
+        paint_hover_wash(id)
+    } else if k == 8 {
+        let mut fillc = 0
+        if arena.nodes[id].bg >= 0 {
+            fillc = arena.paint_rgb(arena.nodes[id].bg)
+        }
+        let mut twn = arena.nodes[id].tween
+        if twn < 0 {
+            twn = 0
+            if arena.sig_val(arena.nodes[id].bind_sig) != 0 {
+                twn = 100
+            }
+        }
+        if twn > 50 {
+            fillc = arena.fg_of(id)
+        }
+        fill(x, y, w, h, fillc, arena.nodes[id].radius)
+        if twn > 0 {
+            svg(x, y, w, h, arena.nodes[id].text, arena.paint_rgb(arena.nodes[id].border_c), arena.paint_alpha(id) * twn / 100)
+        }
+        paint_hover_wash(id)
+    } else if k == 12 {
+        svg(x, y, w, h, arena.nodes[id].text, arena.fg_of(id), arena.paint_alpha(id))
+    } else {
+        if k == 10 {
+            if arena.focus_id == id {
+                if arena.nodes[id].fg >= 0 {
+                    arena.nodes[id].border_c = arena.nodes[id].fg
+                }
+            }
+        }
+        paint_fill_box(id)
+    }
+    if k == 3 {
+        paint_label(id)
+    }
+    if k == 10 {
+        paint_input(id)
+    }
+    if k != 9 {
+        if k != 11 {
+            let mut clip = 0
+            if arena.nodes[id].overflow == 1 {
+                clip = 1
+                save()
+                clip(x, y, w, h)
+            }
+            let nk = arena.nodes[id].kids.len
+            for i in 0..nk {
+                let c = arena.nodes[id].kids[i]
+                if clip == 0 {
+                    paint_node(c)
+                }
+                if clip != 0 {
+                    if arena.nodes[c].kind != 9 {
+                        paint_node(c)
+                    }
+                }
+            }
+            if clip != 0 {
+                restore()
+            }
+        }
+    }
+}
+
+fn paint_floaters(id: int) {
+    if id <= 0 {
+        return
+    }
+    if arena.want_show(id) == 0 {
+        return
+    }
+    if arena.is_floater(id) != 0 {
+        if arena.nodes[id].kind == 9 {
+            let prev_y = arena.paint_sy
+            let prev_x = arena.paint_sx
+            arena.paint_sy = 0
+            arena.paint_sx = 0
+            paint_node(id)
+            arena.paint_sy = prev_y
+            arena.paint_sx = prev_x
+            return
+        }
+        paint_node(id)
+        return
+    }
+    let nk = arena.nodes[id].kids.len
+    for i in 0..nk {
+        paint_floaters(arena.nodes[id].kids[i])
+    }
+}
+
+fn paint() {
+    arena.ensure()
+    let n = draws.len
+    for i in 0..n {
+        pop(draws)
+    }
+    prepaint()
+    if arena.root_id > 0 {
+        arena.paint_skip_z = 1
+        paint_node(arena.root_id)
+        arena.paint_skip_z = 0
+        if arena.nodes[arena.root_id].kind != 11 {
+            paint_floaters(arena.root_id)
+        }
+    }
+    present()
+}
+
+fn step() -> int {
+    arena.ensure()
+    arena.pulse_t = arena.pulse_t + 1
+    if arena.pulse_t > 100000 {
+        arena.pulse_t = 0
+    }
+    let n = arena.nodes.len
+    let mut dirty = 0
+    for i in 1..n {
+        if arena.nodes[i].pulse != 0 {
+            dirty = 1
+        }
+        if arena.is_hot(i) != 0 {
+            let mut target = 0
+            if arena.ptr_in(i) != 0 {
+                target = 100
+            }
+            let mut a = arena.nodes[i].hover_amt
+            if a < target {
+                a = a + 12
+                if a > 100 {
+                    a = 100
+                }
+                dirty = 1
+            }
+            if a > target {
+                a = a - 12
+                if a < 0 {
+                    a = 0
+                }
+                dirty = 1
+            }
+            arena.nodes[i].hover_amt = a
+        }
+        let k = arena.nodes[i].kind
+        if k == 7 {
+            let mut target = 0
+            if arena.bind_pct(i) > 0 {
+                target = 100
+            }
+            let mut t = arena.nodes[i].tween
+            if t < 0 {
+                t = target
+            }
+            if t < target {
+                t = t + 9
+                if t > 100 {
+                    t = 100
+                }
+                dirty = 1
+            }
+            if t > target {
+                t = t - 9
+                if t < 0 {
+                    t = 0
+                }
+                dirty = 1
+            }
+            arena.nodes[i].tween = t
+        }
+        if k == 8 {
+            let mut target = 0
+            if arena.sig_val(arena.nodes[i].bind_sig) != 0 {
+                target = 100
+            }
+            let mut t = arena.nodes[i].tween
+            if t < 0 {
+                t = target
+            }
+            if t < target {
+                t = t + 10
+                if t > 100 {
+                    t = 100
+                }
+                dirty = 1
+            }
+            if t > target {
+                t = t - 10
+                if t < 0 {
+                    t = 0
+                }
+                dirty = 1
+            }
+            arena.nodes[i].tween = t
+        }
+        if arena.nodes[i].enter_fade != 0 {
+            if arena.want_show(i) != 0 {
+                let mut s = arena.nodes[i].show_amt
+                if s < 100 {
+                    s = s + 10
+                    if s > 100 {
+                        s = 100
+                    }
+                    dirty = 1
+                }
+                arena.nodes[i].show_amt = s
+            }
+            if arena.want_show(i) == 0 {
+                arena.nodes[i].show_amt = 0
+            }
+        }
+    }
+    return dirty
+}
+

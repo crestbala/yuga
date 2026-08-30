@@ -1,0 +1,6 @@
+#[proto]
+fn f() {
+}
+
+fn main() {
+}

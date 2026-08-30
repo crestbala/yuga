@@ -1,0 +1,20 @@
+import "std:net"
+import "std:fmt"
+
+fn must(ok: bool) {
+    if !ok {
+        let xs = [1]int { 0 }
+        let z = xs[1]
+        fmt.println(z)
+    }
+}
+
+fn main() {
+    let fd = net.tcp_listen(0)
+    must(fd >= 0)
+    let p = net.tcp_bound_port(fd)
+    must(p > 0)
+    must(p < 65536)
+    net.tcp_close(fd)
+    fmt.println(p)
+}

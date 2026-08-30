@@ -1,0 +1,33 @@
+import "std:fmt"
+
+#[proto]
+struct Msg {
+    n: int,
+    s: string,
+}
+
+fn must(ok: bool) {
+    if !ok {
+        let xs = [1]int { 0 }
+        let z = xs[1]
+        fmt.println(z)
+    }
+}
+
+fn main() {
+    let m = Msg { n: 42, s: "hi" }
+    let buf = encode_Msg(m)
+    let d = decode_Msg(buf)
+    must(d.n == 42)
+    must(d.s.len == 2)
+    let z = Msg { n: 0, s: "" }
+    let zbuf = encode_Msg(z)
+    must(zbuf.len == 0)
+    let zd = decode_Msg(zbuf)
+    must(zd.n == 0)
+    let neg = Msg { n: -1, s: "" }
+    let nb = encode_Msg(neg)
+    let nd = decode_Msg(nb)
+    must(nd.n == -1)
+    fmt.println(d.n, d.s.len, nd.n)
+}

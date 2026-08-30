@@ -1,0 +1,38 @@
+import "std:http"
+import "std:net"
+import "std:fmt"
+
+fn must(ok: bool) {
+    if !ok {
+        let xs = [1]int { 0 }
+        let z = xs[1]
+        fmt.println(z)
+    }
+}
+
+fn main() {
+    let app = http.app()
+    app.rpc("Echo.Ping", |body| {
+        body
+    })
+    let l = net.tcp_listen(0)
+    must(l >= 0)
+    let p = net.tcp_bound_port(l)
+    must(p > 0)
+    let c = net.tcp_connect("127.0.0.1", p)
+    must(c >= 0)
+    let s = net.tcp_accept(l)
+    must(s >= 0)
+    let framed = http.frame_str("hi")
+    let req = http.client_h2("/Echo/Ping", framed)
+    let n = net.tcp_write(c, req)
+    must(n >= 0)
+    http.serve_conn(app, s)
+    let out = http.h2_read_unary(c)
+    must(http.eq(out, "hi"))
+    must(http.last_rpc_status() == 0)
+    net.tcp_close(c)
+    net.tcp_close(s)
+    net.tcp_close(l)
+    fmt.println(out.len, p)
+}

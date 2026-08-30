@@ -1,0 +1,9 @@
+import "std:http"
+
+fn main() {
+    let app = http.app()
+    app.rpc("Test.Ping", |body| {
+        body
+    })
+    app.listen(0)
+}

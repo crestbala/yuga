@@ -1,0 +1,40 @@
+import "std:fmt"
+import "std:zeus"
+
+/// Same shape as kit `ButtonProps`: a capturing `on_press` lives in a struct
+/// field, is interned by `.on()`, then the struct is dropped. The click must
+/// still see the captured signal.
+struct ClickProps {
+    on_press: fn(),
+}
+
+fn fail() {
+    let z = 0
+    fmt.println(1 / z)
+}
+
+fn expect(got: int, want: int) {
+    if got < want {
+        fail()
+    }
+    if want < got {
+        fail()
+    }
+}
+
+fn wire(p: ClickProps) -> Node {
+    return zeus.button("+").on(zeus.click(), p.on_press).w(120).h(40)
+}
+
+fn main() {
+    let n = zeus.signal(5)
+    let b = wire(ClickProps { on_press: || { zeus.set(n, zeus.get(n) + 1) } })
+    zeus.window("click-signal", 120, 40)
+    zeus.root(b)
+    zeus.engine_layout(120, 40)
+    expect(zeus.get(n), 5)
+    zeus.engine_click(60, 20)
+    expect(zeus.get(n), 6)
+    zeus.engine_click(60, 20)
+    expect(zeus.get(n), 7)
+}

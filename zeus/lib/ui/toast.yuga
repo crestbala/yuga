@@ -1,0 +1,22 @@
+import "std:zeus"
+import "../theme/spacing.yuga"
+import "../theme/colors.yuga"
+import "../theme/motion.yuga"
+
+struct ToastProps {
+    title: string,
+    body: string,
+    open: Signal,
+}
+
+// Centered popup. `open` is 0 hidden / 1 shown. Click the dim to dismiss.
+fn Toast(p: ToastProps) -> Node {
+    let dim = zeus.overlay().show(p.open).on_click_set(p.open, 0).bg(colors.scrim()).opacity(motion.overlay_dim())
+    let n = dim.add(zeus.col().bg(colors.card()).border(1).border_color(colors.line()).pad(spacing.space_lg()).gap(spacing.space_sm()).w(spacing.toast_w()).radius(spacing.surface_radius()))
+    n.key("escape", "toast.close").focusable()
+    n.on_key_set("toast.close", p.open, 0)
+    n.child(zeus.box().w(spacing.tile()).h(spacing.space_xs()).bg(colors.success()).radius(spacing.space_2xs()))
+    n.txt(p.title, colors.text(), 14)
+    n.txt(p.body, colors.muted(), 12)
+    return dim
+}

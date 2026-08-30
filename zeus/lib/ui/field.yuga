@@ -1,0 +1,36 @@
+import "std:zeus"
+import "../theme/colors.yuga"
+import "../theme/scale.yuga"
+import "look.yuga"
+import "text_field.yuga"
+
+struct FieldProps {
+    label: string,
+    placeholder: string,
+    hint: string,
+}
+
+struct FieldParts {
+    n: Node,
+    lab: Node,
+    face: Node,
+    hint: Node,
+}
+
+fn style_field(p: FieldParts) {
+    let size = p.n.size_of()
+    let variant = p.n.look_of()
+    p.n.gap(scale.gap_of(size))
+    p.lab.fg(colors.label()).font(scale.caption_px(size))
+    p.face.with_size(size).with_look(variant)
+    p.hint.fg(colors.muted()).font(scale.caption_px(size)).flex_wrap()
+}
+
+fn Field(p: FieldProps) -> Node {
+    let n = zeus.col().with_size(scale.md()).with_look(scale.soft())
+    let lab = n.add(zeus.label(p.label))
+    let face = n.add(text_field.Face(TextFieldProps { placeholder: p.placeholder }))
+    let cap = n.add(zeus.label(p.hint))
+    n.styled(|| { style_field(FieldParts { n: n, lab: lab, face: face, hint: cap }) })
+    return n
+}

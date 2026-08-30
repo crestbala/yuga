@@ -1,0 +1,104 @@
+import "std:http"
+import "std:fmt"
+
+fn must(ok: bool) {
+    if !ok {
+        let xs = [1]int { 0 }
+        let z = xs[1]
+        fmt.println(z)
+    }
+}
+
+fn main() {
+    let f = http.h2_frame(4, 0, 0, "")
+    must(f.len == 9)
+    must(f[3] == 4)
+    must(f[4] == 0)
+    let p = http.h2_frame(0, 1, 1, "ab")
+    must(p.len == 11)
+    must(p[2] == 2)
+    must(p[3] == 0)
+    must(p[8] == 1)
+    must(p[9] == 97)
+    let lit = http.hpack_lit(":path", "/A/B")
+    must(http.eq(http.hpack_path(lit), "/A/B"))
+    let mut idx = []int {}
+    idx.push(131)
+    let post = http.string_of(idx)
+    let both = http.concat_str(post, lit)
+    must(http.eq(http.hpack_path(both), "/A/B"))
+    let mut hp = []int {}
+    hp.push(68)
+    hp.push(136)
+    let ping = [8]int { 99, 121, 80, 150, 53, 154, 169, 191 }
+    for i in 0..8 {
+        hp.push(ping[i])
+    }
+    must(http.eq(http.hpack_path(http.string_of(hp)), "/Test/Ping"))
+    let mut ex = []int {}
+    ex.push(68)
+    ex.push(140)
+    let www = [12]int { 241, 227, 194, 229, 242, 58, 107, 160, 171, 144, 244, 255 }
+    for i in 0..12 {
+        ex.push(www[i])
+    }
+    must(http.eq(http.hpack_path(http.string_of(ex)), "www.example.com"))
+    let enc = http.huff_encode("www.example.com")
+    must(enc.len == 12)
+    for i in 0..12 {
+        must(enc[i] == www[i])
+    }
+    must(http.eq(http.hpack_path(http.hpack_lit(":path", "www.example.com")), "www.example.com"))
+    let app = http.app()
+    app.rpc("Echo.Ping", |body| {
+        body
+    })
+    let framed = http.frame_str("hi")
+    let req = http.client_h2("/Echo/Ping", framed)
+    must(req[0] == 80)
+    let resp = http.serve_h2(app, req)
+    must(http.eq(http.unframe_str(http.h2_data(resp)), "hi"))
+    let st = http.h2_grpc_status(resp)
+    must(st == 0)
+    must(http.h2_goaway_code(resp) == 0)
+    let rst = http.h2_rst_stream(1, 8)
+    must(rst.len == 13)
+    must(rst[3] == 3)
+    must(rst[8] == 1)
+    must(rst[12] == 8)
+    let badh = http.concat_str(
+        "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n",
+        http.concat_str(http.h2_frame(4, 0, 0, ""), http.h2_frame(1, 5, 1, "x")),
+    )
+    must(http.h2_goaway_code(http.serve_h2(app, badh)) == 1)
+    let d0 = http.concat_str(
+        "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n",
+        http.concat_str(http.h2_frame(4, 0, 0, ""), http.h2_frame(0, 1, 0, "hi")),
+    )
+    must(http.h2_goaway_code(http.serve_h2(app, d0)) == 1)
+    let ping4 = http.concat_str(
+        "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n",
+        http.concat_str(http.h2_frame(4, 0, 0, ""), http.h2_frame(6, 0, 0, "abcd")),
+    )
+    must(http.h2_goaway_code(http.serve_h2(app, ping4)) == 6)
+    let mut blk = []int {}
+    blk.push(131)
+    blk.push(68)
+    blk.push(136)
+    let huff = [8]int { 99, 1, 39, 59, 26, 205, 84, 223 }
+    for i in 0..8 {
+        blk.push(huff[i])
+    }
+    let hreq = http.concat_str(
+        "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n",
+        http.concat_str(
+            http.h2_frame(4, 0, 0, ""),
+            http.concat_str(http.h2_frame(1, 4, 1, http.string_of(blk)), http.h2_frame(0, 1, 1, framed)),
+        ),
+    )
+    let hresp = http.serve_h2(app, hreq)
+    must(http.eq(http.unframe_str(http.h2_data(hresp)), "hi"))
+    let miss = http.h2_call("256.0.0.1:9", "Echo.Ping", "hi")
+    must(miss.len == 0)
+    fmt.println(f.len, p.len)
+}

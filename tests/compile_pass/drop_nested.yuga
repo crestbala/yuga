@@ -1,0 +1,32 @@
+import "std:fmt"
+
+struct Holder {
+    b: Box<int>,
+}
+
+fn main() {
+    let mut d = Box::new(1)
+    d = Box::new(2)
+    fmt.println(*d)
+
+    let mut outer = [][]int {}
+    let mut inner = []int {}
+    push(inner, 1)
+    push(inner, 2)
+    push(outer, inner)
+    fmt.println(outer[0][1])
+
+    let n = 7
+    let mut fs = []fn(int) -> int {}
+    push(fs, |x: int| { x + n })
+    fmt.println(fs[0](3))
+
+    let mut h = Holder { b: Box::new(5) }
+    h = Holder { b: Box::new(6) }
+    fmt.println(*h.b)
+
+    let mut vb = []Box<int> {}
+    push(vb, Box::new(1))
+    push(vb, Box::new(2))
+    fmt.println(*vb[0], *vb[1])
+}

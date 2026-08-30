@@ -1,0 +1,25 @@
+import "std:fmt"
+
+fn must(ok: bool) {
+    if !ok {
+        let xs = [1]int { 0 }
+        let z = xs[1]
+        fmt.println(z)
+    }
+}
+
+fn main() {
+    let s = "hi"
+    must(s[0] == 104)
+    must(s[1] == 105)
+    let mut b = []int {}
+    b.push(65)
+    b.push(66)
+    let t = string_from_bytes(b)
+    must(t.len == 2)
+    must(t[0] == 65)
+    must(t[1] == 66)
+    let z = string_from_bytes([]int {})
+    must(z.len == 0)
+    fmt.println(s[0], t[1], z.len)
+}

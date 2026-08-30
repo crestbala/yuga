@@ -1,0 +1,33 @@
+//! Socket ABI (`docs/boundary.md`).
+//!
+//! Bodyless `fn`s resolve to `yuga_net_<name>`. Implementations are generic
+//! trampolines (POSIX sockets, or a wasm `fetch` for `fetch_rpc`). No HTTP
+//! parsing lives here — that stays in `std/http.yuga`.
+
+/// Connect to `host`:`port`. Returns a fd, or `-1`.
+fn tcp_connect(host: string, port: int) -> int {}
+
+/// Write `data`. Returns bytes written, or `-1`.
+fn tcp_write(fd: int, data: string) -> int {}
+
+/// Read up to `max` bytes. Empty means EOF or error.
+fn tcp_read(fd: int, max: int) -> string {}
+
+/// Close `fd`. No-op if `fd < 0`.
+fn tcp_close(fd: int) {}
+
+/// Bind 127.0.0.1:`port` and listen. `port == 0` picks an ephemeral port.
+/// Returns a fd, or `-1`.
+fn tcp_listen(port: int) -> int {}
+
+/// Accept one client. Returns a fd, or `-1`.
+fn tcp_accept(fd: int) -> int {}
+
+/// Bound port of `fd` (after `tcp_listen`). `0` on failure.
+fn tcp_bound_port(fd: int) -> int {}
+
+/// Peek up to `max` bytes without consuming them. Empty means EOF or error.
+fn tcp_peek(fd: int, max: int) -> string {}
+
+/// Same-origin gRPC-Web POST (wasm). Native returns empty.
+fn fetch_rpc(path: string, body: string) -> string {}

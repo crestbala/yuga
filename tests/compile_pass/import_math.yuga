@@ -1,0 +1,6 @@
+import fmt
+import "../mod/math.yuga"
+
+fn main() {
+    fmt.println(math.add(2, 40))
+}

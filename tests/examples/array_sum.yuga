@@ -1,0 +1,15 @@
+import fmt
+
+fn sum4(a: &[4]int) -> int {
+    let mut s = 0
+    for i in 0..4 {
+        s += a[i]
+    }
+    return s
+}
+
+fn main() {
+    let xs = [4]int { 10, 20, 30, 40 }
+    fmt.println(sum4(xs))
+    fmt.println(xs[0])
+}

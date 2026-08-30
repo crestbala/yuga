@@ -1,0 +1,62 @@
+import "std:zeus"
+import "../../lib/theme.yuga"
+import "../../lib/ui.yuga"
+
+fn Dashboard() -> Node {
+    let title = "Zeus Dashboard"
+    let users = "1,204"
+    let jobs = "12"
+    let uptime = "99.9%"
+    let ticks = zeus.signal(0)
+    let load = zeus.signal(42)
+    let notify = zeus.signal(1)
+    let open = zeus.signal(0)
+
+    return theme.Page(title, 920, 620).child(
+        ui.Header(HeaderProps { title: title, live_label: "ticks", sig: ticks, btn: "Tick", appearance: "Dark" }).child(ui.Open(ButtonProps { label: "Note", on_press: || { open.set(1) } })),
+        ui.Breadcrumbs(BreadcrumbProps { a: "Zeus", b: "App", c: "Dashboard" }),
+        zeus.label("Rows and cards fill the window. Labels stay left; actions sit on the right.").fg(theme.muted()).font(13),
+        ui.Alert(AlertProps { title: "Sync", body: "Signals update on click. Scroll if the page overflows.", color: theme.success() }),
+        zeus.row().gap(theme.space_md()).child(
+            ui.User(UserProps { initials: "AP", name: "Ada Park", role: "Operator", color: theme.accent() }),
+            zeus.spacer(),
+            ui.Chip(ChipProps { label: "Live", color: theme.success() }),
+            ui.Chip(ChipProps { label: "v1", color: theme.purple() }),
+        ),
+        ui.Stats(StatsProps { users_t: "Users", users: users, jobs_t: "Jobs", jobs: jobs, uptime_t: "Uptime", uptime: uptime, ticks_t: "Ticks", ticks: ticks }),
+        zeus.row().gap(theme.space_md()).txt("Load", theme.label(), 13).child(ui.Progress(ProgressProps { sig: load })).bound(load, theme.muted(), 13),
+        ui.Surface().child(
+            zeus.row().gap(theme.space_lg()).child(
+                ui.Switch(SwitchProps { sig: notify }),
+                zeus.label("Alerts").fg(theme.text()).font(13),
+                zeus.spacer(),
+                ui.Checkbox(CheckboxProps { label: "Notify", sig: notify }),
+            )
+        ),
+        ui.Panel(PanelProps { title: "Activity" }).child(
+            ui.Activity(ActivityProps { title: "Deploy web", meta: "2m ago" }),
+            ui.Divider(),
+            ui.Activity(ActivityProps { title: "Job #12 done", meta: "14m ago" }),
+            ui.Divider(),
+            ui.Activity(ActivityProps { title: "User signup", meta: "1h ago" }),
+            ui.Divider(),
+            ui.Activity(ActivityProps { title: "Cache warm", meta: "3h ago" }),
+            ui.Divider(),
+            ui.Activity(ActivityProps { title: "Index rebuild", meta: "5h ago" }),
+            ui.Divider(),
+            ui.Activity(ActivityProps { title: "Backup ok", meta: "8h ago" }),
+            ui.Divider(),
+            ui.Activity(ActivityProps { title: "Alert silenced", meta: "12h ago" }),
+            ui.Divider(),
+            ui.Activity(ActivityProps { title: "Cert renewed", meta: "1d ago" }),
+            ui.Divider(),
+            ui.Activity(ActivityProps { title: "Region failover", meta: "2d ago" }),
+        ),
+        zeus.label("Tick and Load are signals. Note opens a dialog. Scroll if content overflows.").fg(theme.muted()).font(12),
+        ui.Dialog(DialogProps { title: "Discard changes?", body: "This cannot be undone. The working tree keeps whatever you have not saved.", cancel: "Cancel", discard: "Discard", open: open }),
+    )
+}
+
+fn main() {
+    Dashboard().run()
+}

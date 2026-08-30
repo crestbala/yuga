@@ -1,0 +1,8 @@
+struct Counter {
+    name: string,
+    count: int,
+}
+
+fn main() {
+    let mut c = Counter { name: "tick", count: 0 }
+}

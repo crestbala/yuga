@@ -1,0 +1,27 @@
+fn display() -> int {
+    return 28
+}
+
+fn title() -> int {
+    return 20
+}
+
+fn heading() -> int {
+    return 15
+}
+
+fn body() -> int {
+    return 14
+}
+
+fn control() -> int {
+    return 13
+}
+
+fn caption() -> int {
+    return 12
+}
+
+fn overline() -> int {
+    return 11
+}

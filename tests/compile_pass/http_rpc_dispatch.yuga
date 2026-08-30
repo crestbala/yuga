@@ -1,0 +1,40 @@
+import "std:http"
+import "std:fmt"
+
+#[proto]
+struct Inc {
+    by: int,
+}
+
+#[proto]
+struct Count {
+    n: int,
+}
+
+fn must(ok: bool) {
+    if !ok {
+        let xs = [1]int { 0 }
+        let z = xs[1]
+        fmt.println(z)
+    }
+}
+
+fn main() {
+    let app = http.app()
+    app.use(|name, body| {
+        body
+    })
+    app.rpc("Counter.Increment", |body| {
+        let req = decode_Inc(body)
+        encode_Count(Count { n: req.by + 1 })
+    })
+    let buf = encode_Inc(Inc { by: 3 })
+    let out = http.dispatch(app, "Counter.Increment", buf)
+    let r = decode_Count(out)
+    must(r.n == 4)
+    must(http.last_rpc_status() == 0)
+    let miss = http.dispatch(app, "Nope.Missing", buf)
+    must(miss.len == 0)
+    must(http.last_rpc_status() == 12)
+    fmt.println(r.n)
+}

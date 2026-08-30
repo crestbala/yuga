@@ -1,0 +1,19 @@
+import "std:fmt"
+
+fn addf(a: float, b: float) -> float {
+    a + b
+}
+
+fn main() {
+    let x: float = 1.5
+    let y = 2.0
+    let z = addf(x, y)
+    let n = z as int
+    fmt.println(n)
+    let mut f: float = 1
+    f += 0.5
+    fmt.println(f as int)
+    fmt.println((1 as float) + 2.5)
+    fmt.println(-1.5 < 0.0)
+    fmt.println(1e-3 > 0.0)
+}

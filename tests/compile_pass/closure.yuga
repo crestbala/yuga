@@ -1,0 +1,20 @@
+import "std:fmt"
+
+fn apply(f: fn(int) -> int, x: int) -> int {
+    return f(x)
+}
+
+fn add1(x: int) -> int {
+    return x + 1
+}
+
+fn main() {
+    let n = 10
+    let f = |x: int| {
+        x + n
+    }
+    fmt.println(f(1))
+    fmt.println(apply(|x| { x * 2 }, 3))
+    fmt.println(apply(|x| { x + n }, 1))
+    fmt.println(apply(add1, 4))
+}

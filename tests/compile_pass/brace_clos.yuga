@@ -1,0 +1,16 @@
+import "std:fmt"
+
+fn run(f: fn()) {
+    f()
+}
+
+fn main() {
+    let n = 1
+    run(|| {
+        fmt.println(n)
+    })
+    let f = || {
+        fmt.println("ok")
+    }
+    f()
+}

@@ -1,0 +1,29 @@
+import "std:zeus"
+import "avatar.yuga"
+import "../theme/spacing.yuga"
+import "icons.yuga"
+import "../theme/colors.yuga"
+
+struct HoverCardProps {
+    handle: string,
+    name: string,
+    bio: string,
+    meta: string,
+    color: int,
+}
+
+/// Unlike a tooltip, the pointer can travel into the card.
+fn Card(p: HoverCardProps) -> Node {
+    let open = zeus.signal(0)
+    let n = zeus.col().position(zeus.pos_relative()).align_self(zeus.flex_start())
+    let trig = n.add(zeus.row().hover(open).hover_delay(0).hover_leave(200).hover_fade().bg(colors.card()).border(1).border_color(colors.line()).pad(spacing.space_snug()).gap(spacing.space_snug()).radius(spacing.button_radius()).align(zeus.flex_center()).align_self(zeus.flex_start()).shrink(0))
+    trig.txt(p.handle, colors.text(), 12)
+    trig.child(icons.Glyph(GlyphProps { markup: icons.close(), color: colors.muted(), size: spacing.icon_sm() }).align(zeus.flex_center()))
+    let card = n.add(zeus.col().show(open).enter_fade().hover(open).hover_delay(0).hover_leave(200).bg(colors.card()).pad(spacing.space_md()).gap(spacing.space_sm()).w(spacing.popover_w()).border(1).border_color(colors.line()).radius(spacing.surface_radius()).position(zeus.pos_absolute()).left(0).top(spacing.hit()).z_index(30).shrink(0))
+    let head = card.add(zeus.row().gap(spacing.space_sm()).align(zeus.flex_center()).shrink(0))
+    head.child(avatar.Avatar(AvatarProps { initials: "TC", color: p.color }))
+    head.child(zeus.label(p.name).fg(colors.text()).font(14).shrink(0))
+    card.child(zeus.label(p.bio).fg(colors.muted()).font(12).flex_wrap())
+    card.child(zeus.label(p.meta).fg(colors.label()).font(11))
+    return n
+}
