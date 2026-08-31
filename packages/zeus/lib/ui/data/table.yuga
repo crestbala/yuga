@@ -8,7 +8,7 @@ struct TableHeadProps {
     a: string,
     b: string,
     c: string,
-    sort: Signal,
+    sort: Signal<int>,
 }
 
 struct TableRowProps {

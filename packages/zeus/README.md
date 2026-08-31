@@ -32,7 +32,7 @@ import "std:zeus"
 import "lib/ui.yuga"
 
 fn main() {
-    ui.Card().child(
+    ui.Card().children(
         ui.CardHeader(CardHeaderProps { title: "Hello", subtitle: "A short subtitle" }),
         ui.Chip(ChipProps { label: "live", color: theme.accent() }),
     ).run()
@@ -41,15 +41,29 @@ fn main() {
 
 Conventions every widget in `lib/ui/` follows:
 
-- **One `*Props` struct per component**, holding exactly the data the caller
-  supplies (labels, callbacks, values) — never styling.
+- **Few arguments → positional; many → a `*Props` struct.** Yuga has no
+  overloading and no default fields, so a struct is the only way to carry
+  optional or numerous inputs. When a widget needs one or two required values
+  it takes them directly, because a two-field struct is pure ceremony:
+
+  ```yuga
+  ui.Ghost("Cancel", || { close() })              // positional — two inputs
+  ui.Alert(AlertProps { title: …, body: …, color: … })   // struct — several
+  ```
+
+  Buttons take `(label, on_press)`. Widgets with richer inputs keep a `*Props`
+  struct holding exactly what the caller supplies (labels, callbacks, values)
+  — never styling.
 - **`Foo(props)`** is the medium-size, default-look constructor. Named
   variants (`Ghost`, `Destructive`, `Soft`, ...) are just different look/size
   arguments to the same painter, so a button and a destructive button share
   one implementation, not two.
 - **`.size()` / `.look()`** are chain modifiers on the returned `Node` —
   `ui.sm/md/lg` and `ui.solid/soft/outline/ghost/danger` — so callers can
-  restyle a component without a new constructor.
+  restyle a component without a new constructor. `.size()` always means the
+  token; raw pixels are `.size_px(px)` or `.w()/.h()`. The two used to share
+  the name `size` and resolved by import order, which made `.size(ui.sm())`
+  silently produce a 0×0 box.
 - **Styling goes through `.styled(|| { ... })`**, a closure that runs once
   per paint and reads props/signals to compute colors, padding, radius. This
   is the only place a component touches `theme/`.
@@ -64,7 +78,7 @@ makes the whole API chain:
 
 ```yuga
 zeus.button("Save")
-    .on(zeus.click(), save)         // reactivity
+    .on_click(save)                 // reactivity
     .key("enter", "save.press")     // key binding — see below
     .pad(12).gap(8)                 // spacing
     .flex_row().justify(zeus.flex_center())  // layout
@@ -79,7 +93,7 @@ or `move` — a component is `fn(Props) -> Node`, full stop:
 ```yuga
 zeus.container()
     .flex_col().gap(8)
-    .bg(0x505050).size(500)          // hex int literals work directly —
+    .bg(0x505050).size_px(500)       // hex int literals work directly —
     .border(1).border_color(0x0000ff) // same packed layout as rgb(r, g, b)
     .center()
     .font(20).fg(0xffffff)
@@ -106,8 +120,8 @@ mirrored by `.margin*`, plus `.gap(both)` / `.gap_row()` / `.gap_col()`.
 
 **Sizing & position**
 
-`.w(px)` / `.h(px)` (`-1` restores the 100%-of-parent default), `.size(px)`
-(both at once — a square), `.width_pct()` / `.height_pct()`,
+`.w(px)` / `.h(px)` (`-1` restores the 100%-of-parent default), `.size_px(px)`
+(both at once, equal). `.width_pct()` / `.height_pct()`,
 `.min_w/.max_w/.min_h/.max_h`, `.aspect(w, h)`. Positioning:
 `.position(zeus.pos_relative()|pos_absolute())` + `.top/.right/.bottom/.left(px)`
 + `.z_index()`. Overflow: `.overflow(zeus.overflow_visible()|hidden()|scroll()|auto())`.
@@ -123,14 +137,14 @@ way, or just chain the individual setters, which is what every widget in
 
 **Reactivity**
 
-`zeus.signal(0)` creates a `Signal`; `.get(sig)` reads it, `.set(sig, v)` /
-`.inc(sig, delta)` write it and schedule a repaint. `.bind(sig)` paints a
-label from a signal; `.on(zeus.click(), handler)` runs a closure on click;
+`zeus.signal(0)` creates a `Signal`; `sig.get()` reads it, `sig.set(v)`
+writes it and schedules a repaint. `.bind(sig)` paints a
+label from a signal; `.on_click(handler)` runs a closure on click;
 `.on_click_inc/.toggle/.set/.add(sig, ...)` are one-call sugar for the common
 click-writes-a-signal case. `.show(sig)` / `.show_eq/.ne/.ge/.le(sig, v)` hide
 a node from layout without unmounting it; `zeus.when(sig, || node)` is the
-combinator form. `.each(items, |item| node)` / `.each_i(items, |i, item| node)`
-render a list — closures also accept `(item) => node` / `(i, item) => node`,
+combinator form. `.each(items, |i, item| node)`
+render a list — closures also accept `(i, item) => node`,
 same thing either way (see [`docs/spec.md`](../../docs/spec.md)). There's no
 `zeus.range()` — `.each` maps a `[]T` you already have, and a numeric
 sequence isn't one, so build the small array yourself first:
@@ -144,7 +158,7 @@ fn seq(lo: int, hi: int) -> []int {
     return xs
 }
 // ...
-grid.each(seq(1, last + 1), (i) => { Cell(i) })
+grid.each(seq(1, last + 1), (i, n) => { Cell(n) })
 ```
 
 (`date_picker.yuga` and `pagination.yuga` both keep a local copy of `seq` —
@@ -164,7 +178,7 @@ The action is a string, not the handler directly, on purpose: it's also the
 keymap context (`"button.press"` → context `"button"`), and an app can call
 `zeus.map_key(spec, action, ctx)` / `remap_key(...)` to rebind a shortcut
 without touching the component. Pick the write that matches what the key
-should do: `.on_key_fn(action)` re-fires whatever closure `.on(zeus.click(), ...)`
+should do: `.on_key_fn(action)` re-fires whatever closure `.on_click(...)`
 already set; `.on_key_toggle/.on_key_set/.on_key_add(action, sig, ...)` write a
 signal directly, the same way `.on_click_*` does for the mouse.
 

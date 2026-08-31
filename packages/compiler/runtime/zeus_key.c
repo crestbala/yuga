@@ -281,7 +281,8 @@ static int fire(int action, const int *nodes, int depth) {
 }
 
 int zeus_key_dispatch(int key, int mods) {
-    int typed = (key >= 32 && key < 127) || key == ZEUS_K_BACK || key == ZEUS_K_DEL;
+    int typed = (key >= 32 && key < 127) || key == ZEUS_K_BACK || key == ZEUS_K_DEL ||
+                key == ZEUS_K_TAB || key == ZEUS_K_ENTER || key == 10;
     if (typed && !(mods & ~ZEUS_MOD_SHIFT) && zeus_focus_captures_text())
         return 0;
 

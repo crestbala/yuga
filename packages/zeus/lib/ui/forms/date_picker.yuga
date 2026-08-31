@@ -8,9 +8,9 @@ import "../../theme/colors.yuga"
 // empty; only real days of the shown month take clicks.
 
 struct DatePickerProps {
-    y: Signal,
-    m: Signal,
-    d: Signal,
+    y: Signal<int>,
+    m: Signal<int>,
+    d: Signal<int>,
 }
 
 fn cell_size() -> int {
@@ -109,19 +109,19 @@ fn first_monday(year: int, month: int) -> int {
     return (sun + 6) % 7
 }
 
-fn Month(m: Signal, value: int, name: string) -> Node {
+fn Month(m: Signal<int>, value: int, name: string) -> Node {
     return zeus.label(name).fg(colors.text()).font(13).show_eq(m, value)
 }
 
 fn Blank() -> Node {
-    return zeus.box().size(cell_size()).shrink(0)
+    return zeus.box().size_px(cell_size()).shrink(0)
 }
 
-fn Cell(d: Signal, value: int, open: Signal) -> Node {
+fn Cell(d: Signal<int>, value: int, open: Signal<int>) -> Node {
     let lab = zeus.signal(value)
-    let n = zeus.col().size(cell_size()).align(zeus.flex_center()).shrink(0)
-    n.child(zeus.button("0").bind(lab).bg(colors.text()).fg(colors.app()).size(cell_size()).padX(0).padY(0).radius(cell_radius()).center().font(13).show_eq(d, value).on_click_set(d, value).on_click_also_set(open, 0).shrink(0))
-    n.child(zeus.button("0").bind(lab).bg(-1).fg(colors.text()).size(cell_size()).padX(0).padY(0).radius(cell_radius()).center().font(13).show_ne(d, value).on_click_set(d, value).on_click_also_set(open, 0).shrink(0))
+    let n = zeus.col().size_px(cell_size()).align(zeus.flex_center()).shrink(0)
+    n.child(zeus.button("0").bind(lab).bg(colors.text()).fg(colors.app()).size_px(cell_size()).padX(0).padY(0).radius(cell_radius()).center().font(13).show_eq(d, value).on_click_set(d, value).on_click_also_set(open, 0).shrink(0))
+    n.child(zeus.button("0").bind(lab).bg(-1).fg(colors.text()).size_px(cell_size()).padX(0).padY(0).radius(cell_radius()).center().font(13).show_ne(d, value).on_click_set(d, value).on_click_also_set(open, 0).shrink(0))
     return n
 }
 
@@ -141,18 +141,18 @@ fn seq(lo: int, hi: int) -> []int {
     return xs
 }
 
-fn MonthGrid(year: int, month: int, d: Signal, sel: Signal, open: Signal) -> Node {
+fn MonthGrid(year: int, month: int, d: Signal<int>, sel: Signal<int>, open: Signal<int>) -> Node {
     let g = zeus.grid(7, spacing.space_xs()).show_eq(sel, month)
     let off = first_monday(year, month)
     let last = month_len(year, month)
-    g.each(seq(0, off), (i) => {
+    g.each(seq(0, off), (idx, i) => {
         Blank()
     })
-    g.each(seq(1, last + 1), (i) => {
+    g.each(seq(1, last + 1), (idx, i) => {
         Cell(d, i, open)
     })
     let filled = off + last
-    g.each(seq(0, 42 - filled), (i) => {
+    g.each(seq(0, 42 - filled), (idx, i) => {
         Blank()
     })
     return g
@@ -163,7 +163,7 @@ fn Field(p: DatePickerProps) -> Node {
     let m = p.m
     let d = p.d
     let open = zeus.signal(0)
-    let year = zeus.get(y)
+    let year = y.get()
     let n = zeus.col().gap(spacing.space_sm()).w(spacing.popover_w()).align_self(zeus.flex_start()).shrink(0)
     n.key("enter", "date.toggle").key("escape", "date.close").key("left", "date.prev_day").key("right", "date.next_day").key("up", "date.prev_week").key("down", "date.next_week").key("pageup", "date.prev_month").key("pagedown", "date.next_month")
     n.on_key_toggle("date.toggle", open)

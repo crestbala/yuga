@@ -6,7 +6,7 @@ import "../../theme/motion.yuga"
 struct ToastProps {
     title: string,
     body: string,
-    open: Signal,
+    open: Signal<int>,
 }
 
 // Centered popup. `open` is 0 hidden / 1 shown. Click the dim to dismiss.

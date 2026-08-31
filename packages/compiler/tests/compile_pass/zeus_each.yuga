@@ -15,10 +15,10 @@ fn main() {
         push(nums, i)
     }
     let col = zeus.col()
-    col.each(nums, (i) => {
-        zeus.label("n").bind_n(i).font(11)
+    col.each(nums, (i, n) => {
+        zeus.label("n").bind_n(n).font(11)
     })
-    col.each_i(rows, (i, r) => {
+    col.each(rows, (i, r) => {
         zeus.label(r.a).bind_n(i).font(12)
     })
     col.child(zeus.when(open, || {

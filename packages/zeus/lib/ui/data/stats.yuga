@@ -11,7 +11,7 @@ struct StatsProps {
     uptime_t: string,
     uptime: string,
     ticks_t: string,
-    ticks: Signal,
+    ticks: Signal<int>,
 }
 
 /// 2×2 grid of metrics. Fills the parent width; columns are equal.

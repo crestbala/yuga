@@ -1,3 +1,5 @@
+/** Docs wasm dev server: compiles `app.yuga`, serves `build/app.wasm`,
+ *  and proxies gRPC-Web `POST /Docs/*` to the native backend on :8082. */
 import { spawnSync } from "node:child_process";
 import { createReadStream, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -5,11 +7,11 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repo = resolve(here, "../../..");
+const repo = resolve(here, "../..");
 const yugac = resolve(repo, "bin/yugac");
-const buildDir = resolve(here, "frontend/build");
-const loader = resolve(here, "../../zeus-wasm/loader.js");
-const app = resolve(here, "frontend/app.yuga");
+const buildDir = resolve(here, "build");
+const loader = resolve(here, "../../packages/zeus/web/loader.js");
+const app = resolve(here, "app.yuga");
 
 function wipeBuild() {
   rmSync(buildDir, { recursive: true, force: true });
@@ -32,7 +34,7 @@ function compileWasm() {
 }
 
 function rebuild(reason) {
-  console.log("[yugac] " + reason + ": removing frontend/build/, compiling wasm");
+  console.log("[yugac] " + reason + ": removing build/, compiling wasm");
   wipeBuild();
   compileWasm();
 }
@@ -40,14 +42,17 @@ function rebuild(reason) {
 function shouldRebuild(file) {
   const n = file.replace(/\\/g, "/");
   if (n.includes("/node_modules/") || n.includes("/build/")) return false;
-  return /\.(yuga|c|h)$/.test(n) || n.endsWith("/zeus-wasm/loader.js");
+  return /\.(yuga|c|h)$/.test(n) || n.endsWith("/web/loader.js");
 }
 
 export default defineConfig({
-  publicDir: "frontend/build",
+  publicDir: "build",
   server: {
     host: "127.0.0.1",
-    port: 5173,
+    port: 5175,
+    proxy: {
+      "/Docs": "http://127.0.0.1:8082",
+    },
   },
   plugins: [
     {
@@ -57,12 +62,13 @@ export default defineConfig({
       },
       configureServer(server) {
         const watch = [
-          resolve(here, "frontend"),
-          resolve(here, "backend"),
-          resolve(here, "../../lib"),
-          resolve(repo, "std"),
-          resolve(repo, "runtime"),
-          resolve(here, "../../zeus-wasm"),
+          here,
+          resolve(here, ".."),
+          resolve(here, "../backend"),
+          resolve(repo, "packages/zeus/lib"),
+          resolve(repo, "packages/compiler/std"),
+          resolve(repo, "packages/compiler/runtime"),
+          resolve(repo, "packages/zeus/web"),
         ];
         for (const p of watch) {
           if (existsSync(p)) server.watcher.add(p);
@@ -87,16 +93,6 @@ export default defineConfig({
         });
         server.middlewares.use((req, res, next) => {
           const url = (req.url || "").split("?")[0];
-          if (url === "/api/hello") {
-            res.setHeader("Content-Type", "application/json");
-            res.end('{"count":1}');
-            return;
-          }
-          if (url === "/api/stats") {
-            res.setHeader("Content-Type", "application/json");
-            res.end('{"users":"1,204","jobs":"12","uptime":"99.9%","load":42,"ticks":0}');
-            return;
-          }
           if (url === "/loader.js") {
             if (!existsSync(loader)) {
               res.statusCode = 404;

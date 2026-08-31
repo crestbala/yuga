@@ -59,10 +59,10 @@ fn Note(s: string) -> Node {
 }
 
 fn Orb(n: Node, s: string) -> Node {
-    return zeus.col().gap(theme.space_sm()).align(zeus.flex_center()).shrink(0).child((
+    return zeus.col().gap(theme.space_sm()).align(zeus.flex_center()).shrink(0).children(
         n,
         Note(s),
-    ))
+    )
 }
 
 fn main() {
@@ -70,28 +70,28 @@ fn main() {
     let load = zeus.signal(42)
     // ... remaining signal declarations unchanged ...
 
-    theme.Page("Zeus Kit", 960, 2400).child((
+    theme.Page("Zeus Kit", 960, 2400).children(
         ui.Navbar(NavbarProps { brand: "Zeus", a: "Foundations", b: "Components", c: "Patterns", appearance: "Dark" }),
         ui.Breadcrumbs(BreadcrumbProps { a: "Zeus", b: "Examples", c: "Kit" }),
         ui.Overline(TypeProps { text: "Library" }),
         ui.Display(TypeProps { text: "Build interfaces with Zeus" }),
         ui.Body(TypeProps { text: "Every widget ships medium..." }),
-        Wrap().child((
+        Wrap().children(
             ui.Chip(ChipProps { label: "Stable", color: theme.success() }),
             ui.Chip(ChipProps { label: "Headless tests", color: theme.accent() }),
             ui.Badge(BadgeProps { label: "v1", color: theme.purple() }),
             ui.Kbd(KbdProps { key: "Esc" }),
-        )),
-        ui.Card().child((
+        ),
+        ui.Card().children(
             ui.CardHeader(CardHeaderProps { title: "Project card", subtitle: "..." }),
-            ui.CardFooter().child((
+            ui.CardFooter().children(
                 ui.Ghost(ButtonProps { label: "Cancel", on_press: || { ticks = ticks + 1 } }),
                 ui.Prominent(ButtonProps { label: "Save", on_press: || { ticks = ticks + 1 } }),
                 zeus.spacer(),
-            )).child(zeus.label("0").bind_n(ticks).fg(theme.muted()).font(12)),
-        )),
+            ).child(zeus.label("0").bind_n(ticks).fg(theme.muted()).font(12)),
+        ),
         // ... every remaining section as one nested chain ...
-    )).run()
+    ).run()
 }
 ```
 
@@ -108,7 +108,7 @@ Rules this locks in:
    widget is PascalCase** — `Wrap`, `Note`, `Orb`, `CounterPanel`, `Card`,
    `Button`, all of it, no exceptions. Lowercase is reserved for the
    handful of `zeus` primitives (`row`, `col`, `text`, `signal`, `label`,
-   `spacer`) and chain/modifier methods (`.gap()`, `.child()`, `.bound()`,
+   `spacer`) and chain/modifier methods (`.gap()`, `.child()`, `.children()`, `.bound()`,
    `.align()`, `.size()`, `.look()`, `.each()`, `.styled()`, `.bind()`, `.run()`).
 4. **`Node` is the only type.** No `View` trait, no `impl View`.
    Component functions are `fn Name(props...) -> Node`, body is a single
@@ -120,14 +120,15 @@ Rules this locks in:
    Write `ui.Prominent(ButtonProps { label: "Save", on_press: || { ticks = ticks + 1 } })`,
    never a signal as the click payload. Intern copies the closure env, so
    the handler still runs after the constructor returns.
-6. **`.size()` / `.look()` before `.child()`.** Containers that take
+6. **`.size()` / `.look()` before `.child()` / `.children()`.** Containers that take
    children (`Card`) must receive size/look first:
-   `ui.Card().size(ui.sm()).look(ui.outline()).child(...)`.
+   `ui.Card().size(ui.sm()).look(ui.outline()).children(...)`.
+   `.child(n)` is one node; `.children(a, b)` is several.
 7. **Constructors return a `Node`.** Size and look are tokens on that node
    (`with_size` / `with_look`). `.size()` / `.look()` update the tokens and
    re-run that node's `.styled()` closure. Never a parallel arg bag — no `keep`, `tag`,
    or dummy `""` / `0` slots.
-8. **`.each` maps items, not indexes.** `parent.each(jobs, |j| { ui.ScrollRow(j.title, j.meta) })`.
+8. **`.each` maps `(index, item)`.** `parent.each(jobs, |i, j| { ui.ScrollRow(j.title, j.meta) })`.
    An integer sequence isn't an item list — loop it directly:
    `for i in 1..(last + 1) { row.child(Page(i)) }`.
 9. **One `*Props` struct per widget file.** Constructors take that struct
@@ -246,7 +247,7 @@ Named looks (`Ghost`, `Prominent`, …) stay medium + that look; chain
 of Zeus. Zeus Kit compiles native and wasm32 from this source.
 
 **Phase 5 — `each` / `when` combinators — done.**
-`parent.each(items, |item| { ... })` maps a list into children (keyed by
+`parent.each(items, |i, item| { ... })` maps a list into children (keyed by
 index; lists are built once, matching the retained-tree contract). An
 integer sequence (pagination, calendar cells) is a native `for i in lo..hi`
 loop calling `.child(...)` directly — not a list, so not `.each`.

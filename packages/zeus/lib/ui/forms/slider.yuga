@@ -5,7 +5,7 @@ import "../../theme/scale.yuga"
 
 struct SliderProps {
     caption: string,
-    sig: Signal,
+    sig: Signal<int>,
 }
 
 fn track(size: int) -> int {
@@ -28,14 +28,14 @@ fn style_track(n: Node) {
     n.grow(1).h(scale.slider_h(size)).radius(track(size) / 2).bg(colors.line()).fg(fg).border_color(fg)
 }
 
-fn ApplyTrack(n: Node, sig: Signal, size: int, variant: int) -> Node {
+fn ApplyTrack(n: Node, sig: Signal<int>, size: int, variant: int) -> Node {
     n.with_size(size).with_look(variant)
     n.styled(|| { style_track(n) })
     n.bind(sig).keys(sig, 0, 100)
     return n
 }
 
-fn Track(sig: Signal) -> Node {
+fn Track(sig: Signal<int>) -> Node {
     return ApplyTrack(zeus.slider(), sig, scale.md(), scale.solid())
 }
 

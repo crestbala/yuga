@@ -5,13 +5,13 @@ import "../../theme/scale.yuga"
 
 struct RadioProps {
     label: string,
-    sig: Signal,
+    sig: Signal<int>,
     value: int,
 }
 
 struct RadioGroupProps {
     label: string,
-    sig: Signal,
+    sig: Signal<int>,
     last: int,
 }
 
@@ -27,9 +27,9 @@ fn style_radio(p: RadioParts) {
     let size = p.n.size_of()
     let d = scale.check_of(size)
     p.n.gap(scale.gap_of(size)).align(zeus.flex_center()).shrink(0)
-    p.on.size(d).bg(colors.card()).border(1).border_color(colors.text()).radius(spacing.pill_radius()).center().shrink(0)
-    p.dot.size(spacing.dot()).bg(colors.text()).radius(spacing.dot() / 2).shrink(0)
-    p.off.size(d).bg(colors.card()).border(1).border_color(colors.line()).radius(spacing.pill_radius()).shrink(0)
+    p.on.size_px(d).bg(colors.card()).border(1).border_color(colors.text()).radius(spacing.pill_radius()).center().shrink(0)
+    p.dot.size_px(spacing.dot()).bg(colors.text()).radius(spacing.dot() / 2).shrink(0)
+    p.off.size_px(d).bg(colors.card()).border(1).border_color(colors.line()).radius(spacing.pill_radius()).shrink(0)
     p.lab.fg(colors.text()).font(scale.font_px(size)).shrink(0)
 }
 

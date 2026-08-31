@@ -5,7 +5,7 @@ import "../../theme/colors.yuga"
 struct ListItemProps {
     title: string,
     meta: string,
-    sig: Signal,
+    sig: Signal<int>,
     value: int,
 }
 

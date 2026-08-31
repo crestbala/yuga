@@ -593,6 +593,15 @@ fn key(k: int) -> int {
     if k == 127 {
         return platform.plat_edit_back(slot)
     }
+    if k == 9 {
+        return platform.plat_edit_append(slot, 9)
+    }
+    if k == 10 {
+        return platform.plat_edit_append(slot, 10)
+    }
+    if k == 13 {
+        return platform.plat_edit_append(slot, 10)
+    }
     if k >= 32 {
         if k < 127 {
             return platform.plat_edit_append(slot, k)

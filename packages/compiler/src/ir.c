@@ -101,11 +101,27 @@ static int new_block(void) {
 
 static int CUR; /* block being appended to */
 
-#define LOOP_MAX 32
-static int loop_cont[LOOP_MAX];
-static int loop_brk[LOOP_MAX];
-static int loop_base[LOOP_MAX];
-static int nloop;
+/* break / continue targets, innermost last. Grows: a fixed cap skipped the
+   push once it was full but still ran the matching pop, which unbalanced the
+   stack and pointed break/continue at an enclosing loop's blocks. */
+static int *loop_cont;
+static int *loop_brk;
+static int *loop_base;
+static int nloop, loop_cap;
+
+static void loop_push(int cont, int brk, int base) {
+    if (nloop == loop_cap) {
+        loop_cap = loop_cap ? loop_cap * 2 : 16;
+        loop_cont = (int *)realloc(loop_cont, (size_t)loop_cap * sizeof(int));
+        loop_brk = (int *)realloc(loop_brk, (size_t)loop_cap * sizeof(int));
+        loop_base = (int *)realloc(loop_base, (size_t)loop_cap * sizeof(int));
+        if (!loop_cont || !loop_brk || !loop_base) yuga_fatal("out of memory");
+    }
+    loop_cont[nloop] = cont;
+    loop_brk[nloop] = brk;
+    loop_base[nloop] = base;
+    nloop++;
+}
 
 static IrInst *emit(IrOp op, SourceLoc loc) {
     IrBlock *b = &F->blocks[CUR];
@@ -211,8 +227,15 @@ static IrPlace *clone_place(const IrPlace *p) {
     return c;
 }
 
-/** Build the place an lvalue names, or NULL if it is not an lvalue. */
-static IrPlace *lower_place(AstNode *n) {
+/** Build the place an lvalue names, or NULL if it is not an lvalue.
+ *
+ * `allow_temp` makes a non-place base legal by evaluating it into a fresh
+ * local and rooting the path there, so reads like `[3]int{8,12,16}[i]`,
+ * `f().x`, and `Point{..}.x` lower instead of bailing. It must stay off for
+ * assignment targets and `&`: materializing there would silently write to (or
+ * hand out the address of) a temporary the caller never sees.
+ */
+static IrPlace *lower_place_mode(AstNode *n, int allow_temp) {
     if (!n) return NULL;
     switch (n->kind) {
         case AST_IDENT: {
@@ -226,7 +249,7 @@ static IrPlace *lower_place(AstNode *n) {
                 if (id < 0) return NULL;
                 return place_local(id, ir_subst(n->ty));
             }
-            IrPlace *base = lower_place(n->as.access.target);
+            IrPlace *base = lower_place_mode(n->as.access.target, allow_temp);
             if (!base) return NULL;
             IrPlace *p = (IrPlace *)calloc(1, sizeof(IrPlace));
             p->kind = IR_PL_FIELD;
@@ -236,7 +259,7 @@ static IrPlace *lower_place(AstNode *n) {
             return p;
         }
         case AST_INDEX: {
-            IrPlace *base = lower_place(n->as.access.target);
+            IrPlace *base = lower_place_mode(n->as.access.target, allow_temp);
             if (!base) return NULL;
             int idx = lower_expr(n->as.access.index);
             if (!(n->flags & ASTF_INDEX_SAFE)) {
@@ -273,7 +296,7 @@ static IrPlace *lower_place(AstNode *n) {
             return p;
         }
         case AST_DEREF: {
-            IrPlace *base = lower_place(n->as.access.target);
+            IrPlace *base = lower_place_mode(n->as.access.target, allow_temp);
             if (!base) return NULL;
             IrPlace *p = (IrPlace *)calloc(1, sizeof(IrPlace));
             p->kind = IR_PL_DEREF;
@@ -282,9 +305,22 @@ static IrPlace *lower_place(AstNode *n) {
             return p;
         }
         default:
+            /* Not a place. In a read, evaluate it once into a local and treat
+               that local as the root of the path. */
+            if (allow_temp) {
+                int v = lower_expr(n);
+                if (v < 0) return NULL;
+                return place_local(v, v < F->nlocals ? F->locals[v].ty : ir_subst(n->ty));
+            }
             return NULL;
     }
 }
+
+/** Strict: assignment targets and `&`, where a temporary would be wrong. */
+static IrPlace *lower_place(AstNode *n) { return lower_place_mode(n, 0); }
+
+/** Reads, where a temporary base is fine. */
+static IrPlace *lower_place_rv(AstNode *n) { return lower_place_mode(n, 1); }
 
 static int emit_named_call(const char *callee, int *args, int nargs, Type *ty,
                            SourceLoc loc) {
@@ -378,6 +414,24 @@ static int lower_call(AstNode *n) {
         i->a = v;
         i->ty = ir_subst(n->ty);
         return dst;
+    }
+    if (n->as.call.sig_cell) {
+        size_t ac = n->as.call.arg_count;
+        int *args = ac ? (int *)calloc(ac, sizeof(int)) : NULL;
+        for (size_t k = 0; k < ac; k++)
+            args[k] = lower_expr(n->as.call.args[k]);
+        IrInst *i = emit(IR_CALL, n->loc);
+        i->dst = n->as.call.sig_cell == 3 ? -1 : dst;
+        i->args = args;
+        i->nargs = (int)ac;
+        if (n->as.call.sig_cell == 1 && ac)
+            i->ty = ir_subst(n->as.call.args[0]->ty);
+        else
+            i->ty = ir_subst(n->ty);
+        if (n->as.call.sig_cell == 1) i->callee = "yuga_sig_push";
+        else if (n->as.call.sig_cell == 2) i->callee = "yuga_sig_load";
+        else i->callee = "yuga_sig_store";
+        return n->as.call.sig_cell == 3 ? -1 : dst;
     }
     if (n->as.call.is_println) return lower_println(n);
     if (n->as.call.is_vec_push) {
@@ -538,7 +592,7 @@ static int lower_expr(AstNode *n) {
         case AST_FIELD:
         case AST_INDEX:
         case AST_DEREF: {
-            IrPlace *p = lower_place(n);
+            IrPlace *p = lower_place_rv(n);
             if (!p) {
                 F->lowered = 0;
                 return -1;
@@ -907,12 +961,7 @@ static void lower_stmt(AstNode *n) {
             CUR = body;
             sdepth++;
             scope_push(n->as.for_stmt.var, iv);
-            if (nloop < LOOP_MAX) {
-                loop_cont[nloop] = latch;
-                loop_brk[nloop] = exit;
-                loop_base[nloop] = F->nlocals;
-                nloop++;
-            }
+            loop_push(latch, exit, F->nlocals);
             lower_stmt(n->as.for_stmt.body);
             if (nloop > 0) nloop--;
             scope_pop_to(sdepth - 1);
@@ -947,12 +996,7 @@ static void lower_stmt(AstNode *n) {
             int c = lower_expr(n->as.if_stmt.cond);
             term_br(c, body, exit);
             CUR = body;
-            if (nloop < LOOP_MAX) {
-                loop_cont[nloop] = head;
-                loop_brk[nloop] = exit;
-                loop_base[nloop] = F->nlocals;
-                nloop++;
-            }
+            loop_push(head, exit, F->nlocals);
             lower_stmt(n->as.if_stmt.then_block);
             if (nloop > 0) nloop--;
             term_jmp(head);

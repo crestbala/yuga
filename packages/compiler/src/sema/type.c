@@ -164,6 +164,9 @@ void type_c_name(const Type *t, char *buf, size_t cap) {
         return;
     }
     snprintf(buf, cap, "%s", t->name ? t->name : "struct");
+    /* Signal<T> is a typed handle; the C layout is always { id }. */
+    if (t->name && strcmp(t->name, "Signal") == 0)
+        return;
     for (size_t i = 0; i < t->param_count; i++) {
         size_t used = strlen(buf);
         if (used + 3 >= cap) break;

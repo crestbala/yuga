@@ -351,7 +351,29 @@ static inline void yuga_sys_exit(int64_t code) {
     (void)code;
     abort();
 }
+static inline yuga_str yuga_sys_env(yuga_str name) {
+    (void)name;
+    return (yuga_str){"", 0};
+}
+static inline int64_t yuga_sys_write_file(yuga_str path, yuga_str body) {
+    (void)path;
+    (void)body;
+    return 1;
+}
+static inline yuga_str yuga_sys_exec(yuga_str cmd) {
+    (void)cmd;
+    return (yuga_str){"", 0};
+}
+static inline int64_t yuga_sys_exec_status(void) { return 1; }
+static inline yuga_str yuga_sys_read_file(yuga_str path) {
+    (void)path;
+    return (yuga_str){"", 0};
+}
 #else
+#include <sys/wait.h>
+
+static int yuga_sys_last_status = 1;
+
 static inline int64_t yuga_sys_env_set(yuga_str name) {
     char buf[256];
     const char *v;
@@ -363,6 +385,116 @@ static inline int64_t yuga_sys_env_set(yuga_str name) {
     return 1;
 }
 static inline void yuga_sys_exit(int64_t code) { exit((int)code); }
+
+static inline yuga_str yuga_sys_env(yuga_str name) {
+    char buf[256];
+    const char *v;
+    size_t n;
+    char *p;
+    if (!name.ptr || name.len <= 0 || name.len >= 256) return (yuga_str){"", 0};
+    memcpy(buf, name.ptr, (size_t)name.len);
+    buf[name.len] = 0;
+    v = getenv(buf);
+    if (!v) return (yuga_str){"", 0};
+    n = strlen(v);
+    p = (char *)yuga_new(n + 1, "sys_env", 0);
+    memcpy(p, v, n + 1);
+    return (yuga_str){p, (int64_t)n};
+}
+
+static inline int64_t yuga_sys_write_file(yuga_str path, yuga_str body) {
+    char pbuf[4096];
+    FILE *f;
+    if (!path.ptr || path.len <= 0 || path.len >= 4095) return 1;
+    memcpy(pbuf, path.ptr, (size_t)path.len);
+    pbuf[path.len] = 0;
+    f = fopen(pbuf, "wb");
+    if (!f) return 1;
+    if (body.ptr && body.len > 0) {
+        if (fwrite(body.ptr, 1, (size_t)body.len, f) != (size_t)body.len) {
+            fclose(f);
+            return 1;
+        }
+    }
+    fclose(f);
+    return 0;
+}
+
+static inline yuga_str yuga_sys_exec(yuga_str cmd) {
+    char cbuf[8192];
+    FILE *p;
+    size_t cap = 4096;
+    size_t n = 0;
+    char *out;
+    int st;
+    const size_t max_out = 262144;
+    if (!cmd.ptr || cmd.len <= 0 || cmd.len >= 8191) {
+        yuga_sys_last_status = 1;
+        return (yuga_str){"", 0};
+    }
+    memcpy(cbuf, cmd.ptr, (size_t)cmd.len);
+    cbuf[cmd.len] = 0;
+    p = popen(cbuf, "r");
+    if (!p) {
+        yuga_sys_last_status = 1;
+        return (yuga_str){"", 0};
+    }
+    out = (char *)yuga_new(cap, "sys_exec", 0);
+    for (;;) {
+        size_t r;
+        if (n + 512 >= cap) {
+            size_t ncap = cap * 2;
+            char *nbuf;
+            if (ncap > max_out + 512) ncap = max_out + 512;
+            nbuf = (char *)yuga_new(ncap, "sys_exec", 0);
+            memcpy(nbuf, out, n);
+            free(out);
+            out = nbuf;
+            cap = ncap;
+        }
+        if (n >= max_out) break;
+        r = fread(out + n, 1, 512, p);
+        n += r;
+        if (r < 512) break;
+    }
+    st = pclose(p);
+    if (st == -1) yuga_sys_last_status = 1;
+    else if (WIFEXITED(st)) yuga_sys_last_status = WEXITSTATUS(st);
+    else yuga_sys_last_status = 1;
+    out[n] = 0;
+    return (yuga_str){out, (int64_t)n};
+}
+
+static inline int64_t yuga_sys_exec_status(void) { return yuga_sys_last_status; }
+
+static inline yuga_str yuga_sys_read_file(yuga_str path) {
+    char pbuf[4096];
+    FILE *f;
+    long sz;
+    char *p;
+    size_t n;
+    const size_t max_n = 16u * 1024u * 1024u;
+    if (!path.ptr || path.len <= 0 || path.len >= 4095) return (yuga_str){"", 0};
+    memcpy(pbuf, path.ptr, (size_t)path.len);
+    pbuf[path.len] = 0;
+    f = fopen(pbuf, "rb");
+    if (!f) return (yuga_str){"", 0};
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return (yuga_str){"", 0};
+    }
+    sz = ftell(f);
+    if (sz < 0 || (size_t)sz > max_n) {
+        fclose(f);
+        return (yuga_str){"", 0};
+    }
+    rewind(f);
+    p = (char *)yuga_new((size_t)sz + 1, "sys_read_file", 0);
+    n = fread(p, 1, (size_t)sz, f);
+    fclose(f);
+    p[n] = 0;
+    return (yuga_str){p, (int64_t)n};
+}
 #endif
 
 #endif /* YUGA_RT_H */

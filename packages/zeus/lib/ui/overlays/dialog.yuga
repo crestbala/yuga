@@ -9,7 +9,7 @@ struct DialogProps {
     body: string,
     cancel: string,
     discard: string,
-    open: Signal,
+    open: Signal<int>,
 }
 
 // bezel dialog: centred card over a dim scrim. Title, wrapping body,

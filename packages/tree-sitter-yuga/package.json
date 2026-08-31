@@ -1,0 +1,8 @@
+{
+  "name": "tree-sitter-yuga",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for Yuga",
+  "main": "bindings/node",
+  "keywords": ["tree-sitter", "yuga"],
+  "license": "MIT"
+}

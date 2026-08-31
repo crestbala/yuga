@@ -5,7 +5,7 @@ import "../../theme/scale.yuga"
 
 struct TabProps {
     label: string,
-    sig: Signal,
+    sig: Signal<int>,
     value: int,
 }
 
@@ -13,7 +13,7 @@ struct TabsProps {
     a: string,
     b: string,
     c: string,
-    sig: Signal,
+    sig: Signal<int>,
 }
 
 struct TabParts {

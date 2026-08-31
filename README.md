@@ -21,6 +21,7 @@ make
 
 Language rules: [docs/spec.md](docs/spec.md). Architecture and how-to:
 [docs/yuga.md](docs/yuga.md). C vs Yuga: [docs/boundary.md](docs/boundary.md).
+Browsable docs: `./run.sh www` — Zeus UI at http://127.0.0.1:5175, `Docs.Page` on `:8082`.
 
 ## Requirements
 
@@ -86,12 +87,12 @@ import "std:zeus"
 
 fn main() {
     let n = zeus.signal(0)
-    zeus.col().pad(16).gap(8).child(
+    zeus.col().pad(16).gap(8).children(
         zeus.text("Count").font(22),
         zeus.label("").bind(n).font(28),
-        zeus.row().gap(8).child(
-            zeus.button("-").on(zeus.click(), || { zeus.inc(n, -1) }),
-            zeus.button("+").on(zeus.click(), || { zeus.inc(n, 1) }),
+        zeus.row().gap(8).children(
+            zeus.button("-").on_click(|| { n.set(n.get() - 1) }),
+            zeus.button("+").on_click(|| { n.set(n.get() + 1) }),
         ),
     ).run()
 }
@@ -133,6 +134,7 @@ exit (what `make test` does), set `ZEUS_HEADLESS=1` or `MAYA_HEADLESS=1`.
 ./run.sh dashboard ios        # same app, Simulator
 ./run.sh zeus/counter         # full-stack: API :8080 + web UI :5173
 ./run.sh zeus/counter macos   # same UI as a Cocoa client
+./run.sh www                  # docs: Zeus wasm :5175 + Docs.Page :8082
 ```
 
 `counter` is both a language example and the full-stack Zeus app, so a bare
@@ -206,6 +208,7 @@ packages/tree-sitter-yuga/
 packages/editors/      Zed extension
 examples/language/     standalone .yuga programs
 examples/zeus/         kit, dashboard, full-stack counter
+www/                   Zeus + gRPC docs (Vite serves wasm, no Svelte)
 docs/                  language, Zeus, C boundary
 bin/yugac              compiler
 bin/yuga-lsp           diagnostics, hover, go-to-def

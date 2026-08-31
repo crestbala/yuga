@@ -617,6 +617,59 @@ static void emit_expr(FILE *o, AstNode *n) {
                 emit_box_new(o, n);
                 break;
             }
+            if (n->as.call.sig_cell == 1 && n->as.call.arg_count == 1) {
+                fprintf(o, "({ yuga_arena_ensure(); ");
+                if (n->as.call.args[0]->ty && n->as.call.args[0]->ty->kind == TY_INT) {
+                    fprintf(o, "yuga_vec_push(&yuga_arena_sigs, &({ ");
+                    emit_ctype(o, n->as.call.args[0]->ty);
+                    fprintf(o, " _sv = ");
+                    emit_expr(o, n->as.call.args[0]);
+                    fprintf(o, "; _sv; }), sizeof(int64_t), ");
+                    emit_loc_args(o, n);
+                    fprintf(o, "); ");
+                } else {
+                    fprintf(o, "int64_t _szero = 0; yuga_vec_push(&yuga_arena_sigs, &_szero, "
+                               "sizeof(int64_t), ");
+                    emit_loc_args(o, n);
+                    fprintf(o, "); ");
+                    emit_ctype(o, n->as.call.args[0]->ty);
+                    fprintf(o, " _sv = ");
+                    emit_expr(o, n->as.call.args[0]);
+                    fprintf(o, "; ");
+                }
+                fprintf(o, "int64_t _sid = yuga_arena_sigs.len - 1; yuga_zeus_sig_bind(_sid, &_sv, "
+                           "sizeof(_sv)); _sid; })");
+                break;
+            }
+            if (n->as.call.sig_cell == 2 && n->as.call.arg_count == 1) {
+                fprintf(o, "({ ");
+                emit_ctype(o, n->ty);
+                fprintf(o, " _sv; yuga_zeus_sig_load(");
+                emit_expr(o, n->as.call.args[0]);
+                fprintf(o, ", &_sv, sizeof(_sv)); _sv; })");
+                break;
+            }
+            if (n->as.call.sig_cell == 3 && n->as.call.arg_count == 2) {
+                Type *vt = n->as.call.args[1]->ty;
+                if (vt && vt->kind == TY_INT) {
+                    fprintf(o, "(yuga_arena_store_sig(");
+                    emit_expr(o, n->as.call.args[0]);
+                    fprintf(o, ", ");
+                    emit_expr(o, n->as.call.args[1]);
+                    fprintf(o, "), 0)");
+                } else {
+                    fprintf(o, "({ ");
+                    emit_ctype(o, vt);
+                    fprintf(o, " _sv = ");
+                    emit_expr(o, n->as.call.args[1]);
+                    fprintf(o, "; int64_t _sid = ");
+                    emit_expr(o, n->as.call.args[0]);
+                    fprintf(o, "; if (yuga_zeus_sig_changed(_sid, &_sv, sizeof(_sv))) { "
+                               "yuga_zeus_sig_bind(_sid, &_sv, sizeof(_sv)); yuga_track_notify(_sid); "
+                               "} 0; })");
+                }
+                break;
+            }
             if (n->as.call.is_wrapping_add) {
                 fprintf(o, "yuga_wrapping_add(");
                 emit_expr(o, n->as.call.args[0]);
@@ -1400,6 +1453,56 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
             break;
         case IR_CALL:
         case IR_CALL_VAL: {
+            if (in->op == IR_CALL && in->callee && strcmp(in->callee, "yuga_sig_push") == 0 &&
+                in->nargs >= 1 && in->dst >= 0) {
+                Type *vt = in->ty;
+                fprintf(o, "yuga_arena_ensure();\n");
+                indent(o, 1);
+                if (vt && vt->kind == TY_INT) {
+                    fprintf(o, "yuga_vec_push(&yuga_arena_sigs, &%s, sizeof(int64_t), ",
+                            lv(in->args[0]));
+                    emit_ir_loc(o, in->loc);
+                    fprintf(o, ");\n");
+                } else {
+                    fprintf(o, "{ int64_t _szero = 0; yuga_vec_push(&yuga_arena_sigs, &_szero, "
+                               "sizeof(int64_t), ");
+                    emit_ir_loc(o, in->loc);
+                    fprintf(o, "); }\n");
+                }
+                indent(o, 1);
+                fprintf(o, "%s = yuga_arena_sigs.len - 1;\n", lv(in->dst));
+                indent(o, 1);
+                fprintf(o, "yuga_zeus_sig_bind(%s, &%s, sizeof(", lv(in->dst), lv(in->args[0]));
+                emit_ctype(o, vt);
+                fprintf(o, "));\n");
+                break;
+            }
+            if (in->op == IR_CALL && in->callee && strcmp(in->callee, "yuga_sig_load") == 0 &&
+                in->nargs >= 1 && in->dst >= 0) {
+                fprintf(o, "yuga_zeus_sig_load(%s, &%s, sizeof(", lv(in->args[0]), lv(in->dst));
+                emit_ctype(o, in->ty);
+                fprintf(o, "));\n");
+                break;
+            }
+            if (in->op == IR_CALL && in->callee && strcmp(in->callee, "yuga_sig_store") == 0 &&
+                in->nargs >= 2) {
+                Type *vt = in->ty;
+                if (vt && vt->kind == TY_VOID && in->args[1] >= 0 && in->args[1] < CF->nlocals)
+                    vt = CF->locals[in->args[1]].ty;
+                if (vt && vt->kind == TY_INT) {
+                    fprintf(o, "yuga_arena_store_sig(%s, %s);\n", lv(in->args[0]),
+                            lv(in->args[1]));
+                } else {
+                    fprintf(o, "if (yuga_zeus_sig_changed(%s, &%s, sizeof(", lv(in->args[0]),
+                            lv(in->args[1]));
+                    emit_ctype(o, vt);
+                    fprintf(o, "))) { yuga_zeus_sig_bind(%s, &%s, sizeof(", lv(in->args[0]),
+                            lv(in->args[1]));
+                    emit_ctype(o, vt);
+                    fprintf(o, ")); yuga_track_notify(%s); }\n", lv(in->args[0]));
+                }
+                break;
+            }
             if (in->op == IR_CALL && in->callee && strcmp(in->callee, "yuga_vec_push") == 0 &&
                 in->nargs >= 2) {
                 Type *vt = (in->args[0] >= 0 && in->args[0] < CF->nlocals)
@@ -1920,6 +2023,7 @@ void codegen_emit_c(FILE *out, YugaModule *mods, int nmods, const char *rt_path)
     }
     for (int i = 0; i < typecheck_struct_inst_count(); i++) {
         Type *t = typecheck_struct_inst(i);
+        if (t && t->name && strcmp(t->name, "Signal") == 0) continue;
         if (t && struct_targs_concrete(t)) emit_struct_type(out, t);
     }
 

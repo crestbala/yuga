@@ -4,7 +4,7 @@ import "../../theme/colors.yuga"
 import "../../theme/scale.yuga"
 
 struct ProgressProps {
-    sig: Signal,
+    sig: Signal<int>,
 }
 
 fn tone(variant: int) -> int {

@@ -41,6 +41,12 @@ list() {
   echo
   echo "full stack         (./run.sh counter [web|backend|macos|ios|android])"
   [ -d "$ZEUSDIR/counter" ] && echo "  counter"
+  echo
+  echo "playground         (./run.sh repl [web|backend|frontend|macos])"
+  echo "  repl               edit Yuga in the browser; Run is Playground.Run over gRPC-Web"
+  echo
+  echo "docs               (./run.sh www [web|backend|frontend|macos])"
+  echo "  www                Zeus docs; UI :5175, Docs.Page :8082"
 }
 
 ensure_yugac() {
@@ -61,6 +67,17 @@ run_counter_stack() {
     ios)      exec "$ZEUSDIR/counter/ios/run.sh" ;;
     android)  exec "$ZEUSDIR/counter/android/run.sh" ;;
     *) die "unknown counter variant '$variant' (web backend frontend macos ios android)" ;;
+  esac
+}
+
+run_repl_stack() {
+  variant=${1:-web}
+  case $variant in
+    web|"")   exec "$ZEUSDIR/repl/run.sh" ;;
+    backend)  exec "$ZEUSDIR/repl/backend/run.sh" ;;
+    frontend) exec "$ZEUSDIR/repl/frontend/run.sh" ;;
+    macos)    exec "$ZEUSDIR/repl/macos/run.sh" ;;
+    *) die "unknown repl variant '$variant' (web backend frontend macos)" ;;
   esac
 }
 
@@ -103,7 +120,9 @@ shift
 
 case $what in
   list|-l|--list|-h|--help) list; exit 0 ;;
+  www|docs) exec "$HERE/www/run.sh" "$@" ;;
   language/*) run_language "${what#language/}" ;;
+  repl|zeus/repl) run_repl_stack "$@" ;;
   zeus/counter)  run_counter_stack "$@" ;;
   zeus/*)     run_zeus_app "${what#zeus/}" "$@" ;;
 esac
@@ -122,6 +141,8 @@ if [ "$is_lang" = 1 ]; then
 elif [ "$is_zeus" = 1 ]; then
   if [ "$what" = counter ]; then
     run_counter_stack "$@"
+  elif [ "$what" = repl ]; then
+    run_repl_stack "$@"
   else
     run_zeus_app "$what" "$@"
   fi

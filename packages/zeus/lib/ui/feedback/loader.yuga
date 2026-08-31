@@ -50,19 +50,19 @@ fn bloom() -> int {
 }
 
 fn fill_dot(d: int, cx: int, cy: int, alpha: int) -> Node {
-    return zeus.box().size(d).bg(colors.accent()).radius(d / 2).opacity(alpha).position(zeus.pos_absolute()).left(cx - d / 2).top(cy - d / 2).pulse().shrink(0)
+    return zeus.box().size_px(d).bg(colors.accent()).radius(d / 2).opacity(alpha).position(zeus.pos_absolute()).left(cx - d / 2).top(cy - d / 2).pulse().shrink(0)
 }
 
 fn ring_line(d: int, cx: int, cy: int, alpha: int) -> Node {
-    return zeus.box().size(d).bg(colors.card()).border(2).border_color(colors.accent()).opacity(alpha).radius(d / 2).position(zeus.pos_absolute()).left(cx - d / 2).top(cy - d / 2).pulse().shrink(0)
+    return zeus.box().size_px(d).bg(colors.card()).border(2).border_color(colors.accent()).opacity(alpha).radius(d / 2).position(zeus.pos_absolute()).left(cx - d / 2).top(cy - d / 2).pulse().shrink(0)
 }
 
 fn cell(size: int, rgb: int, alpha: int) -> Node {
-    return zeus.box().size(size).bg(rgb).radius(size / 2).opacity(alpha).pulse().shrink(0)
+    return zeus.box().size_px(size).bg(rgb).radius(size / 2).opacity(alpha).pulse().shrink(0)
 }
 
 fn slot(size: int, rgb: int, alpha: int) -> Node {
-    return zeus.box().size(size).bg(rgb).radius(size / 4).opacity(alpha).pulse().shrink(0)
+    return zeus.box().size_px(size).bg(rgb).radius(size / 4).opacity(alpha).pulse().shrink(0)
 }
 
 fn Dot(p: LoaderDotProps) -> Node {
@@ -70,14 +70,14 @@ fn Dot(p: LoaderDotProps) -> Node {
 }
 
 fn Cluster() -> Node {
-    return zeus.box().size(box_size()).shrink(0)
+    return zeus.box().size_px(box_size()).shrink(0)
         .child(fill_dot(27, 16, 16, 100))
         .child(fill_dot(14, 28, 14, 65))
         .child(fill_dot(6, 21, 29, 40))
 }
 
 fn Ring() -> Node {
-    return zeus.box().size(box_size()).shrink(0)
+    return zeus.box().size_px(box_size()).shrink(0)
         .child(fill_dot(7, 22, 7, 100))
         .child(fill_dot(7, 33, 11, 88))
         .child(fill_dot(7, 37, 22, 76))
@@ -89,7 +89,7 @@ fn Ring() -> Node {
 }
 
 fn Converge() -> Node {
-    return zeus.box().size(box_size()).shrink(0)
+    return zeus.box().size_px(box_size()).shrink(0)
         .child(fill_dot(7, 22, 16, 90))
         .child(fill_dot(7, 26, 18, 90))
         .child(fill_dot(7, 28, 22, 90))
@@ -101,7 +101,7 @@ fn Converge() -> Node {
 }
 
 fn Bloom() -> Node {
-    return zeus.box().size(box_size()).shrink(0)
+    return zeus.box().size_px(box_size()).shrink(0)
         .child(ring_line(44, 22, 22, 22))
         .child(ring_line(28, 22, 22, 50))
         .child(ring_line(12, 22, 22, 90))

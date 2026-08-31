@@ -349,6 +349,46 @@ static AstNode *find_fn_in(YugaModule *m, const char *name) {
     return NULL;
 }
 
+static Type *fn_type_of(AstNode *fn);
+static Type *peel_ref(Type *t);
+
+/** 1 if `fn`'s first parameter can be the method receiver `recv`. */
+static int method_recv_matches(AstNode *fn, Type *recv) {
+    if (!fn || !recv) return 0;
+    Type *ft = fn_type_of(fn);
+    if (!ft || ft->kind != TY_PROC || ft->param_count < 1 || !ft->params[0]) return 0;
+    Type *pt = peel_ref(ft->params[0]);
+    Type *rt = peel_ref(recv);
+    if (!pt || !rt) return 0;
+    if (pt->kind == TY_PARAM) return 1;
+    if (type_eq(pt, rt)) return 1;
+    /* `Signal<T>` vs `Signal<int>` — same named struct, different args. */
+    if (pt->kind == TY_STRUCT && rt->kind == TY_STRUCT &&
+        pt->name && rt->name && strcmp(pt->name, rt->name) == 0)
+        return 1;
+    return 0;
+}
+
+/** UFCS: current module, then last matching import. `n.radius(8)` skips
+ *  `spacing.radius(int, int)` and takes `zeus.radius(Node, int)`. Two Node
+ *  methods named `size` — later import wins (`ui.size` over `zeus.size`). */
+static AstNode *find_method(const char *fnn, Type *recv) {
+    AstNode *fn = find_fn_in(&Gmods[Gcur], fnn);
+    if (fn && method_recv_matches(fn, recv)) return fn;
+    AstNode *prog = Gmods[Gcur].ast;
+    if (!prog || prog->as.program.import_count == 0) return NULL;
+    size_t i = prog->as.program.import_count;
+    while (i > 0) {
+        i--;
+        AstNode *im = prog->as.program.imports[i];
+        if (!im || !im->as.import.alias) continue;
+        YugaModule *m = find_mod(im->as.import.alias);
+        fn = m ? find_fn_in(m, fnn) : NULL;
+        if (fn && method_recv_matches(fn, recv)) return fn;
+    }
+    return NULL;
+}
+
 static AstNode *find_global_in(YugaModule *m, const char *name) {
     if (!m || !m->ast || !name) return NULL;
     AstNode *p = m->ast;
@@ -414,7 +454,10 @@ static Type *struct_type_of(AstNode *st) {
 
 Type *typecheck_signal_type(void) {
     AstNode *st = find_struct("Signal");
-    return st ? struct_type_of(st) : NULL;
+    if (!st) return NULL;
+    if (!st->as.strct.tparam_count) return struct_type_of(st);
+    Type *args[1] = { ty_int() };
+    return make_struct_inst(st, args, 1);
 }
 
 /** Captured `let mut int` is component state: keep the Yuga type as int (props
@@ -653,6 +696,12 @@ static Type *finish_proc_call(AstNode *n, Type *ft, AstNode *named) {
             n->as.call.resolved_cname = cn;
             record_mono(named, bound, nt, cn);
         }
+        if (named->as.fn.cname && bound && bound[0] &&
+            (strcmp(named->as.fn.cname, "yuga_zeus_signal") == 0 ||
+             strcmp(named->as.fn.cname, "yuga_zeus_get") == 0 ||
+             strcmp(named->as.fn.cname, "yuga_zeus_set") == 0) &&
+            !type_is_copy(bound[0]))
+            err(n->loc, "Signal<%s> requires a Copy type", type_name(bound[0]));
         free(bound);
     }
     n->ty = ret;
@@ -738,8 +787,8 @@ static int try_vec_builtin(AstNode *n) {
     return 1;
 }
 
-/** `.child(a, b)` / `zeus.child(p, a, b)` → nested `.child` calls.
-    `.child((a, b))` still expands (legacy tuple form). */
+/** `.children(a, b)` / `zeus.children(p, a, b)` → nested `.child` calls.
+    `.children((a, b))` still unwraps a tuple. `.child` takes one node. */
 static int is_mod_field(AstNode *cal) {
     return cal && cal->kind == AST_FIELD && !cal->as.access.via_colon &&
            cal->as.access.target && cal->as.access.target->kind == AST_IDENT &&
@@ -747,11 +796,36 @@ static int is_mod_field(AstNode *cal) {
             strcmp(cal->as.access.target->as.ident.name, "Box") == 0);
 }
 
-static int expand_child_tuple(AstNode *n) {
+static int reject_multi_child(AstNode *n) {
     AstNode *cal = n->as.call.callee;
     if (!cal || cal->kind != AST_FIELD || cal->as.access.via_colon) return 0;
     if (!cal->as.access.field || strcmp(cal->as.access.field, "child") != 0) return 0;
+    if (!cal->as.access.target) return 0;
     int mod = is_mod_field(cal);
+    int many = 0;
+    if (!mod && n->as.call.arg_count >= 2) many = 1;
+    if (mod && n->as.call.arg_count >= 3) many = 1;
+    if (n->as.call.arg_count == 1 && n->as.call.args[0] &&
+        n->as.call.args[0]->kind == AST_TUPLE && n->as.call.args[0]->as.array_lit.count > 1)
+        many = 1;
+    if (mod && n->as.call.arg_count == 2 && n->as.call.args[1] &&
+        n->as.call.args[1]->kind == AST_TUPLE && n->as.call.args[1]->as.array_lit.count > 1)
+        many = 1;
+    if (!many) return 0;
+    err(n->loc, "'.child' takes one node; use '.children(...)' for several");
+    return 1;
+}
+
+static int expand_children(AstNode *n) {
+    AstNode *cal = n->as.call.callee;
+    if (!cal || cal->kind != AST_FIELD || cal->as.access.via_colon) return 0;
+    if (!cal->as.access.field || strcmp(cal->as.access.field, "children") != 0) return 0;
+    if (!cal->as.access.target) return 0;
+    int mod = is_mod_field(cal);
+    if (n->as.call.arg_count == 0 || (mod && n->as.call.arg_count == 1)) {
+        err(n->loc, "'.children' needs at least one node");
+        return 0;
+    }
     if (n->as.call.arg_count == 1 && n->as.call.args[0] &&
         n->as.call.args[0]->kind == AST_TUPLE) {
         AstNode *tup = n->as.call.args[0];
@@ -763,6 +837,7 @@ static int expand_child_tuple(AstNode *n) {
             tup->as.array_lit.elems = NULL;
             tup->as.array_lit.count = 0;
             ast_free(tup);
+            cal->as.access.field = yuga_dup("child");
             return 1;
         }
         AstNode *inner = cal->as.access.target;
@@ -774,6 +849,7 @@ static int expand_child_tuple(AstNode *n) {
         }
         cal->as.access.target = inner;
         n->as.call.args[0] = els[nc - 1];
+        cal->as.access.field = yuga_dup("child");
         tup->as.array_lit.elems = NULL;
         tup->as.array_lit.count = 0;
         ast_free(tup);
@@ -786,11 +862,10 @@ static int expand_child_tuple(AstNode *n) {
         AstNode **els = tup->as.array_lit.elems;
         if (nc == 0) return 0;
         const char *modn = cal->as.access.target->as.ident.name;
-        const char *fnn = cal->as.access.field;
         AstNode *acc = n->as.call.args[0];
         for (size_t i = 0; i + 1 < nc; i++) {
             AstNode *fld = ast_field(ast_ident(yuga_dup(modn), cal->as.access.target->loc),
-                                    yuga_dup(fnn), 0, n->loc);
+                                    yuga_dup("child"), 0, n->loc);
             AstNode **a = (AstNode **)malloc(2 * sizeof(AstNode *));
             a[0] = acc;
             a[1] = els[i];
@@ -798,9 +873,14 @@ static int expand_child_tuple(AstNode *n) {
         }
         n->as.call.args[0] = acc;
         n->as.call.args[1] = els[nc - 1];
+        cal->as.access.field = yuga_dup("child");
         tup->as.array_lit.elems = NULL;
         tup->as.array_lit.count = 0;
         ast_free(tup);
+        return 1;
+    }
+    if (!mod && n->as.call.arg_count == 1) {
+        cal->as.access.field = yuga_dup("child");
         return 1;
     }
     if (!mod && n->as.call.arg_count >= 2) {
@@ -817,18 +897,22 @@ static int expand_child_tuple(AstNode *n) {
         n->as.call.args = (AstNode **)malloc(sizeof(AstNode *));
         n->as.call.args[0] = els[nc - 1];
         n->as.call.arg_count = 1;
+        cal->as.access.field = yuga_dup("child");
         free(els);
+        return 1;
+    }
+    if (mod && n->as.call.arg_count == 2) {
+        cal->as.access.field = yuga_dup("child");
         return 1;
     }
     if (mod && n->as.call.arg_count >= 3) {
         AstNode **els = n->as.call.args;
         size_t nc = n->as.call.arg_count;
         const char *modn = cal->as.access.target->as.ident.name;
-        const char *fnn = cal->as.access.field;
         AstNode *acc = els[0];
         for (size_t i = 1; i + 1 < nc; i++) {
             AstNode *fld = ast_field(ast_ident(yuga_dup(modn), cal->as.access.target->loc),
-                                    yuga_dup(fnn), 0, n->loc);
+                                    yuga_dup("child"), 0, n->loc);
             AstNode **a = (AstNode **)malloc(2 * sizeof(AstNode *));
             a[0] = acc;
             a[1] = els[i];
@@ -838,6 +922,7 @@ static int expand_child_tuple(AstNode *n) {
         n->as.call.args[0] = acc;
         n->as.call.args[1] = els[nc - 1];
         n->as.call.arg_count = 2;
+        cal->as.access.field = yuga_dup("child");
         free(els);
         return 1;
     }
@@ -845,8 +930,9 @@ static int expand_child_tuple(AstNode *n) {
 }
 
 /** Dispatch: Box::new, wrapping_add, fmt.println, method rewrite, mod.fn. */
-static Type *check_call(AstNode *n) {
-    if (expand_child_tuple(n)) return check_call(n);
+static Type *check_call(AstNode *n, Type *expect) {
+    if (reject_multi_child(n)) return ty_void();
+    if (expand_children(n)) return check_call(n, expect);
     AstNode *cal = n->as.call.callee;
 
     /* Box::new(expr) */
@@ -868,6 +954,50 @@ static Type *check_call(AstNode *n) {
     /* wrapping_add / saturating_add / wrapping bit ops / string_from_bytes */
     if (cal && cal->kind == AST_IDENT) {
         const char *nm = cal->as.ident.name;
+        if (strcmp(nm, "__sig_push") == 0) {
+            if (n->as.call.arg_count != 1) {
+                err(n->loc, "__sig_push expects 1 argument");
+                return ty_void();
+            }
+            Type *a = check_expr(n->as.call.args[0]);
+            n->as.call.sig_cell = 1;
+            n->ty = ty_int();
+            n->place_mut = 0;
+            (void)a;
+            return n->ty;
+        }
+        if (strcmp(nm, "__sig_load") == 0) {
+            if (n->as.call.arg_count != 1) {
+                err(n->loc, "__sig_load expects 1 argument");
+                return ty_void();
+            }
+            Type *a = check_expr(n->as.call.args[0]);
+            if (!type_eq(a, ty_int()))
+                err(n->as.call.args[0]->loc, "__sig_load requires int id");
+            if (!expect || expect->kind == TY_VOID) {
+                err(n->loc, "cannot infer type of __sig_load");
+                n->ty = ty_void();
+                return n->ty;
+            }
+            n->as.call.sig_cell = 2;
+            n->ty = expect;
+            n->place_mut = 0;
+            return n->ty;
+        }
+        if (strcmp(nm, "__sig_store") == 0) {
+            if (n->as.call.arg_count != 2) {
+                err(n->loc, "__sig_store expects 2 arguments");
+                return ty_void();
+            }
+            Type *a = check_expr(n->as.call.args[0]);
+            check_expr(n->as.call.args[1]);
+            if (!type_eq(a, ty_int()))
+                err(n->as.call.args[0]->loc, "__sig_store requires int id");
+            n->as.call.sig_cell = 3;
+            n->ty = ty_void();
+            n->place_mut = 0;
+            return n->ty;
+        }
         if (strcmp(nm, "wrapping_add") == 0 || strcmp(nm, "saturating_add") == 0) {
             if (n->as.call.arg_count != 2) {
                 err(n->loc, "%s expects 2 arguments", nm);
@@ -948,48 +1078,42 @@ static Type *check_call(AstNode *n) {
                        strcmp(cal->as.access.target->as.ident.name, "Box") == 0);
     if (cal && cal->kind == AST_FIELD && !cal->as.access.via_colon && !is_mod_path) {
         const char *fnn = cal->as.access.field;
-        fn = find_fn_in(&Gmods[Gcur], fnn);
-        if (!fn) {
-            AstNode *prog = Gmods[Gcur].ast;
-            if (prog) {
-                for (size_t i = 0; i < prog->as.program.import_count; i++) {
-                    AstNode *im = prog->as.program.imports[i];
-                    if (!im || !im->as.import.alias) continue;
-                    YugaModule *m = find_mod(im->as.import.alias);
-                    fn = m ? find_fn_in(m, fnn) : NULL;
-                    if (fn) break;
-                }
-            }
-        }
-        if (!fn) {
-            /* `h.f(x)` — field of type fn, not a method. */
+        Type *done = cal->as.access.resolved ? fn_type_of(cal->as.access.resolved) : NULL;
+        if (done && n->as.call.arg_count == done->param_count) {
+            fn = cal->as.access.resolved;
+            cal->ty = done;
+        } else {
             Type *recv_ty = cal->as.access.target ? check_expr(cal->as.access.target) : NULL;
-            Type *base = peel_ref(recv_ty);
-            if (base && base->kind == TY_STRUCT && fnn) {
-                for (size_t i = 0; i < base->field_count; i++) {
-                    if (base->field_names[i] && strcmp(base->field_names[i], fnn) == 0 &&
-                        base->field_types[i] && base->field_types[i]->kind == TY_PROC) {
-                        cal->ty = base->field_types[i];
-                        n->as.call.is_fn_val = 1;
-                        return finish_proc_call(n, cal->ty, NULL);
+            fn = find_method(fnn, recv_ty);
+            if (!fn) {
+                /* `h.f(x)` — field of type fn, not a method. */
+                Type *base = peel_ref(recv_ty);
+                if (base && base->kind == TY_STRUCT && fnn) {
+                    for (size_t i = 0; i < base->field_count; i++) {
+                        if (base->field_names[i] && strcmp(base->field_names[i], fnn) == 0 &&
+                            base->field_types[i] && base->field_types[i]->kind == TY_PROC) {
+                            cal->ty = base->field_types[i];
+                            n->as.call.is_fn_val = 1;
+                            return finish_proc_call(n, cal->ty, NULL);
+                        }
                     }
                 }
+                err(n->loc, "no method '%s'", fnn);
+                return ty_void();
             }
-            err(n->loc, "no method '%s'", fnn);
-            return ty_void();
+            cal->as.access.resolved = fn;
+            cal->ty = fn_type_of(fn);
+            AstNode *recv = cal->as.access.target;
+            cal->as.access.target = NULL;
+            size_t ac = n->as.call.arg_count;
+            AstNode **na = (AstNode **)malloc((ac + 1) * sizeof(AstNode *));
+            na[0] = recv;
+            if (ac) memcpy(na + 1, n->as.call.args, ac * sizeof(AstNode *));
+            free(n->as.call.args);
+            n->as.call.args = na;
+            n->as.call.arg_count = ac + 1;
+            n->as.call.resolved_cname = fn->as.fn.cname;
         }
-        cal->as.access.resolved = fn;
-        cal->ty = fn_type_of(fn);
-        AstNode *recv = cal->as.access.target;
-        cal->as.access.target = NULL;
-        size_t ac = n->as.call.arg_count;
-        AstNode **na = (AstNode **)malloc((ac + 1) * sizeof(AstNode *));
-        na[0] = recv;
-        if (ac) memcpy(na + 1, n->as.call.args, ac * sizeof(AstNode *));
-        free(n->as.call.args);
-        n->as.call.args = na;
-        n->as.call.arg_count = ac + 1;
-        n->as.call.resolved_cname = fn->as.fn.cname;
     } else if (cal && cal->kind == AST_FIELD && !cal->as.access.via_colon &&
         cal->as.access.target && cal->as.access.target->kind == AST_IDENT) {
         const char *mod = cal->as.access.target->as.ident.name;
@@ -997,6 +1121,11 @@ static Type *check_call(AstNode *n) {
         if (!module_imported(Gmods[Gcur].ast, mod)) {
             err(n->loc, "unknown module '%s' — add `import \"std:%s\"` or `import \"%s.yuga\"`",
                 mod, mod, mod);
+            return ty_void();
+        }
+        if (strcmp(mod, "zeus") == 0 && fnn &&
+            (strcmp(fnn, "get") == 0 || strcmp(fnn, "set") == 0)) {
+            err(n->loc, "use sig.%s(...) instead of zeus.%s", fnn, fnn);
             return ty_void();
         }
         YugaModule *m = find_mod(mod);
@@ -1339,7 +1468,7 @@ static Type *check_expr_ty(AstNode *n, Type *expect) {
             return n->ty;
         }
         case AST_CALL:
-            return check_call(n);
+            return check_call(n, expect);
         case AST_CLOSURE:
             return check_closure(n, expect);
         case AST_STRUCT_LIT: {
@@ -1417,7 +1546,7 @@ static Type *check_expr_ty(AstNode *n, Type *expect) {
             return n->ty;
         }
         case AST_TUPLE:
-            err(n->loc, "tuple is not a value; use `.child(a, b, ...)`");
+            err(n->loc, "tuple is not a value; use `.children(a, b, ...)`");
             n->ty = ty_void();
             return n->ty;
         default:
@@ -1474,7 +1603,7 @@ static void check_stmt(AstNode *n) {
         case AST_RETURN: {
             Type *want = cur_ret ? cur_ret : ty_void();
             Type *t = n->as.ret.expr
-                ? check_expr_ty(n->as.ret.expr, (!clos_infer && want->kind == TY_PROC) ? want : NULL)
+                ? check_expr_ty(n->as.ret.expr, clos_infer ? NULL : want)
                 : ty_void();
             if (n->as.ret.expr && want->kind == TY_PTR) {
                 if (n->as.ret.expr->kind == AST_ADDR &&

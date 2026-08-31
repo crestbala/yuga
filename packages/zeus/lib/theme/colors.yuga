@@ -14,7 +14,7 @@ struct Pair {
 
 fn pair(p: Pair) -> int {
     zeus.theme(p.slot, p.lit, p.dim)
-    zeus.get(zeus.appearance())
+    zeus.appearance().get()
     return zeus.role(p.slot)
 }
 

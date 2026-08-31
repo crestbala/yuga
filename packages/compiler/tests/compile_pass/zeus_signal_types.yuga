@@ -1,0 +1,25 @@
+import "std:fmt"
+import "std:zeus"
+
+fn fail() {
+    let z = 0
+    fmt.println(1 / z)
+}
+
+fn expect(got: int, want: int) {
+    if got < want {
+        fail()
+    }
+    if want < got {
+        fail()
+    }
+}
+
+fn main() {
+    let n = zeus.signal(1)
+    expect(n.get(), 1)
+    n.set(7)
+    expect(n.get(), 7)
+    n.set(n.get() + 1)
+    expect(n.get(), 8)
+}

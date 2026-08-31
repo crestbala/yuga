@@ -5,7 +5,7 @@ import "../../theme/colors.yuga"
 import "../../theme/scale.yuga"
 
 struct PaginationProps {
-    page: Signal,
+    page: Signal<int>,
     last: int,
 }
 
@@ -19,22 +19,22 @@ fn seq(lo: int, hi: int) -> []int {
     return xs
 }
 
-fn PageAt(page: Signal, n: int, size: int) -> Node {
+fn PageAt(page: Signal<int>, n: int, size: int) -> Node {
     let lab = zeus.signal(n)
     let d = scale.hit_of(size)
     let wrap = zeus.row().gap(0).shrink(0)
-    wrap.child(zeus.button("0").bind(lab).bg(colors.text()).fg(colors.app()).size(d).padX(0).padY(0).radius(scale.radius_of(size)).center().font(scale.font_px(size)).show_eq(page, n).on_click_set(page, n).shrink(0))
-    wrap.child(zeus.button("0").bind(lab).bg(-1).fg(colors.muted()).size(d).padX(0).padY(0).radius(scale.radius_of(size)).center().font(scale.font_px(size)).show_ne(page, n).on_click_set(page, n).shrink(0))
+    wrap.child(zeus.button("0").bind(lab).bg(colors.text()).fg(colors.app()).size_px(d).padX(0).padY(0).radius(scale.radius_of(size)).center().font(scale.font_px(size)).show_eq(page, n).on_click_set(page, n).shrink(0))
+    wrap.child(zeus.button("0").bind(lab).bg(-1).fg(colors.muted()).size_px(d).padX(0).padY(0).radius(scale.radius_of(size)).center().font(scale.font_px(size)).show_ne(page, n).on_click_set(page, n).shrink(0))
     return wrap
 }
 
-fn Page(page: Signal, n: int) -> Node {
+fn Page(page: Signal<int>, n: int) -> Node {
     return PageAt(page, n, scale.md())
 }
 
 struct PaginationSpec {
     n: Node,
-    page: Signal,
+    page: Signal<int>,
     last: int,
 }
 
@@ -51,7 +51,7 @@ fn build_pages(p: PaginationSpec) {
     let row = p.n.add(zeus.row().gap(spacing.space_xs()).align(zeus.flex_center()).flex_wrap())
     row.child(icons.Hit(HitProps { markup: icons.alt_arrow_left(), color: colors.muted(), hit: d, size: scale.icon_of(size) }).radius(scale.radius_of(size)).show_eq(p.page, 1))
     row.child(icons.Hit(HitProps { markup: icons.alt_arrow_left(), color: colors.text(), hit: d, size: scale.icon_of(size) }).radius(scale.radius_of(size)).show_ne(p.page, 1).on_click_add(p.page, -1))
-    row.each(seq(1, p.last + 1), (i) => {
+    row.each(seq(1, p.last + 1), (idx, i) => {
         PageAt(p.page, i, size)
     })
     row.child(icons.Hit(HitProps { markup: icons.alt_arrow_right(), color: colors.muted(), hit: d, size: scale.icon_of(size) }).radius(scale.radius_of(size)).show_eq(p.page, p.last))

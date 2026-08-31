@@ -5,7 +5,7 @@ import "../display/icons.yuga"
 
 struct CheckboxProps {
     label: string,
-    sig: Signal,
+    sig: Signal<int>,
 }
 
 struct CheckboxParts {
@@ -32,7 +32,7 @@ fn style_check(p: CheckboxParts) {
     let variant = p.n.look_of()
     let d = scale.check_of(size)
     p.n.gap(scale.gap_of(size)).align(zeus.flex_center())
-    p.mark.size(d).radius(scale.radius_of(size) / 2).bg(fill(variant)).fg(colors.text()).border_color(colors.on_solid())
+    p.mark.size_px(d).radius(scale.radius_of(size) / 2).bg(fill(variant)).fg(colors.text()).border_color(colors.on_solid())
     p.lab.fg(colors.text()).font(scale.font_px(size))
 }
 

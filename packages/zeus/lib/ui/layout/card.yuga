@@ -28,7 +28,7 @@ fn Header(p: CardHeaderProps) -> Node {
     let n = zeus.col().gap(spacing.space_snug())
     let bar = n.add(zeus.row().gap(spacing.space_sm()).justify(zeus.flex_between()).align(zeus.flex_center()))
     bar.child(zeus.label(p.title).fg(colors.text()).font(16))
-    bar.child(zeus.box().size(spacing.dot()).bg(colors.muted()).radius(spacing.dot() / 2))
+    bar.child(zeus.box().size_px(spacing.dot()).bg(colors.muted()).radius(spacing.dot() / 2))
     n.child(zeus.label(p.subtitle).fg(colors.muted()).font(13).flex_wrap())
     return n
 }

@@ -7,7 +7,7 @@ import "../shared/look.yuga"
 
 struct NumberProps {
     label: string,
-    sig: Signal,
+    sig: Signal<int>,
     min: int,
     max: int,
 }
@@ -15,7 +15,7 @@ struct NumberProps {
 /// Step `sig` by `delta`, clamped to `min..max` — shared by the keyboard
 /// (`on_range`) and the `-`/`+` buttons, so neither path can run past the
 /// bound the other respects.
-fn step_clamped(sig: Signal, delta: int, min: int, max: int) {
+fn step_clamped(sig: Signal<int>, delta: int, min: int, max: int) {
     let mut v = sig.get() + delta
     if v < min {
         v = min
@@ -40,7 +40,7 @@ fn style_number(p: NumberParts) {
     p.lab.fg(colors.label()).font(scale.caption_px(size))
     p.num.fg(colors.text()).font(scale.title_px(size))
     p.minus.bg(-1).fg(colors.muted()).padX(scale.gap_of(size)).padY(2).radius(scale.radius_of(size)).font(scale.font_px(size)).shrink(0)
-    p.plus.size(scale.hit_of(size)).radius(scale.radius_of(size))
+    p.plus.size_px(scale.hit_of(size)).radius(scale.radius_of(size))
 }
 
 fn Field(p: NumberProps) -> Node {

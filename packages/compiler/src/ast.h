@@ -198,6 +198,7 @@ struct AstNode {
             const char *c_builtin; /* emit this C symbol (wrapping_shr, string_from_bytes, …) */
             const char *resolved_cname;
             int is_fn_val;
+            int sig_cell; /* 1 = __sig_push, 2 = __sig_load, 3 = __sig_store */
         } call;
         struct {
             AstNode *target;

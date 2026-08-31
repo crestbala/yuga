@@ -4,12 +4,12 @@ import "../../theme/colors.yuga"
 import "../../theme/scale.yuga"
 
 struct SwitchProps {
-    sig: Signal,
+    sig: Signal<int>,
 }
 
 struct Wire {
     n: Node,
-    sig: Signal,
+    sig: Signal<int>,
 }
 
 fn fill(variant: int) -> int {

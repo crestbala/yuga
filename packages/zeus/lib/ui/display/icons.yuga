@@ -350,11 +350,11 @@ struct HitProps {
 }
 
 fn Glyph(p: GlyphProps) -> Node {
-    return zeus.svg(p.markup).size(p.size).fg(p.color)
+    return zeus.svg(p.markup).size_px(p.size).fg(p.color)
 }
 
 fn Hit(p: HitProps) -> Node {
-    let n = zeus.row().size(p.hit).center().shrink(0)
+    let n = zeus.row().size_px(p.hit).center().shrink(0)
     n.child(Glyph(GlyphProps { markup: p.markup, color: p.color, size: p.size }))
     return n
 }

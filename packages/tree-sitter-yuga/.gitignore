@@ -1,0 +1,5 @@
+node_modules/
+build/
+target/
+bindings/
+.DS_Store

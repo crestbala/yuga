@@ -11,7 +11,7 @@ struct MetricProps {
 
 struct LiveMetricProps {
     title: string,
-    sig: Signal,
+    sig: Signal<int>,
     color: int,
 }
 

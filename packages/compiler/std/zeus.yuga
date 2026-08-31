@@ -2,7 +2,8 @@
 //!
 //! Build a tree of `Node`s, then `.run()`. Clicks and keys write `Signal`s
 //! (or captured `let mut` ints). Methods chain: `n.pad(8)` is `zeus.pad(n, 8)`.
-//! Extra `.child(a, b, c)` arguments become nested `.child` calls.
+//! Extra `.children(a, b, c)` arguments become nested `.child` calls.
+//! `.child` takes one node.
 //!
 //! Example:
 //! ```
@@ -10,12 +11,12 @@
 //!
 //! fn main() {
 //!     let n = zeus.signal(0)
-//!     zeus.col().pad(16).gap(8).child(
+//!     zeus.col().pad(16).gap(8).children(
 //!         zeus.text("Count").font(22),
 //!         zeus.label("").bind(n).font(28),
-//!         zeus.row().gap(8).child(
-//!             zeus.button("-").on(zeus.click(), || { zeus.inc(n, -1) }),
-//!             zeus.button("+").on(zeus.click(), || { zeus.inc(n, 1) }),
+//!         zeus.row().gap(8).children(
+//!             zeus.button("-").on_click(|| { n.set(n.get() - 1) }),
+//!             zeus.button("+").on_click(|| { n.set(n.get() + 1) }),
 //!         ),
 //!     ).run()
 //! }
@@ -24,8 +25,8 @@
 //! Per-frame rebuild: `zeus.view(|| { ... })` or `zeus.app(title, w, h, || { ... })`.
 //! Kit apps that build once stay retained (omit `view`).
 //! Internals: `std/zeuscore/*.yuga`. C is host FFI (`platform.yuga`), not a Zeus
-//! runtime file. `Node` is `{ id: int }` (not generic). `each<T>` / `each_i<T>`
-//! are the generic helpers. See `docs/boundary.md`.
+//! runtime file. `Node` is `{ id: int }` (not generic). `each<T>` is the
+//! generic list helper (`|i, item|`). See `docs/boundary.md`.
 //! `ZEUS_HEADLESS=1` layouts once and exits.
 
 import "zeuscore/geometry.yuga"
@@ -43,14 +44,15 @@ struct Node {
     id: int,
 }
 
-/// Opaque reactive int. Copy (id handle). Use `get` / `set` / `inc`.
+/// Opaque reactive cell. Copy handle (`id`). `T` must be Copy (`int`,
+/// `string`, `float`, `bool`, or a Copy struct). Read and write with
+/// `.get()` / `.set(v)`:
 ///
-/// Example:
 /// ```
 /// let n = zeus.signal(0)
-/// zeus.set(n, zeus.get(n) + 1)
+/// n.set(n.get() + 1)
 /// ```
-struct Signal {
+struct Signal<T> {
     id: int,
 }
 
@@ -76,7 +78,7 @@ fn nd(id: int) -> Node {
     return Node { id: id }
 }
 
-fn sg(id: int) -> Signal {
+fn sg(id: int) -> Signal<int> {
     return Signal { id: id }
 }
 
@@ -153,53 +155,45 @@ fn app(title: string, width: int, height: int, build: fn() -> Node) {
     raw_run()
 }
 
-// --- signals (live int state) ---
+// --- signals (live Copy state) ---
 
-/// Allocate a live int. Pass the handle to `get` / `set` / `.bind`.
+/// Allocate a live cell. `T` is inferred from `value`.
 ///
 /// Example:
 /// ```
 /// let count = zeus.signal(0)
-/// zeus.button("+").on(zeus.click(), || { zeus.inc(count, 1) })
+/// zeus.button("+").on_click(|| { count.set(count.get() + 1) })
 /// ```
-fn signal(value: int) -> Signal {
+fn signal<T>(value: T) -> Signal<T> {
     arena.ensure()
-    push(arena.sigs, value)
-    return sg(arena.sigs.len - 1)
+    Signal { id: __sig_push(value) }
 }
 
 /// Read the current value of `sig`. Inside a `.styled` closure this records
-/// `sig` as a dependency of that closure.
-fn get(sig: Signal) -> int {
+/// `sig` as a dependency of that closure. Call as `sig.get()`.
+fn get<T>(sig: Signal<T>) -> T {
     arena.ensure()
-    if sig.id <= 0 {
-        return 0
-    }
     track.note_read(sig.id)
-    if sig.id >= arena.sigs.len {
-        return 0
-    }
-    return arena.sigs[sig.id]
+    __sig_load(sig.id)
 }
 /// Write `value` into `sig`. Re-runs every `.styled` closure that last read it.
-fn set(sig: Signal, value: int) {
+/// Call as `sig.set(value)`.
+fn set<T>(sig: Signal<T>, value: T) {
     arena.ensure()
-    arena.store_sig(sig.id, value)
-}
-/// Add `delta` to `sig` (`set(sig, get(sig) + delta)`).
-fn inc(sig: Signal, delta: int) {
-    set(sig, get(sig) + delta)
+    __sig_store(sig.id, value)
 }
 
 fn hook_begin() {
     hook_at = 0
 }
 
-fn hook_signal(init: int) -> Signal {
+fn hook_signal(init: int) -> Signal<int> {
     arena.ensure()
     if hook_at >= hook_ids.len {
         push(arena.sigs, init)
-        push(hook_ids, arena.sigs.len - 1)
+        let sid = arena.sigs.len - 1
+        platform.plat_sig_bind_int(sid, init)
+        push(hook_ids, sid)
     }
     let sid = hook_ids[hook_at]
     hook_at = hook_at + 1
@@ -274,18 +268,18 @@ fn raw_svg(markup: string) -> Node {
     arena.nodes[id].text = markup
     return nd(id)
 }
-fn raw_hover(node: Node, sig: Signal) -> Node {
+fn raw_hover(node: Node, sig: Signal<int>) -> Node {
     arena.nodes[node.id].hover_sig = sig.id
     return node
 }
 
 // --- primitives ---
 
-/// Horizontal flex row. Cross-axis centered. Chain `.gap` / `.child`.
+/// Horizontal flex row. Cross-axis centered. Chain `.gap` / `.child` / `.children`.
 ///
 /// Example:
 /// ```
-/// zeus.row().gap(8).child(zeus.button("-"), zeus.button("+"))
+/// zeus.row().gap(8).children(zeus.button("-"), zeus.button("+"))
 /// ```
 fn row() -> Node {
     return raw_row().align(geometry.flex_center())
@@ -324,7 +318,7 @@ fn text(s: string) -> Node {
     return raw_label(s)
 }
 
-/// Clickable text button. Pair with `.on(zeus.click(), || { ... })`.
+/// Clickable text button. Pair with `.on_click(|| { ... })`.
 fn button(text: string) -> Node {
     return raw_button(text)
 }
@@ -359,6 +353,24 @@ fn input(placeholder: string) -> Node {
     return raw_input(placeholder)
 }
 
+/// Text currently in an input (typed buffer, else placeholder).
+fn input_value(node: Node) -> string {
+    return arena.input_shown(node.id)
+}
+
+/// Replace the typed buffer for `node`. No-op if it is not an input.
+fn set_input(node: Node, text: string) -> Node {
+    let mut slot = arena.nodes[node.id].edit_slot
+    if slot < 0 {
+        arena.stamp_edits()
+        slot = arena.nodes[node.id].edit_slot
+    }
+    if slot >= 0 {
+        platform.plat_edit_set(slot, text)
+    }
+    return node
+}
+
 fn scroll() -> Node {
     return raw_scroll()
 }
@@ -377,11 +389,11 @@ fn svg(markup: string) -> Node {
 // --- tree ---
 
 /// Attach `node` under `parent` and return `parent` (chain siblings).
-/// Extra arguments `.child(a, b, c)` expand to nested `.child` calls.
+/// One node only. Several nodes: `.children(a, b, c)` (nested `.child` calls).
 ///
 /// Example:
 /// ```
-/// zeus.col().child(
+/// zeus.col().children(
 ///     zeus.text("A"),
 ///     zeus.text("B"),
 /// )
@@ -559,8 +571,12 @@ fn h(node: Node, px: int) -> Node {
     arena.nodes[node.id].eh = px
     return node
 }
-/// `.w(px).h(px)` in one call — a square.
-fn size(node: Node, px: int) -> Node {
+/// `.w(px).h(px)` in one call. Named `size_px`, not `size`: kit widgets expose
+/// `.size()` for the sm/md/lg token, and two chain methods sharing a name and
+/// a `(Node, int)` shape resolve by import order — which is how `.size(ui.sm())`
+/// once silently became a 0x0 box. The `_px` suffix also keeps the unit at the
+/// call site, next to kit's token form.
+fn size_px(node: Node, px: int) -> Node {
     return node.w(px).h(px)
 }
 fn width_pct(node: Node, pct: int) -> Node {
@@ -705,7 +721,7 @@ fn font(node: Node, px: int) -> Node {
 /// `show_ne` / `show_ge` / `show_le` hide a node from layout when false.
 /// `bind` paints a label from a signal's int.
 
-fn bind(label: Node, sig: Signal) -> Node {
+fn bind(label: Node, sig: Signal<int>) -> Node {
     arena.nodes[label.id].bind_sig = sig.id
     return label
 }
@@ -721,30 +737,30 @@ fn bind_n(label: Node, n: int) -> Node {
 fn digits(n: int) -> Node {
     return label("0").bind_n(n)
 }
-fn on_click_inc(button: Node, sig: Signal) -> Node {
+fn on_click_inc(button: Node, sig: Signal<int>) -> Node {
     arena.nodes[button.id].click_sig = sig.id
     arena.nodes[button.id].click_mode = 0
     return button
 }
-fn on_click_toggle(node: Node, sig: Signal) -> Node {
+fn on_click_toggle(node: Node, sig: Signal<int>) -> Node {
     arena.nodes[node.id].click_sig = sig.id
     arena.nodes[node.id].click_mode = 1
     return node
 }
-fn on_click_set(node: Node, sig: Signal, value: int) -> Node {
+fn on_click_set(node: Node, sig: Signal<int>, value: int) -> Node {
     arena.nodes[node.id].click_sig = sig.id
     arena.nodes[node.id].click_mode = 2
     arena.nodes[node.id].click_set = value
     return node
 }
-fn on_click_add(node: Node, sig: Signal, delta: int) -> Node {
+fn on_click_add(node: Node, sig: Signal<int>, delta: int) -> Node {
     arena.nodes[node.id].click_sig = sig.id
     arena.nodes[node.id].click_mode = 3
     arena.nodes[node.id].click_set = delta
     return node
 }
 
-fn on_click_also_set(node: Node, sig: Signal, value: int) -> Node {
+fn on_click_also_set(node: Node, sig: Signal<int>, value: int) -> Node {
     arena.nodes[node.id].click2_sig = sig.id
     arena.nodes[node.id].click2_mode = 2
     arena.nodes[node.id].click2_set = value
@@ -805,16 +821,13 @@ fn on(node: Node, event: int, handler: fn()) -> Node {
     return node
 }
 
-fn each<T>(parent: Node, items: []T, build: fn(T) -> Node) -> Node {
-    let n = items.len
-    for i in 0..n {
-        parent.child(build(items[i]))
-    }
-    return parent
+/// Click handler. `n.on_click(h)` is `n.on(zeus.click(), h)`.
+fn on_click(node: Node, handler: fn()) -> Node {
+    return on(node, click(), handler)
 }
 
-/// Like `each`, with the index. `Node` stays a non-generic `{id}` handle.
-fn each_i<T>(parent: Node, items: []T, build: fn(int, T) -> Node) -> Node {
+/// Map `items` into children. `build` receives `(index, item)`.
+fn each<T>(parent: Node, items: []T, build: fn(int, T) -> Node) -> Node {
     let n = items.len
     for i in 0..n {
         parent.child(build(i, items[i]))
@@ -825,22 +838,22 @@ fn each_i<T>(parent: Node, items: []T, build: fn(int, T) -> Node) -> Node {
 /// `zeus.when(sig, || { node })` — combinator form of show. Builds the child
 /// once and hides it from layout while `sig` is 0. `n.show(sig)` remains the
 /// modifier (Yuga cannot overload `show`).
-fn when(sig: Signal, build: fn() -> Node) -> Node {
+fn when(sig: Signal<int>, build: fn() -> Node) -> Node {
     return build().show(sig)
 }
 
-fn show(node: Node, sig: Signal) -> Node {
+fn show(node: Node, sig: Signal<int>) -> Node {
     arena.nodes[node.id].show_sig = sig.id
     arena.nodes[node.id].show_mode = 0
     return node
 }
-fn show_eq(node: Node, sig: Signal, value: int) -> Node {
+fn show_eq(node: Node, sig: Signal<int>, value: int) -> Node {
     arena.nodes[node.id].show_sig = sig.id
     arena.nodes[node.id].show_mode = 1
     arena.nodes[node.id].show_val = value
     return node
 }
-fn show_ne(node: Node, sig: Signal, value: int) -> Node {
+fn show_ne(node: Node, sig: Signal<int>, value: int) -> Node {
     arena.nodes[node.id].show_sig = sig.id
     arena.nodes[node.id].show_mode = 2
     arena.nodes[node.id].show_val = value
@@ -867,11 +880,11 @@ fn capture_text(node: Node) -> Node {
     arena.nodes[node.id].focusable = 1
     return node
 }
-fn on_action(node: Node, action: string, sig: Signal, mode: int, value: int) -> Node {}
-fn on_action_global(action: string, sig: Signal, mode: int, value: int) {}
+fn on_action(node: Node, action: string, sig: Signal<int>, mode: int, value: int) -> Node {}
+fn on_action_global(action: string, sig: Signal<int>, mode: int, value: int) {}
 
 /// Step `sig` by `delta`, clamped to lo..hi — arrow navigation over a range.
-fn on_range(node: Node, action: string, sig: Signal, delta: int, lo: int, hi: int) -> Node {}
+fn on_range(node: Node, action: string, sig: Signal<int>, delta: int, lo: int, hi: int) -> Node {}
 fn map_key(spec: string, action: string, ctx: string) {}
 fn remap_key(spec: string, action: string, ctx: string) {}
 
@@ -892,15 +905,15 @@ fn key(node: Node, spec: string, action: string) -> Node {
     return node
 }
 
-fn on_key_set(node: Node, action: string, sig: Signal, value: int) -> Node {
+fn on_key_set(node: Node, action: string, sig: Signal<int>, value: int) -> Node {
     return on_action(node, action, sig, 2, value)
 }
 
-fn on_key_add(node: Node, action: string, sig: Signal, delta: int) -> Node {
+fn on_key_add(node: Node, action: string, sig: Signal<int>, delta: int) -> Node {
     return on_action(node, action, sig, 3, delta)
 }
 
-fn on_key_toggle(node: Node, action: string, sig: Signal) -> Node {
+fn on_key_toggle(node: Node, action: string, sig: Signal<int>) -> Node {
     return on_action(node, action, sig, 1, 0)
 }
 
@@ -908,24 +921,24 @@ fn on_key_fn(node: Node, action: string) -> Node {
     return on_action(node, action, sg(0), 5, arena.nodes[node.id].click_fn)
 }
 
-fn global_key_set(action: string, sig: Signal, value: int) {
+fn global_key_set(action: string, sig: Signal<int>, value: int) {
     on_action_global(action, sig, 2, value)
 }
 
-fn show_ge(node: Node, sig: Signal, value: int) -> Node {
+fn show_ge(node: Node, sig: Signal<int>, value: int) -> Node {
     arena.nodes[node.id].show_sig = sig.id
     arena.nodes[node.id].show_mode = 3
     arena.nodes[node.id].show_val = value
     return node
 }
-fn show_le(node: Node, sig: Signal, value: int) -> Node {
+fn show_le(node: Node, sig: Signal<int>, value: int) -> Node {
     arena.nodes[node.id].show_sig = sig.id
     arena.nodes[node.id].show_mode = 4
     arena.nodes[node.id].show_val = value
     return node
 }
 
-fn hover(node: Node, sig: Signal) -> Node {
+fn hover(node: Node, sig: Signal<int>) -> Node {
     return raw_hover(node, sig)
 }
 
@@ -953,10 +966,10 @@ fn enter_fade(node: Node) -> Node {
 fn dismiss(node: Node) -> Node {
     return node
 }
-fn keys(node: Node, sig: Signal, lo: int, hi: int) -> Node {
+fn keys(node: Node, sig: Signal<int>, lo: int, hi: int) -> Node {
     return node.key("right", "slider.inc").key("left", "slider.dec").focusable().on_range("slider.inc", sig, 1, lo, hi).on_range("slider.dec", sig, -1, lo, hi)
 }
-fn keys_page(node: Node, sig: Signal) -> Node {
+fn keys_page(node: Node, sig: Signal<int>) -> Node {
     return node.key("right", "page.next").key("left", "page.prev").focusable().on_key_add("page.next", sig, 1).on_key_add("page.prev", sig, -1)
 }
 
@@ -1009,7 +1022,7 @@ fn center(node: Node) -> Node {
     return node.justify(flex_center()).align(flex_center())
 }
 
-fn appearance() -> Signal {
+fn appearance() -> Signal<int> {
     arena.ensure()
     if arena.appearance_sid == 0 {
         let s = signal(0)
@@ -1085,7 +1098,7 @@ fn txt(parent: Node, s: string, color: int, px: int) -> Node {
     return parent.child(label(s).fg(color).font(px))
 }
 
-fn bound(parent: Node, sig: Signal, color: int, px: int) -> Node {
+fn bound(parent: Node, sig: Signal<int>, color: int, px: int) -> Node {
     return parent.child(label("0").bind(sig).fg(color).font(px))
 }
 

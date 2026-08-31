@@ -8,13 +8,13 @@ fn CounterPanel(initial: int) -> Node {
     let mut count = initial
     zeus.col()
         .class("container")
-        .child((
+        .children(
             zeus.text("Counter").style(zeus.heading()),
-            zeus.row().gap(8).child((
-                zeus.button("+1").on(zeus.click(), || { count = count + 1 }),
+            zeus.row().gap(8).children(
+                zeus.button("+1").on_click(|| { count = count + 1 }),
                 Readout(count),
-            )),
-        ))
+            ),
+        )
 }
 
 fn main() {

@@ -746,7 +746,7 @@ int main(int argc, char **argv) {
                 snprintf(cmdw, sizeof cmdw,
                          "\"%s\" --target=wasm32 -nostdlib -ffreestanding "
                          "-fno-stack-protector -O1 -I\"%s/wasm_inc\" -I\"%s\" "
-                         "-Wl,--no-entry -Wl,--export-dynamic "
+                         "-Wl,--no-entry -Wl,--export-dynamic -Wl,--export=main "
                          "-x c \"%s\" -x none \"%s/zeus_wasm_libc.c\"%s -o \"%s\"",
                          cc, YUGA_RUNTIME_DIR, YUGA_RUNTIME_DIR, cpath, YUGA_RUNTIME_DIR,
                          http_w, binpath);

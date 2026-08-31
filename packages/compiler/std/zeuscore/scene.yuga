@@ -145,22 +145,16 @@ fn paint_input(id: int) {
     let w = arena.nodes[id].w
     let h = arena.nodes[id].h
     let tx = x + arena.nodes[id].pad_l + arena.nodes[id].border_w
-    let ty = y + geometry.max2(h - arena.nodes[id].th, 0) / 2
-    let tw = arena.nodes[id].tw
-    let th = arena.nodes[id].th
+    let ty = y + arena.nodes[id].pad_t + arena.nodes[id].border_w
     let fg = arena.fg_of(id)
+    let shown = arena.input_shown(id)
+    let inner = arena.inner_w(id)
     save()
     clip(x, y, w, h)
-    text(tx, ty, arena.input_shown(id), fg, arena.nodes[id].font)
-    if arena.focus_id == id {
-        let mut cx = tx
-        if platform.plat_edit_len(arena.nodes[id].edit_slot) > 0 {
-            cx = tx + tw
-        }
-        if cx > x + w - 2 {
-            cx = x + w - 2
-        }
-        fill(cx, ty, 1, geometry.max2(th, 1), fg, 0)
+    if inner > 0 {
+        text_wrap(tx, ty, shown, fg, arena.nodes[id].font, inner)
+    } else {
+        text(tx, ty, shown, fg, arena.nodes[id].font)
     }
     restore()
 }

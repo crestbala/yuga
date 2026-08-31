@@ -1,15 +1,23 @@
 /* Zeus browser host. Canvas2D only — no WebGPU, no WebGL, no DOM widgets.
-   One <canvas>, this file, and a .wasm built by `yugac --target wasm`. */
-(function () {
-  const canvas = document.getElementById("zeus");
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas2D unavailable");
+   One <canvas>, this file, and a .wasm built by `yugac --target wasm`.
+   `window.attachZeus(canvas, opts)` boots from an ArrayBuffer; a canvas with
+   `data-wasm` still auto-loads that URL (counter, kit). */
+(function (root) {
+  function attachZeus(canvas, opts) {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas2D unavailable");
+    opts = opts || {};
 
-  const dpr = window.devicePixelRatio || 1;
-  let layoutW = 1;
-  let layoutH = 1;
-  let sx = dpr;
-  let sy = dpr;
+    const dpr = window.devicePixelRatio || 1;
+    let layoutW = 1;
+    let layoutH = 1;
+    let sx = dpr;
+    let sy = dpr;
+    let mem = null;
+    let stopped = false;
+    let raf = 0;
+    const ac = new AbortController();
+    const signal = ac.signal;
 
   function sizeCanvas() {
     const cssW = canvas.clientWidth || window.innerWidth;
@@ -218,7 +226,6 @@
     }
   }
 
-  let mem = null;
   function u8() {
     return new Uint8Array(mem.buffer);
   }
@@ -251,7 +258,8 @@
     zeus: {
       write: (p, n) => {
         const t = bytes(p, n);
-        if (t) console.log(t);
+        if (opts.onWrite) opts.onWrite(t);
+        else if (t) console.log(t);
       },
       panic: (p, n) => {
         throw new Error(bytes(p, n) || cstr(p) || "zeus panic");
@@ -378,72 +386,109 @@
     },
   };
 
-  const wasmUrl = canvas.getAttribute("data-wasm") || "app.wasm";
-  fetch(wasmUrl)
-    .then((r) => r.arrayBuffer())
-    .then((buf) => WebAssembly.instantiate(buf, imports))
-    .then((r) => {
-      const exp = r.instance.exports;
-      mem = exp.memory;
-      const sz = sizeCanvas();
-      exp.zeus_start();
-      if (exp.zeus_resize) exp.zeus_resize(sz.w, sz.h);
-      function frame() {
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        applyLayoutTransform();
-        try {
-          exp.zeus_paint();
-        } catch (e) {
-          console.error("zeus_paint", e);
-          return;
+    function stop() {
+      stopped = true;
+      if (raf) cancelAnimationFrame(raf);
+      ac.abort();
+    }
+
+    function boot(wasmBuffer) {
+      return WebAssembly.instantiate(wasmBuffer, imports).then((r) => {
+        if (stopped) return;
+        const exp = r.instance.exports;
+        mem = exp.memory;
+        const sz = sizeCanvas();
+        exp.zeus_start();
+        if (exp.zeus_resize) exp.zeus_resize(sz.w, sz.h);
+        function frame() {
+          if (stopped) return;
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          applyLayoutTransform();
+          try {
+            exp.zeus_paint();
+          } catch (e) {
+            console.error("zeus_paint", e);
+            return;
+          }
+          raf = requestAnimationFrame(frame);
         }
-        requestAnimationFrame(frame);
-      }
-      requestAnimationFrame(frame);
-      window.addEventListener("resize", () => {
-        const s = sizeCanvas();
-        exp.zeus_resize(s.w, s.h);
+        raf = requestAnimationFrame(frame);
+        window.addEventListener(
+          "resize",
+          () => {
+            const s = sizeCanvas();
+            if (exp.zeus_resize) exp.zeus_resize(s.w, s.h);
+          },
+          { signal }
+        );
+        canvas.addEventListener(
+          "pointerdown",
+          (e) => {
+            const p = layoutPoint(e.clientX, e.clientY);
+            exp.zeus_pointer_down(p.x, p.y);
+          },
+          { signal }
+        );
+        canvas.addEventListener(
+          "pointermove",
+          (e) => {
+            const p = layoutPoint(e.clientX, e.clientY);
+            exp.zeus_pointer_move(p.x, p.y);
+          },
+          { signal }
+        );
+        canvas.addEventListener("pointerup", () => exp.zeus_pointer_up(), { signal });
+        canvas.addEventListener(
+          "wheel",
+          (e) => {
+            e.preventDefault();
+            const p = layoutPoint(e.clientX, e.clientY);
+            exp.zeus_scroll(p.x, p.y, e.deltaX, e.deltaY);
+          },
+          { passive: false, signal }
+        );
+        window.addEventListener(
+          "keydown",
+          (e) => {
+            const tag = (document.activeElement && document.activeElement.tagName) || "";
+            if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return;
+            let mods = 0;
+            if (e.shiftKey) mods |= 1;
+            if (e.ctrlKey) mods |= 2;
+            if (e.altKey) mods |= 4;
+            if (e.metaKey) mods |= 8;
+            let key = e.key.length === 1 ? e.key.charCodeAt(0) : 0;
+            if (e.key === "Enter") key = 13;
+            if (e.key === "Tab") key = 9;
+            if (e.key === "Backspace") key = 8;
+            if (e.key === "Escape") key = 27;
+            if (e.key === "ArrowLeft") key = 1000;
+            if (e.key === "ArrowRight") key = 1001;
+            if (e.key === "ArrowUp") key = 1002;
+            if (e.key === "ArrowDown") key = 1003;
+            exp.zeus_key(key, mods);
+            if (e.key === "Tab") e.preventDefault();
+          },
+          { signal }
+        );
       });
-      canvas.addEventListener("pointerdown", (e) => {
-        const p = layoutPoint(e.clientX, e.clientY);
-        exp.zeus_pointer_down(p.x, p.y);
+    }
+
+    return { boot: boot, stop: stop, sizeCanvas: sizeCanvas };
+  }
+
+  root.attachZeus = attachZeus;
+
+  const canvas = document.getElementById("zeus");
+  if (canvas && canvas.getAttribute("data-wasm")) {
+    const host = attachZeus(canvas);
+    fetch(canvas.getAttribute("data-wasm") || "app.wasm")
+      .then((r) => r.arrayBuffer())
+      .then((buf) => host.boot(buf))
+      .catch((err) => {
+        console.error(err);
+        document.body.appendChild(document.createTextNode(String(err)));
       });
-      canvas.addEventListener("pointermove", (e) => {
-        const p = layoutPoint(e.clientX, e.clientY);
-        exp.zeus_pointer_move(p.x, p.y);
-      });
-      canvas.addEventListener("pointerup", () => exp.zeus_pointer_up());
-      canvas.addEventListener(
-        "wheel",
-        (e) => {
-          e.preventDefault();
-          const p = layoutPoint(e.clientX, e.clientY);
-          exp.zeus_scroll(p.x, p.y, e.deltaX, e.deltaY);
-        },
-        { passive: false }
-      );
-      window.addEventListener("keydown", (e) => {
-        let mods = 0;
-        if (e.shiftKey) mods |= 1;
-        if (e.ctrlKey) mods |= 2;
-        if (e.altKey) mods |= 4;
-        if (e.metaKey) mods |= 8;
-        let key = e.key.length === 1 ? e.key.charCodeAt(0) : 0;
-        if (e.key === "Enter") key = 13;
-        if (e.key === "Tab") key = 9;
-        if (e.key === "Backspace") key = 8;
-        if (e.key === "Escape") key = 27;
-        if (e.key === "ArrowLeft") key = 1000;
-        if (e.key === "ArrowRight") key = 1001;
-        if (e.key === "ArrowUp") key = 1002;
-        if (e.key === "ArrowDown") key = 1003;
-        exp.zeus_key(key, mods);
-        if (e.key === "Tab") e.preventDefault();
-      });
-    })
-    .catch((err) => {
-      console.error(err);
-      document.body.appendChild(document.createTextNode(String(err)));
-    });
-})();
+  }
+})(typeof window !== "undefined" ? window : globalThis);

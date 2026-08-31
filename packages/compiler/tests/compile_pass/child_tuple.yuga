@@ -2,13 +2,10 @@ import "std:zeus"
 
 fn main() {
     zeus.app("Tuple", 320, 200, || {
-        zeus.col().pad(8).child((
+        zeus.col().pad(8).children(
             zeus.text("a"),
             zeus.text("b"),
-            zeus.row().gap(4).child((
-                zeus.text("c"),
-                zeus.text("d"),
-            )),
-        ))
+            zeus.row().gap(4).child(zeus.text("c")).child(zeus.text("d")),
+        )
     })
 }

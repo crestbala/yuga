@@ -11,6 +11,105 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern yuga_vec yuga_arena_sigs;
+void yuga_arena_ensure(void);
+void yuga_arena_store_sig(int64_t id, int64_t value);
+void yuga_track_note_read(int64_t sid);
+void yuga_track_notify(int64_t sid);
+
+typedef struct {
+    void *p;
+    size_t n;
+} ZeusCell;
+
+static ZeusCell *g_cells;
+static size_t g_ncells;
+static size_t g_ccells;
+
+static void cell_grow(int64_t id) {
+    size_t need;
+    if (id < 0) return;
+    need = (size_t)id + 1;
+    if (need <= g_ncells) return;
+    if (need > g_ccells) {
+        size_t nc = g_ccells ? g_ccells : 16;
+        ZeusCell *next;
+        while (nc < need) nc *= 2;
+        next = (ZeusCell *)realloc(g_cells, nc * sizeof(ZeusCell));
+        if (!next) {
+            fprintf(stderr, "zeus: out of memory\n");
+            abort();
+        }
+        memset(next + g_ccells, 0, (nc - g_ccells) * sizeof(ZeusCell));
+        g_cells = next;
+        g_ccells = nc;
+    }
+    g_ncells = need;
+}
+
+void yuga_zeus_sig_bind(int64_t id, const void *src, int64_t n) {
+    ZeusCell *c;
+    size_t nn;
+    if (id < 0 || n < 0) return;
+    cell_grow(id);
+    c = &g_cells[id];
+    nn = (size_t)n;
+    if (c->n != nn) {
+        free(c->p);
+        c->p = nn ? malloc(nn) : NULL;
+        if (nn && !c->p) {
+            fprintf(stderr, "zeus: out of memory\n");
+            abort();
+        }
+        c->n = nn;
+    }
+    if (nn && src && c->p) memcpy(c->p, src, nn);
+}
+
+void yuga_zeus_sig_load(int64_t id, void *dst, int64_t n) {
+    size_t nn, k;
+    if (!dst || n <= 0) return;
+    nn = (size_t)n;
+    memset(dst, 0, nn);
+    if (id < 0 || (size_t)id >= g_ncells) return;
+    if (!g_cells[id].p) return;
+    k = g_cells[id].n < nn ? g_cells[id].n : nn;
+    memcpy(dst, g_cells[id].p, k);
+}
+
+int64_t yuga_zeus_sig_changed(int64_t id, const void *src, int64_t n) {
+    if (id < 0 || !src || n <= 0) return 1;
+    if ((size_t)id >= g_ncells || !g_cells[id].p || g_cells[id].n != (size_t)n)
+        return 1;
+    return memcmp(g_cells[id].p, src, (size_t)n) != 0;
+}
+
+Signal yuga_zeus_signal(int64_t value) {
+    Signal s;
+    yuga_arena_ensure();
+    yuga_vec_push(&yuga_arena_sigs, &value, sizeof(value), __FILE__, __LINE__);
+    s.id = yuga_arena_sigs.len - 1;
+    yuga_zeus_sig_bind(s.id, &value, (int64_t)sizeof(value));
+    return s;
+}
+
+int64_t yuga_zeus_get(Signal sig) {
+    int64_t v = 0;
+    yuga_arena_ensure();
+    yuga_track_note_read(sig.id);
+    yuga_zeus_sig_load(sig.id, &v, (int64_t)sizeof(v));
+    return v;
+}
+
+void yuga_zeus_set(Signal sig, int64_t value) {
+    yuga_arena_ensure();
+    yuga_arena_store_sig(sig.id, value);
+}
+
+void yuga_platform_plat_sig_bind_int(int64_t id, int64_t value) {
+    yuga_zeus_sig_bind(id, &value, (int64_t)sizeof(value));
+}
+
 static void (*plat_run)(void);
 static void (*plat_measure)(const char *s, int64_t px, int64_t *w, int64_t *h);
 static void (*plat_redraw)(void);
@@ -328,32 +427,60 @@ int64_t yuga_platform_plat_key_ev(int64_t key, int64_t mods) {
 }
 
 #define ZEUS_EDIT_SLOTS 64
-#define ZEUS_EDIT_CAP 256
+#define ZEUS_EDIT_MAX 65536
 
-static char edit_buf[ZEUS_EDIT_SLOTS][ZEUS_EDIT_CAP];
+static char *edit_buf[ZEUS_EDIT_SLOTS];
 static int edit_len[ZEUS_EDIT_SLOTS];
+static int edit_cap[ZEUS_EDIT_SLOTS];
 
 static int edit_ok(int64_t slot) {
     return slot >= 0 && slot < ZEUS_EDIT_SLOTS;
 }
 
-int64_t yuga_platform_plat_edit_append(int64_t slot, int64_t key) {
-    int n;
-    if (!edit_ok(slot)) return 0;
-    if (key < 32 || key >= 127) return 0;
-    n = edit_len[slot];
-    if (n >= ZEUS_EDIT_CAP - 1) return 1;
-    edit_buf[slot][n] = (char)key;
+static int edit_grow(int slot, int need) {
+    int cap;
+    char *p;
+    if (need < 1) need = 1;
+    if (need > ZEUS_EDIT_MAX) return 0;
+    if (need <= edit_cap[slot]) return 1;
+    cap = edit_cap[slot] ? edit_cap[slot] * 2 : 512;
+    while (cap < need) cap *= 2;
+    if (cap > ZEUS_EDIT_MAX) cap = ZEUS_EDIT_MAX;
+    p = (char *)realloc(edit_buf[slot], (size_t)cap);
+    if (!p) return 0;
+    edit_buf[slot] = p;
+    edit_cap[slot] = cap;
+    return 1;
+}
+
+static int edit_put(int slot, char ch) {
+    int n = edit_len[slot];
+    if (!edit_grow(slot, n + 2)) return 1;
+    edit_buf[slot][n] = ch;
     edit_buf[slot][n + 1] = '\0';
     edit_len[slot] = n + 1;
     return 1;
+}
+
+int64_t yuga_platform_plat_edit_append(int64_t slot, int64_t key) {
+    int i;
+    if (!edit_ok(slot)) return 0;
+    if (key == 13) key = 10;
+    if (key == 9) {
+        for (i = 0; i < 4; i++) {
+            if (!edit_put((int)slot, ' ')) return 1;
+        }
+        return 1;
+    }
+    if (key != 10 && (key < 32 || key >= 127)) return 0;
+    return edit_put((int)slot, (char)key);
 }
 
 int64_t yuga_platform_plat_edit_back(int64_t slot) {
     if (!edit_ok(slot)) return 0;
     if (edit_len[slot] <= 0) return 0;
     edit_len[slot]--;
-    edit_buf[slot][edit_len[slot]] = '\0';
+    if (edit_buf[slot]) edit_buf[slot][edit_len[slot]] = '\0';
     return 1;
 }
 
@@ -363,8 +490,21 @@ int64_t yuga_platform_plat_edit_len(int64_t slot) {
 }
 
 yuga_str yuga_platform_plat_edit_text(int64_t slot) {
-    if (!edit_ok(slot) || edit_len[slot] <= 0) return (yuga_str){"", 0};
+    if (!edit_ok(slot) || edit_len[slot] <= 0 || !edit_buf[slot])
+        return (yuga_str){"", 0};
     return (yuga_str){edit_buf[slot], edit_len[slot]};
+}
+
+int64_t yuga_platform_plat_edit_set(int64_t slot, yuga_str text) {
+    int n;
+    if (!edit_ok(slot)) return 0;
+    n = text.len > 0 && text.ptr ? (int)text.len : 0;
+    if (n > ZEUS_EDIT_MAX - 1) n = ZEUS_EDIT_MAX - 1;
+    if (!edit_grow((int)slot, n + 1)) return 0;
+    if (n && text.ptr) memcpy(edit_buf[slot], text.ptr, (size_t)n);
+    edit_buf[slot][n] = '\0';
+    edit_len[slot] = n;
+    return 1;
 }
 
 void yuga_platform_plat_measure(yuga_str s, int64_t px, int64_t *w, int64_t *h) {

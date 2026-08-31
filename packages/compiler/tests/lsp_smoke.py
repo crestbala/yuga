@@ -228,6 +228,32 @@ def main() -> int:
                 "params": {"textDocument": {"uri": fmt_uri}, "position": {"line": 23, "character": 3}},
             }
         )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didChange",
+                "params": {
+                    "textDocument": {"uri": uri, "version": 4},
+                    "contentChanges": [
+                        {
+                            "range": {
+                                "start": {"line": 5, "character": 8},
+                                "end": {"line": 5, "character": 9},
+                            },
+                            "text": "count",
+                        }
+                    ],
+                },
+            }
+        )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 14,
+                "method": "textDocument/hover",
+                "params": {"textDocument": {"uri": uri}, "position": {"line": 5, "character": 8}},
+            }
+        )
         + rpc({"jsonrpc": "2.0", "id": 6, "method": "shutdown", "params": None})
         + rpc({"jsonrpc": "2.0", "method": "exit"})
     )
@@ -355,6 +381,13 @@ def main() -> int:
     value_w = hover_text(hovers[13].get("result"))
     if "write" not in value_w:
         return fail("hover in imported module should find fn write", value_w)
+
+    hovers.update({m.get("id"): m for m in messages if m.get("id") == 14 and "result" in m})
+    if 14 not in hovers:
+        return fail("no hover result after incremental didChange", messages)
+    value_ren = hover_text(hovers[14].get("result"))
+    if "count" not in value_ren or "int" not in value_ren:
+        return fail("hover after incremental edit should show count: int", value_ren)
 
     print("ok   yuga-lsp (%d diagnostic(s), hover, definition, completion)" % len(items))
     return 0

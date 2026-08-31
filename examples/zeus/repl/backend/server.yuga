@@ -1,0 +1,144 @@
+//! Native gRPC-Web server for the playground (`:8081`).
+//!
+//! Vite on `:5174` and the macOS Cocoa app POST `Playground/*` here.
+//! Print programs compile natively and return stdout. `import "std:zeus"`
+//! compiles to Canvas2D wasm and returns the module in `RunResp.wasm`.
+
+import "std:http"
+import "std:sys"
+import "api.yuga"
+
+fn join(a: string, b: string) -> string {
+    return http.concat_str(a, b)
+}
+
+fn q(s: string) -> string {
+    return join(join("\"", s), "\"")
+}
+
+fn yugac_bin() -> string {
+    let p = sys.env("YUGA_YUGAC")
+    if p.len > 0 {
+        return p
+    }
+    return "../../../bin/yugac"
+}
+
+fn src_path() -> string {
+    let d = sys.env("YUGA_REPL_TMP")
+    if d.len > 0 {
+        return join(d, "/run.yuga")
+    }
+    return "tmp/run.yuga"
+}
+
+fn bin_path() -> string {
+    let d = sys.env("YUGA_REPL_TMP")
+    if d.len > 0 {
+        return join(d, "/run.bin")
+    }
+    return "tmp/run.bin"
+}
+
+fn wasm_path() -> string {
+    let d = sys.env("YUGA_REPL_TMP")
+    if d.len > 0 {
+        return join(d, "/run.wasm")
+    }
+    return "tmp/run.wasm"
+}
+
+fn blocked(source: string) -> string {
+    if http.contains(source, "import \"std:maya\"") == 1 {
+        return "std:maya"
+    }
+    if http.contains(source, "import \"std:http\"") == 1 {
+        return "std:http"
+    }
+    if http.contains(source, "import \"std:net\"") == 1 {
+        return "std:net"
+    }
+    return ""
+}
+
+fn wants_zeus(source: string) -> int {
+    return http.contains(source, "import \"std:zeus\"")
+}
+
+fn fail(log: string) -> RunResp {
+    return RunResp { ok: 0, log: log, kind: 0, wasm: "" }
+}
+
+fn run_print(source: string) -> RunResp {
+    let path = src_path()
+    let bin = bin_path()
+    if sys.write_file(path, source) != 0 {
+        return fail(join("cannot write ", path))
+    }
+    let mut cmd = join(q(yugac_bin()), " ")
+    cmd = join(cmd, q(path))
+    cmd = join(cmd, " -o ")
+    cmd = join(cmd, q(bin))
+    cmd = join(cmd, " 2>&1")
+    let clog = sys.exec(cmd)
+    if sys.exec_status() != 0 {
+        if clog.len == 0 {
+            return fail("compile failed")
+        }
+        return fail(clog)
+    }
+    let out = sys.exec(join(q(bin), " 2>&1"))
+    let mut ok = 0
+    if sys.exec_status() == 0 {
+        ok = 1
+    }
+    if out.len == 0 {
+        return RunResp { ok: ok, log: "(no output)\n", kind: 0, wasm: "" }
+    }
+    return RunResp { ok: ok, log: out, kind: 0, wasm: "" }
+}
+
+fn run_zeus(source: string) -> RunResp {
+    let path = src_path()
+    let wasm = wasm_path()
+    if sys.write_file(path, source) != 0 {
+        return fail(join("cannot write ", path))
+    }
+    let mut cmd = join(q(yugac_bin()), " --target=wasm32 ")
+    cmd = join(cmd, q(path))
+    cmd = join(cmd, " -o ")
+    cmd = join(cmd, q(wasm))
+    cmd = join(cmd, " 2>&1")
+    let clog = sys.exec(cmd)
+    if sys.exec_status() != 0 {
+        if clog.len == 0 {
+            return fail("wasm compile failed")
+        }
+        return fail(clog)
+    }
+    let bytes = sys.read_file(wasm)
+    if bytes.len == 0 {
+        return fail("wasm compile produced no module")
+    }
+    return RunResp { ok: 1, log: clog, kind: 1, wasm: bytes }
+}
+
+fn run_source(source: string) -> RunResp {
+    let name = blocked(source)
+    if name.len > 0 {
+        return fail(join(join("`import \"", name), "\"` is not available in the playground\n"))
+    }
+    if wants_zeus(source) == 1 {
+        return run_zeus(source)
+    }
+    return run_print(source)
+}
+
+fn main() {
+    let app = http.app()
+    app.rpc(api.run_rpc(), |body| {
+        let req = api.decode_RunReq(body)
+        api.encode_RunResp(run_source(req.source))
+    })
+    app.listen(8081)
+}

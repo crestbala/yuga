@@ -1,0 +1,6 @@
+import "std:zeus"
+
+fn main() {
+    let n = zeus.signal(0)
+    let x = zeus.get(n)
+}

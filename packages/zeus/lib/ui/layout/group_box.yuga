@@ -14,7 +14,7 @@ fn Box() -> Node {
 
 fn Row(p: GroupRowProps) -> Node {
     let n = zeus.row().padX(spacing.row_pad_x()).padY(spacing.row_pad_y()).gap(spacing.row_gap()).align(zeus.flex_center())
-    let box = n.add(zeus.col().size(spacing.tile()).bg(colors.ink()).radius(spacing.panel_radius()).center())
+    let box = n.add(zeus.col().size_px(spacing.tile()).bg(colors.ink()).radius(spacing.panel_radius()).center())
     if p.icon == 0 {
         box.child(zeus.box().w(spacing.icon_sm()).h(spacing.space_cozy()).border(1).border_color(colors.text()).radius(spacing.space_2xs()))
     } else {

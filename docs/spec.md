@@ -45,7 +45,7 @@ fn main() {
 | Bindings | `let` immutable, `let mut` mutable. Ownership is still the safety mechanism. |
 | Functions | `fn name(params) -> T { ... }` |
 | Closures | `|x| { x + 1 }` as a value. Params between pipes; body is always `{ ... }`. Zero-arg: `|| { ... }`. Types are inferred from the expected `fn` type, or written `|x: int|`. Optional `-> T` after the pipes. Last expression is the return value. No `fn() { }` as a value (`fn` is only for named items). Type: `fn(T, U) -> R`. Captures Copy locals into a heap env; the `fn` value owns that env (not Copy). Dropped like `Box<T>`. May escape (return, store, pass). Host intern (`plat_intern_fn`) memcpy's the env so a stored handler outlives the `fn` value. `(x, y) => { ... }` / `() => { ... }` is accepted as sugar for `|x, y| { ... }` / `|| { ... }` — same closure either way, no typed params (write `|x: int|` for that). A parenthesized expression or tuple `(2 + 3)` / `(1, 2)` still parses exactly as before; the parser only takes the arrow reading when a bare identifier list is immediately followed by `=>`. |
-| Tuples | Not a value type. `.child(a, b, c)` takes extra args (expanded to nested `.child` calls). |
+| Tuples | Not a value type. `.children(a, b, c)` takes extra args (expanded to nested `.child` calls). |
 | Generics | Functions and structs: `fn id<T>(x: T) -> T`, `struct Pair<T> { a: T, b: T }`. Monomorphized. Struct literals infer type args (`Pair { a: 1, b: 2 }`). |
 | References | `&T` shared, `&mut T` exclusive. `&x` / `&mut x`. Deref: `*x`. |
 | Auto-borrow | If a param is `&T` / `&mut T` and the caller passes an owned place, insert `&` / `&mut`. Checked like explicit borrows. |

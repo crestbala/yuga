@@ -4,7 +4,7 @@ import "../../theme/colors.yuga"
 import "../../theme/scale.yuga"
 import "../shared/look.yuga"
 
-// Size and look are chain modifiers on the returned Node (`.size()` / `.look()`).
+// Size and look are chain modifiers on the returned Node (`.size_px()` / `.look()`).
 // Props are the constructor payload.
 
 struct ButtonProps {

@@ -1,0 +1,5 @@
+import "std:zeus"
+
+fn main() {
+    zeus.col().child(zeus.text("a"), zeus.text("b"))
+}

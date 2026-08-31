@@ -1,0 +1,24 @@
+import "std:fmt"
+import "std:zeus"
+import "../../../../packages/zeus/lib/ui.yuga"
+
+fn fail() {
+    let z = 0
+    fmt.println(1 / z)
+}
+
+fn expect(got: int, want: int) {
+    if got < want {
+        fail()
+    }
+    if want < got {
+        fail()
+    }
+}
+
+fn main() {
+    let sm = ui.Button(ButtonProps { label: "Go", on_press: || {} }).size(ui.sm())
+    expect(sm.size_of(), ui.sm())
+    let lg = ui.Chip(ChipProps { label: "Hi", color: 1 }).size(ui.lg())
+    expect(lg.size_of(), ui.lg())
+}

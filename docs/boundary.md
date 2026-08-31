@@ -22,7 +22,7 @@ library-specific runtime file that contains retries, parsers, or widget code.
 
 No `extern` keyword. No `impl`. Method chaining is UFCS (`n.pad(8)` → `zeus.pad(n, 8)`).
 `Node` is `{ id: int }`, not `Node<Backend>`. Generics are allowed in `zeus.yuga`
-where they help (`each<T>`, `each_i<T>`); they are not a substitute for a
+where they help (`each<T>`); they are not a substitute for a
 backend type parameter.
 
 The other direction: C calls compiled Yuga as `yuga_zeus_engine_paint`,

@@ -1,0 +1,16 @@
+//! macOS desktop docs UI. Same Zeus tree as wasm; HTTP is gRPC-Web.
+//!
+//! POSTs `Docs.Page` to `127.0.0.1:8082`. Start the backend first, or `../run.sh macos`.
+
+import "std:zeus"
+import "std:http"
+import "../backend/api.yuga"
+import "../cache.yuga"
+import "../screen.yuga"
+
+fn main() {
+    let c = http.client(api.native_addr())
+    cache.load(c)
+    let page = zeus.signal(0)
+    screen.Screen("macOS", page).run()
+}

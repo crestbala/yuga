@@ -1,9 +1,11 @@
 /**
  * lsp.c — yuga-lsp: Language Server Protocol over stdin/stdout.
  *
- * Full document sync. didOpen/didChange recompile the buffer and publish
- * diagnostics (correct file URI, token span). Hover, go-to-definition, and
- * completion (modules, methods, locals) read the last session's typed AST.
+ * Full document sync, plus incremental contentChanges when a client sends them.
+ * didOpen/didChange recompile the editor buffer (never a stale on-disk file)
+ * and publish diagnostics (correct file URI, token span). Hover,
+ * go-to-definition, and completion (modules, methods, locals) read the last
+ * session's typed AST.
  */
 #include "compile.h"
 #include "sema/type.h"
@@ -17,6 +19,7 @@
 static YugaSession Gsess;
 static char *Guri;
 static char *Gpath;
+static char *Gtext;
 static int Ghave;
 
 /** Read exactly `n` bytes from stdin. */
@@ -657,14 +660,37 @@ static void publish_all(void) {
     }
 }
 
+static int pos_to_off(const char *src, int line0, int col0);
+
 static void compile_buffer(const char *uri, const char *path, const char *src) {
     free(Guri);
     free(Gpath);
     Guri = yuga_dup(uri);
     Gpath = yuga_dup(path);
+    free(Gtext);
+    Gtext = yuga_dup(src);
     yuga_session_check(&Gsess, path, src);
     Ghave = 1;
     publish_all();
+}
+
+/** LSP range is 0-based; splice `ins` over [sl,sc)…[el,ec) in `src`. */
+static char *replace_range(const char *src, int sl, int sc, int el, int ec, const char *ins) {
+    if (!src) src = "";
+    if (!ins) ins = "";
+    int a = pos_to_off(src, sl, sc);
+    int b = pos_to_off(src, el, ec);
+    if (b < a) b = a;
+    size_t slen = strlen(src);
+    size_t ilen = strlen(ins);
+    size_t n = slen - (size_t)(b - a) + ilen;
+    char *out = (char *)malloc(n + 1);
+    if (!out) return NULL;
+    memcpy(out, src, (size_t)a);
+    memcpy(out + a, ins, ilen);
+    memcpy(out + a + ilen, src + b, slen - (size_t)b);
+    out[n] = '\0';
+    return out;
 }
 
 static void send_null_result(const char *id) {
@@ -1093,8 +1119,26 @@ static void handle_doc(const char *msg, const char *method) {
     if (td) uri = parse_json_string(find_key(td, "uri"));
     if (!uri) uri = parse_json_string(find_key(msg, "uri"));
     if (strcmp(method, "textDocument/didChange") == 0) {
-        const char *ch = strstr(msg, "contentChanges");
-        if (ch) text = parse_json_string(find_key(ch, "text"));
+        const char *ch = strstr(msg, "\"contentChanges\"");
+        if (!ch) ch = strstr(msg, "contentChanges");
+        if (ch) {
+            const char *range = find_key(ch, "range");
+            const char *textp = find_key(ch, "text");
+            text = parse_json_string(textp);
+            /* A `range` key before `text` is a real incremental edit. One that
+               appears after is almost certainly the word "range" inside source. */
+            if (range && textp && range < textp && Gtext) {
+                const char *start = find_key(range, "start");
+                const char *end = find_key(range, "end");
+                int sl = parse_json_int(find_key(start ? start : range, "line"));
+                int sc = parse_json_int(find_key(start ? start : range, "character"));
+                int el = parse_json_int(find_key(end ? end : range, "line"));
+                int ec = parse_json_int(find_key(end ? end : range, "character"));
+                char *next = replace_range(Gtext, sl, sc, el, ec, text ? text : "");
+                free(text);
+                text = next;
+            }
+        }
     } else if (strcmp(method, "textDocument/didClose") != 0) {
         if (td) text = parse_json_string(find_key(td, "text"));
         if (!text) text = parse_json_string(find_key(msg, "text"));
@@ -1126,14 +1170,20 @@ static void handle_doc(const char *msg, const char *method) {
             Ghave = 0;
             free(Guri);
             free(Gpath);
+            free(Gtext);
             Guri = NULL;
             Gpath = NULL;
+            Gtext = NULL;
         }
         free(path);
         free(uri);
         free(text);
         return;
     }
+    /* didChange must use the editor buffer, not a stale file on disk. */
+    if (!text && strcmp(method, "textDocument/didChange") == 0 && Gtext &&
+        Guri && strcmp(Guri, uri) == 0)
+        text = yuga_dup(Gtext);
     if (!text && path) {
         FILE *f = fopen(path, "rb");
         if (f) {
@@ -1183,6 +1233,7 @@ static void handle(const char *msg) {
         yuga_session_free(&Gsess);
         free(Guri);
         free(Gpath);
+        free(Gtext);
         exit(0);
     } else if (strcmp(method, "textDocument/didOpen") == 0 ||
                strcmp(method, "textDocument/didChange") == 0 ||
@@ -1222,5 +1273,6 @@ int main(void) {
     yuga_session_free(&Gsess);
     free(Guri);
     free(Gpath);
+    free(Gtext);
     return 0;
 }

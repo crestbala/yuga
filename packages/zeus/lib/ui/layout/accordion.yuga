@@ -7,7 +7,7 @@ import "../shared/look.yuga"
 struct AccordionProps {
     title: string,
     body: string,
-    open: Signal,
+    open: Signal<int>,
 }
 
 struct Acc {

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Yuga playground</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --panel: #121212;
+      --line: #232323;
+      --line-strong: #363636;
+      --text: #ededed;
+      --muted: #a1a1a1;
+      --faint: #6f6f6f;
+      --kw: #c4b5fd;
+      --str: #86efac;
+      --num: #fcd34d;
+      --cm: #6f6f6f;
+      --fn: #93c5fd;
+      --err: #b84e48;
+      --ok: #6ec896;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+      font: 13px/1.45 ui-sans-serif, system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; }
+    header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 14px; font-weight: 600; margin: 0; letter-spacing: 0.02em; }
+    header .sp { flex: 1; }
+    header .hint { color: var(--faint); font-size: 12px; }
+    select, button {
+      background: var(--bg); color: var(--text); border: 1px solid var(--line-strong);
+      border-radius: 6px; padding: 6px 10px; font: inherit; cursor: pointer;
+    }
+    button.primary { background: #1f3d32; border-color: #2d5a48; color: var(--ok); }
+    button:disabled { opacity: 0.5; cursor: default; }
+    main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 200px; min-height: 0; }
+    .editor {
+      display: flex; min-height: 0; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line);
+    }
+    .gutter {
+      flex: 0 0 44px; padding: 12px 8px; text-align: right; color: var(--faint);
+      font: 13px/20px ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+      overflow: hidden; background: var(--panel); border-right: 1px solid var(--line);
+      user-select: none; tab-size: 4; -moz-tab-size: 4;
+    }
+    .code { position: relative; flex: 1; min-width: 0; }
+    #hl, #src {
+      margin: 0; position: absolute; inset: 0;
+      padding: 12px 14px; border: 0;
+      font: 13px/20px ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+      font-variant-ligatures: none; font-kerning: none;
+      letter-spacing: 0; word-spacing: 0;
+      white-space: pre; overflow-wrap: normal; word-break: normal;
+      tab-size: 4; -moz-tab-size: 4;
+    }
+    #hl {
+      color: var(--text); pointer-events: none; background: var(--bg);
+      overflow: hidden;
+    }
+    #src {
+      color: transparent; caret-color: var(--text); background: transparent;
+      resize: none; outline: none; overflow: auto;
+      -webkit-appearance: none; appearance: none;
+    }
+    .tok-kw { color: var(--kw); }
+    .tok-str { color: var(--str); }
+    .tok-num { color: var(--num); }
+    .tok-cm { color: var(--cm); }
+    .tok-fn { color: var(--fn); }
+    .preview {
+      position: relative; min-height: 0; border-bottom: 1px solid var(--line); background: #fafafa;
+    }
+    .preview .ph {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      color: var(--faint); font-size: 12px; text-align: center; padding: 16px;
+    }
+    .preview.on .ph { display: none; }
+    canvas#zeus {
+      display: none; position: absolute; inset: 0; width: 100%; height: 100%;
+      touch-action: none;
+    }
+    .preview.on canvas#zeus { display: block; }
+    .out { grid-column: 1 / -1; background: var(--panel); padding: 12px 16px; overflow: auto; min-height: 0; }
+    .out h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.06em; }
+    #log { margin: 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap; color: var(--text); }
+    #log.ok { color: var(--ok); }
+    #log.fail { color: #f0a8a4; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Yuga playground</h1>
+    <select id="sample" aria-label="Sample"></select>
+    <button type="button" class="primary" id="run">Run</button>
+    <span class="sp"></span>
+    <span class="hint">⌘/Ctrl+Enter runs Playground.Run — print or Zeus canvas</span>
+  </header>
+  <main>
+    <div class="editor">
+      <div class="gutter" id="gutter"></div>
+      <div class="code">
+        <div id="hl" aria-hidden="true"></div>
+        <textarea id="src" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea>
+      </div>
+    </div>
+    <div class="preview" id="preview">
+      <div class="ph" id="ph">Run a program with <code>import "std:zeus"</code> to preview the UI here.</div>
+      <canvas id="zeus"></canvas>
+    </div>
+    <div class="out">
+      <h2>Output</h2>
+      <pre id="log">Edit the program and press Run. Print programs return stdout. Zeus programs compile to wasm and paint on the canvas.</pre>
+    </div>
+  </main>
+  <script src="/loader.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

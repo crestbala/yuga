@@ -14,20 +14,20 @@ struct SelectProps {
     a: string,
     b: string,
     c: string,
-    sig: Signal,
+    sig: Signal<int>,
 }
 
 struct SelectValueProps {
     label: string,
-    sig: Signal,
+    sig: Signal<int>,
     value: int,
 }
 
 struct SelectOptionProps {
     label: string,
-    sig: Signal,
+    sig: Signal<int>,
     value: int,
-    open: Signal,
+    open: Signal<int>,
 }
 
 /// The last option's index. Three options ship, so arrow navigation stops here.
@@ -52,7 +52,7 @@ fn row_radius() -> int {
 
 /// The closed face. Shaped and toned like a text field so a form of fields and
 /// selects reads as one system. `edge` lights while the menu is open.
-fn face(edge: int, open: Signal) -> Node {
+fn face(edge: int, open: Signal<int>) -> Node {
     return zeus.row().w(width()).h(spacing.input_height()).bg(colors.card()).padX(spacing.input_pad_x()).padY(spacing.input_pad_y()).gap(spacing.space_sm()).radius(spacing.button_radius()).border(1).border_color(edge).align(zeus.flex_center()).justify(zeus.flex_between()).on_click_toggle(open).shrink(0)
 }
 
@@ -62,7 +62,7 @@ fn Value(p: SelectValueProps) -> Node {
 }
 
 /// Fill a face with the current value and the chevron.
-fn fill(f: Node, a: string, b: string, c: string, sig: Signal) -> Node {
+fn fill(f: Node, a: string, b: string, c: string, sig: Signal<int>) -> Node {
     f.child(Value(SelectValueProps { label: a, sig: sig, value: 0 }))
     f.child(Value(SelectValueProps { label: b, sig: sig, value: 1 }))
     f.child(Value(SelectValueProps { label: c, sig: sig, value: 2 }))
@@ -72,7 +72,7 @@ fn fill(f: Node, a: string, b: string, c: string, sig: Signal) -> Node {
 
 /// The card the options sit on. Padded by menu_pad, which is what row_radius
 /// reads to stay concentric with it.
-fn Menu(open: Signal) -> Node {
+fn Menu(open: Signal<int>) -> Node {
     return zeus.col().show(open).enter_fade().w(width()).bg(colors.card()).pad(spacing.menu_pad()).gap(spacing.space_2xs()).border(1).border_color(colors.line()).radius(spacing.surface_radius()).position(zeus.pos_absolute()).left(0).top(spacing.input_height() + menu_gap()).z_index(20).shrink(0)
 }
 
@@ -97,7 +97,7 @@ fn List(p: SelectProps) -> Node {
     n.on_key_set("select.close", open, 0)
 
     let mut edge = colors.line()
-    if zeus.get(open) != 0 {
+    if open.get() != 0 {
         edge = colors.text()
     }
     let f = n.add(face(edge, open).overflow(zeus.overflow_hidden()))

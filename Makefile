@@ -35,7 +35,7 @@ ZEUSAPPS := $(foreach d,$(wildcard $(ZEUSEX)/*),$(wildcard $(d)/$(notdir $(d)).y
 EXAMPLES:= $(sort $(filter-out $(LANGEX)/oob.yuga,\
              $(wildcard $(GOLDEN)/*.yuga) $(wildcard $(LANGEX)/*.yuga) $(ZEUSAPPS)))
 
-.PHONY: all clean test mkdirs lsp grammar
+.PHONY: all clean test mkdirs lsp grammar zed-grammar
 
 all: mkdirs $(TARGET) $(LSP)
 
@@ -43,6 +43,20 @@ lsp: mkdirs $(LSP)
 
 grammar:
 	cd packages/tree-sitter-yuga && npx --yes tree-sitter-cli generate
+	$(MAKE) zed-grammar
+
+# Zed clones this directory via file://, so it must be its own git repo with
+# src/parser.c at the clone root. The nested .git is local-only (not committed).
+zed-grammar:
+	@cd packages/tree-sitter-yuga && \
+	  if [ ! -d .git ]; then git init; fi && \
+	  git add -A && \
+	  if git diff --cached --quiet && git rev-parse --verify HEAD >/dev/null 2>&1; then :; \
+	  else git -c user.name=yuga -c user.email=yuga@local commit --quiet -m "yuga grammar"; fi
+	@rev=$$(git -C packages/tree-sitter-yuga rev-parse HEAD); \
+	  sed -i '' "s/^rev = \".*\"/rev = \"$$rev\"/" packages/editors/zed/extension.toml; \
+	  echo "zed grammar rev $$rev"
+	@rm -rf packages/editors/zed/grammars
 
 mkdirs:
 	@mkdir -p $(OBJDIR) $(OBJDIR)/sema $(BINDIR) $(TESTDIR)/tmp $(EXBUILD)

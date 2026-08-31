@@ -224,6 +224,7 @@ fn store_sig(id: int, value: int) {
         return
     }
     sigs[id] = value
+    platform.plat_sig_bind_int(id, value)
     track.notify(id)
 }
 

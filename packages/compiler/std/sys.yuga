@@ -7,3 +7,19 @@ fn env_set(name: string) -> int {}
 
 /// Exit the process with `code`.
 fn exit(code: int) {}
+
+/// Value of `name`, or empty if unset. Native only; wasm returns empty.
+fn env(name: string) -> string {}
+
+/// Write `body` to `path`. `0` on success. Native only; wasm returns `1`.
+fn write_file(path: string, body: string) -> int {}
+
+/// Run `cmd` via the shell; capture stdout (redirect `2>&1` to include stderr).
+/// Native only; wasm returns empty. `exec_status` is the exit code.
+fn exec(cmd: string) -> string {}
+
+/// Exit code of the last `exec` (`1` if it could not start).
+fn exec_status() -> int {}
+
+/// Read the whole file. Empty if missing. Native only; wasm returns empty.
+fn read_file(path: string) -> string {}

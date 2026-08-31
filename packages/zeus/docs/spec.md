@@ -19,7 +19,7 @@ use Material widgets or system colors.
 | Reactivity | **Signals**, retained tree. `zeus.mount` builds once. `zeus.view` (rebuild every frame) is the VDOM alternative and is not the Zeus default. |
 | View type | `zeus.Node`. Yuga has no traits / `impl View`. |
 | Imports | `import "std:zeus"`. No glob prelude. |
-| Events | `.on(zeus.click(), handler)` or `ButtonProps.on_press`. Intern copies the closure env (`yuga_fn.env_size`). Captures stay Copy-only. `.bind` / `.bound` read the signal on the next paint. |
+| Events | `.on_click(handler)` or a widget's `on_press` argument. Intern copies the closure env (`yuga_fn.env_size`). Captures stay Copy-only. `.bind` / `.bound` read the signal on the next paint. |
 | HTTP types | Shared `.yuga` module with `#[proto]` structs + `*_rpc()` name helpers. Wasm: `http.client("").call` (Vite proxy). macOS/iOS: `http.client(api.native_addr())`. Android emulator: `http.client(api.android_addr())` (`10.0.2.2:8080`). |
 | SSR | Out of scope. First paint is client WASM. |
 
