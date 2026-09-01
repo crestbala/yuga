@@ -1,6 +1,13 @@
 module.exports = grammar({
   name: 'yuga',
 
+  // `if` is both a statement and an expression (`let x = if c { a } else { b }`);
+  // the two parses produce identical `if_statement` subtrees, so either choice
+  // highlights the same way.
+  conflicts: $ => [
+    [$._statement, $._expr_no_struct],
+  ],
+
   extras: $ => [
     /\s/,
     $.comment,
@@ -15,6 +22,8 @@ module.exports = grammar({
       $.import_item,
       $.function_item,
       $.struct_item,
+      $.enum_item,
+      $.let_statement,
     ),
 
     import_item: $ => seq(
@@ -49,6 +58,19 @@ module.exports = grammar({
       '{',
       optional(seq($.field_declaration, repeat(seq(',', $.field_declaration)), optional(','))),
       '}',
+    ),
+
+    enum_item: $ => seq(
+      'enum',
+      field('name', $.identifier),
+      '{',
+      optional(seq($.enum_variant, repeat(seq(',', $.enum_variant)), optional(','))),
+      '}',
+    ),
+
+    enum_variant: $ => seq(
+      field('name', $.identifier),
+      optional(seq('=', field('value', choice($.number, $.unary_expression)))),
     ),
 
     field_declaration: $ => seq(
@@ -138,6 +160,7 @@ module.exports = grammar({
       $.path_expression,
       $.array_literal,
       $.parenthesized_expression,
+      $.if_statement,
       $.identifier,
       $.number,
       $.string,

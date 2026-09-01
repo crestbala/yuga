@@ -1,0 +1,22 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "../display/icons.yuga"
+
+// Three-level path, left-aligned in a row that fills the parent.
+
+struct BreadcrumbProps {
+    a: string = "",
+    b: string = "",
+    c: string = "",
+}
+
+fn Breadcrumbs(p: BreadcrumbProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Row, spacing = SPACE.Xs, align_items = ALIGN.Center, align_self = ALIGN.Start) {
+        Text(p.a, color = muted(), font = type_caption()),
+        icons.Icon(markup = icons.alt_arrow_right(), color = label(), size = icon_xs()),
+        Text(p.b, color = muted(), font = type_caption()),
+        icons.Icon(markup = icons.alt_arrow_right(), color = label(), size = icon_xs()),
+        Text(p.c, color = text(), font = type_caption())
+    }
+    return n
+}

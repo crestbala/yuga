@@ -1,0 +1,44 @@
+// ZEUS_SPEC.md section 3A — Counter.
+//
+// Exercises the declarative surface end to end: a component as a plain `fn`,
+// a trailing block for hierarchy, named props, `{{ }}` interpolation, an
+// inline `fn(...)` handler, and fine-grained signal updates. Names are
+// unqualified — `import "std:zeus"` exposes `signal`, `Box`, `Text`,
+// `Button`, `window`, … directly.
+import "std:zeus"
+import "std:fmt"
+
+fn Counter() {
+    let count = signal(0)
+
+    Box(align_direction = DIRECTION.Column, spacing = 8, padding = 16) {
+        Text("Count: {{count.get()}}")
+        Button("Increment", on_click = fn() => count.set(count.get() + 1))
+    }
+}
+
+fn main() {
+    window("Counter", 320, 200)
+    ui_reset()
+    Counter()
+    root(ui_root())
+
+    // Root col, the Box, the Text label, the Button.
+    let label = 3
+    let button = 4
+    if !eq(node_text(label), "Count: 0") {
+        println("FAIL initial label:", node_text(label))
+    }
+    if !eq(node_text(button), "Increment") {
+        println("FAIL button label:", node_text(button))
+    }
+
+    // Clicking runs the handler, which sets the signal; only the bound label's
+    // effect re-runs, with no parent rebuild.
+    engine_layout(320, 200)
+    engine_click(node_x(button) + 4, node_y(button) + 4)
+    if !eq(node_text(label), "Count: 1") {
+        println("FAIL after click:", node_text(label))
+    }
+    println("counter ok:", node_text(label))
+}

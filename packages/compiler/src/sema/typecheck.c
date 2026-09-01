@@ -33,6 +33,12 @@ typedef struct Scope {
 
 static Scope *scope;
 
+/* While this scope is current, scope_add skips its duplicate check. The two
+ * module-global registration loops share one scope per module; collisions
+ * among globals are reported by check_decl_collisions instead, so they must
+ * not fire twice. */
+static Scope *dup_exempt_scope;
+
 static void err(SourceLoc loc, const char *fmt, ...) {
     va_list ap;
     char buf[512];
@@ -65,6 +71,18 @@ static void scope_pop(void) {
 static void scope_add(const char *name, Type *ty, int is_mut, int capfn, SourceLoc loc,
                       AstNode *node) {
     if (!scope) return;
+    /* Roadmap: a name defined twice in the same scope (two `let x`, a param
+       and a `let`, duplicate params) is an error, not silent shadowing.
+       Shadowing an outer scope stays legal. */
+    if (scope != dup_exempt_scope) {
+        for (int i = 0; i < scope->n; i++) {
+            if (strcmp(scope->names[i], name) == 0) {
+                err(loc, "duplicate definition of '%s' in this scope (first defined at line %d)",
+                    name, scope->locs[i].line);
+                break;
+            }
+        }
+    }
     if (scope->n >= scope->cap) {
         scope->cap = scope->cap ? scope->cap * 2 : 16;
         scope->names = realloc(scope->names, (size_t)scope->cap * sizeof(char *));
@@ -111,6 +129,18 @@ static const char **cur_tparams;
 static size_t cur_ntparams;
 static AstNode *cur_clos;
 static Scope *clos_scope;
+
+/* Enclosing closures, outermost first, so a name used in a nested closure is
+ * captured by every closure between it and its definition. Without the chain
+ * an inner closure would read a name its own env never received. */
+#define MAX_CLOS_NEST 32
+static AstNode *clos_stack[MAX_CLOS_NEST];
+static Scope *clos_scopes[MAX_CLOS_NEST];
+static int clos_depth;
+
+/* Scope holding the current module's globals. Those have static storage, so a
+ * closure reads them directly and must not copy them into its env. */
+static Scope *mod_scope;
 static int next_clos_id = 1;
 static int clos_infer;
 static Type *clos_infer_ty;
@@ -369,22 +399,47 @@ static int method_recv_matches(AstNode *fn, Type *recv) {
     return 0;
 }
 
-/** UFCS: current module, then last matching import. `n.radius(8)` skips
+/** Depth cap for transitive import search. The loader rejects import cycles,
+ *  so this only guards against pathological import chains. */
+#define MAX_IMPORT_DEPTH 24
+
+/** UFCS: same BFS order as unqualified name resolution. `n.radius(8)` skips
  *  `spacing.radius(int, int)` and takes `zeus.radius(Node, int)`. Two Node
- *  methods named `size` — later import wins (`ui.size` over `zeus.size`). */
+ *  methods named `size` — later import wins (`ui.size` over `zeus.size`).
+ *  Transitive, so `sig.get()` works in a module that only imports a barrel
+ *  which itself imports std:zeus. */
 static AstNode *find_method(const char *fnn, Type *recv) {
-    AstNode *fn = find_fn_in(&Gmods[Gcur], fnn);
-    if (fn && method_recv_matches(fn, recv)) return fn;
-    AstNode *prog = Gmods[Gcur].ast;
-    if (!prog || prog->as.program.import_count == 0) return NULL;
-    size_t i = prog->as.program.import_count;
-    while (i > 0) {
-        i--;
-        AstNode *im = prog->as.program.imports[i];
-        if (!im || !im->as.import.alias) continue;
-        YugaModule *m = find_mod(im->as.import.alias);
-        fn = m ? find_fn_in(m, fnn) : NULL;
+    static int visited[YUGA_MAX_MODULES];
+    static YugaModule *queue[YUGA_MAX_MODULES];
+    memset(visited, 0, sizeof visited);
+    int qn = 0;
+    for (int i = 0; i < Gn; i++) {
+        if (&Gmods[i] == &Gmods[Gcur]) {
+            visited[i] = 1;
+            queue[qn++] = &Gmods[i];
+            break;
+        }
+    }
+    for (int qi = 0; qi < qn; qi++) {
+        YugaModule *m = queue[qi];
+        AstNode *fn = find_fn_in(m, fnn);
         if (fn && method_recv_matches(fn, recv)) return fn;
+        AstNode *p = m->ast;
+        if (!p) continue;
+        size_t i = p->as.program.import_count;
+        while (i > 0) {
+            i--;
+            AstNode *im = p->as.program.imports[i];
+            if (!im || !im->as.import.alias) continue;
+            for (int mi = 0; mi < Gn; mi++) {
+                if (Gmods[mi].name && strcmp(Gmods[mi].name, im->as.import.alias) == 0 &&
+                    !visited[mi] && qn < YUGA_MAX_MODULES) {
+                    visited[mi] = 1;
+                    queue[qn++] = &Gmods[mi];
+                    break;
+                }
+            }
+        }
     }
     return NULL;
 }
@@ -399,6 +454,52 @@ static AstNode *find_global_in(YugaModule *m, const char *name) {
     }
     return NULL;
 }
+/** Depth cap for transitive import search. The loader rejects import cycles,
+ *  so this only guards against pathological import chains. */
+#define MAX_IMPORT_DEPTH 24
+
+/** Unqualified lookup by import depth (BFS). Own declarations first, then
+ *  the imports' own declarations (reverse order, so the last import wins),
+ *  then their imports' declarations, and so on. Depth ordering matters: an
+ *  app importing the ui.yuga barrel must see the kit widgets and std:zeus
+ *  names (direct imports) before any zeuscore helper a kit file happens to
+ *  import. A local definition shadows an imported name. */
+static AstNode *find_unqualified_fn(const char *name) {
+    static int visited[YUGA_MAX_MODULES];
+    static YugaModule *queue[YUGA_MAX_MODULES];
+    memset(visited, 0, sizeof visited);
+    int qn = 0;
+    YugaModule *cur = &Gmods[Gcur];
+    for (int i = 0; i < Gn; i++) {
+        if (&Gmods[i] == cur) {
+            visited[i] = 1;
+            queue[qn++] = cur;
+            break;
+        }
+    }
+    for (int qi = 0; qi < qn; qi++) {
+        YugaModule *m = queue[qi];
+        AstNode *fn = find_fn_in(m, name);
+        if (fn) return fn;
+        AstNode *p = m->ast;
+        if (!p) continue;
+        size_t i = p->as.program.import_count;
+        while (i > 0) {
+            i--;
+            AstNode *im = p->as.program.imports[i];
+            if (!im || !im->as.import.alias) continue;
+            for (int mi = 0; mi < Gn; mi++) {
+                if (Gmods[mi].name && strcmp(Gmods[mi].name, im->as.import.alias) == 0 &&
+                    !visited[mi] && qn < YUGA_MAX_MODULES) {
+                    visited[mi] = 1;
+                    queue[qn++] = &Gmods[mi];
+                    break;
+                }
+            }
+        }
+    }
+    return NULL;
+}
 
 /** Bodyless fns in these modules are the link boundary (`yuga_<mod>_<fn>`).
  *  Not a keyword: ordinary empty `fn` in a std seam module. See docs/boundary.md. */
@@ -410,18 +511,78 @@ static int is_ffi_mod(const char *name) {
            strcmp(name, "net") == 0;
 }
 
-static AstNode *find_struct(const char *name) {
+/** Find a struct declaration; `*out_mod` (optional) receives the index of the
+ * module that declares it, so field defaults can be checked in that module's
+ * scope rather than the caller's. */
+/** Find an enum declaration by name in any module (enum names are global
+ *  like struct names). Variants are int constants: `Key.K` lowers to a number. */
+static AstNode *find_enum_in(const char *name) {
+    if (!name) return NULL;
     for (int mi = 0; mi < Gn; mi++) {
         AstNode *p = Gmods[mi].ast;
         if (!p) continue;
         for (size_t i = 0; i < p->as.program.decl_count; i++) {
             AstNode *d = p->as.program.decls[i];
-            if (d->kind == AST_STRUCT_DECL && strcmp(d->as.strct.name, name) == 0)
-                return d;
+            if (d->kind == AST_ENUM_DECL && strcmp(d->as.enum_decl.name, name) == 0) return d;
         }
     }
     return NULL;
 }
+
+/** Roadmap: duplicate definitions must be a clear error. Every module's
+ *  top-level names — fn, struct, enum, and let — must be unique. Locals and
+ *  params are covered by scope_add's same-scope check. */
+static void check_decl_collisions(void) {
+    for (int m = 0; m < Gn; m++) {
+        AstNode *p = Gmods[m].ast;
+        if (!p) continue;
+        for (size_t i = 0; i < p->as.program.decl_count; i++) {
+            AstNode *d = p->as.program.decls[i];
+            const char *name = NULL;
+            switch (d->kind) {
+                case AST_FN_DECL: name = d->as.fn.name; break;
+                case AST_STRUCT_DECL: name = d->as.strct.name; break;
+                case AST_ENUM_DECL: name = d->as.enum_decl.name; break;
+                case AST_VAR_DECL: name = d->as.var.name; break;
+                default: break;
+            }
+            if (!name) continue;
+            for (size_t j = 0; j < i; j++) {
+                AstNode *e = p->as.program.decls[j];
+                const char *ename = NULL;
+                switch (e->kind) {
+                    case AST_FN_DECL: ename = e->as.fn.name; break;
+                    case AST_STRUCT_DECL: ename = e->as.strct.name; break;
+                    case AST_ENUM_DECL: ename = e->as.enum_decl.name; break;
+                    case AST_VAR_DECL: ename = e->as.var.name; break;
+                    default: break;
+                }
+                if (ename && strcmp(ename, name) == 0) {
+                    err(d->loc, "duplicate definition of '%s' (first defined at line %d)",
+                        name, e->loc.line);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+static AstNode *find_struct_in(const char *name, int *out_mod) {
+    for (int mi = 0; mi < Gn; mi++) {
+        AstNode *p = Gmods[mi].ast;
+        if (!p) continue;
+        for (size_t i = 0; i < p->as.program.decl_count; i++) {
+            AstNode *d = p->as.program.decls[i];
+            if (d->kind == AST_STRUCT_DECL && strcmp(d->as.strct.name, name) == 0) {
+                if (out_mod) *out_mod = mi;
+                return d;
+            }
+        }
+    }
+    return NULL;
+}
+
+static AstNode *find_struct(const char *name) { return find_struct_in(name, NULL); }
 
 static Type *resolve_type(AstNode *tn);
 
@@ -643,12 +804,231 @@ static void match_arg(AstNode **slot, Type *pt, Type *at) {
     }
 }
 
+/** A direct C call to `cname`, bypassing name resolution. Both backends emit
+ * `c_builtin` calls without consulting the (absent) callee. Takes `args`. */
+static AstNode *builtin_call(const char *cname, AstNode **args, size_t n, Type *ret, SourceLoc loc) {
+    AstNode *c = ast_call(NULL, args, n, loc);
+    c->as.call.c_builtin = cname;
+    c->ty = ret;
+    return c;
+}
+
+/** `part` (already checked, type `t`) converted to `string`, or NULL if `t`
+ * is not interpolatable. A string part is returned unchanged. */
+static AstNode *interp_to_string(AstNode *part, Type *t) {
+    if (!t) return NULL;
+    const char *conv = NULL;
+    switch (t->kind) {
+        case TY_STRING: return part;
+        case TY_INT: conv = "yuga_str_of_int"; break;
+        case TY_FLOAT: conv = "yuga_str_of_float"; break;
+        case TY_BOOL: conv = "yuga_str_of_bool"; break;
+        default: return NULL;
+    }
+    AstNode **a = (AstNode **)malloc(sizeof(AstNode *));
+    if (!a) yuga_fatal("out of memory");
+    a[0] = part;
+    return builtin_call(conv, a, 1, ty_string(), part->loc);
+}
+
+/** 1 if `arg` should be wrapped in a thunk for a `fn() -> T` parameter.
+ * A closure is already one. A bare name that denotes a function or a
+ * proc-typed local is passed straight through; any other expression is a
+ * value to be recomputed on demand, so it gets wrapped. (A call that returns
+ * a function must therefore be bound to a local first.) */
+static int needs_thunk(AstNode *arg) {
+    if (!arg || arg->kind == AST_CLOSURE) return 0;
+    if (arg->kind == AST_IDENT) {
+        Type *ty = NULL;
+        if (scope_find_s(arg->as.ident.name, &ty, NULL, NULL, NULL, NULL))
+            return !(ty && ty->kind == TY_PROC);
+        if (find_unqualified_fn(arg->as.ident.name)) return 0;
+    }
+    return 1;
+}
+
+/** Wrap `arg` as `fn() { return arg }` so a `fn() -> T` parameter re-evaluates
+ * it on demand. This is what makes `Text("Count: {{count}}")` reactive: the
+ * signal read happens inside the thunk, so it is recorded as a dependency of
+ * the effect that runs it. */
+static AstNode *make_thunk(AstNode *arg) {
+    AstNode **stmts = (AstNode **)malloc(sizeof(AstNode *));
+    if (!stmts) yuga_fatal("out of memory");
+    stmts[0] = ast_return(arg, arg->loc);
+    AstNode *body = ast_block(stmts, 1, arg->loc);
+    AstNode *c = ast_fn(NULL, NULL, 0, NULL, body, arg->loc);
+    c->kind = AST_CLOSURE;
+    return c;
+}
+
+/** Drop a call's named-argument labels once they have been consumed. */
+static void clear_arg_names(AstNode *n) {
+    if (!n->as.call.arg_names) return;
+    for (size_t i = 0; i < n->as.call.arg_count; i++) free((void *)n->as.call.arg_names[i]);
+    free((void *)n->as.call.arg_names);
+    n->as.call.arg_names = NULL;
+}
+
+/** `Point(x = 1, y = 2)` — calling a struct's name constructs it. Rewrites `n`
+ * into an AST_STRUCT_LIT in place (omitted fields pick up their defaults when
+ * that literal is checked). Unlabelled arguments fill fields in order.
+ * Returns 1 if `n` was a struct constructor. */
+static int try_struct_ctor(AstNode *n) {
+    AstNode *cal = n->as.call.callee;
+    const char *sname = NULL;
+    int mod_filter = -1; /* -1: unqualified; else the named module's index */
+    if (cal && cal->kind == AST_IDENT) {
+        sname = cal->as.ident.name;
+    } else if (cal && cal->kind == AST_FIELD && !cal->as.access.via_colon && cal->as.access.field &&
+               cal->as.access.target && cal->as.access.target->kind == AST_IDENT &&
+               module_imported(Gmods[Gcur].ast, cal->as.access.target->as.ident.name)) {
+        /* `zeus.GridConfig(columns = 3)` — a struct reached through its module. */
+        sname = cal->as.access.field;
+        for (int i = 0; i < Gn; i++) {
+            if (Gmods[i].name && strcmp(Gmods[i].name, cal->as.access.target->as.ident.name) == 0) {
+                mod_filter = i;
+                break;
+            }
+        }
+    }
+    if (!sname || mod_filter < -1) return 0;
+    /* A function with this name wins: `Row(...)` in zeus.yuga stays a call
+       even if the main module declares a struct Row. Only a name that is not
+       callable anywhere builds a struct. */
+    if (mod_filter >= 0) {
+        if (find_fn_in(&Gmods[mod_filter], sname)) return 0;
+    } else {
+        if (find_fn_in(&Gmods[Gcur], sname)) return 0;
+        for (int i = 0; i < Gn; i++) {
+            if (i != Gcur && find_fn_in(&Gmods[i], sname)) return 0;
+        }
+    }
+    int smod = 0;
+    AstNode *st = find_struct_in(sname, &smod);
+    if (!st) return 0;
+    /* A module-qualified name only constructs a struct that lives in that
+       module: `zeus.App(...)` stays a call even if another module (say
+       std:http) declares a struct named App. */
+    if (mod_filter >= 0 && smod != mod_filter) return 0;
+
+    size_t ac = n->as.call.arg_count;
+    FieldInit *fi = ac ? (FieldInit *)calloc(ac, sizeof(FieldInit)) : NULL;
+    for (size_t i = 0; i < ac; i++) {
+        const char *nm = n->as.call.arg_names ? n->as.call.arg_names[i] : NULL;
+        if (nm) {
+            fi[i].name = nm; /* moved out of arg_names */
+            n->as.call.arg_names[i] = NULL;
+        } else if (i < st->as.strct.field_count) {
+            const char *fn = st->as.strct.fields[i].name;
+            fi[i].name = yuga_dupn(fn, strlen(fn));
+        } else {
+            err(n->as.call.args[i]->loc, "too many arguments for struct '%s'", st->as.strct.name);
+            fi[i].name = yuga_dupn("", 0);
+        }
+        fi[i].init = n->as.call.args[i];
+    }
+    char *tn = yuga_dupn(st->as.strct.name, strlen(st->as.strct.name));
+    /* Release the call's own storage; the argument nodes now belong to `fi`. */
+    free(n->as.call.args);
+    clear_arg_names(n);
+    ast_free(cal);
+    n->kind = AST_STRUCT_LIT;
+    n->as.struct_lit.type_name = tn;
+    n->as.struct_lit.fields = fi;
+    n->as.struct_lit.field_count = ac;
+    return 1;
+}
+
+/** Gather `f(a, x = 1, y = 2)`'s labelled arguments into one struct literal
+ * for `f`'s last parameter, which must be a struct. Positional arguments fill
+ * the parameters before it, and fields left out take their declared defaults —
+ * so a widget's props are one struct rather than a long parameter list. */
+static void gather_props_arg(AstNode *n, Type *ft) {
+    if (!ft || ft->kind != TY_PROC) return;
+    /* `Text("hi")` where the trailing parameter is an all-defaulted props
+       struct: supply an empty literal so every field takes its default. */
+    if (!n->as.call.arg_names && ft->param_count == n->as.call.arg_count + 1) {
+        Type *last = ft->params[ft->param_count - 1];
+        if (last && last->kind == TY_STRUCT && last->name && find_struct(last->name)) {
+            size_t k = n->as.call.arg_count;
+            n->as.call.args = (AstNode **)realloc(n->as.call.args, (k + 1) * sizeof(AstNode *));
+            if (!n->as.call.args) yuga_fatal("out of memory");
+            n->as.call.args[k] =
+                ast_struct_lit(yuga_dupn(last->name, strlen(last->name)), NULL, 0, n->loc);
+            n->as.call.arg_count = k + 1;
+        }
+        return;
+    }
+    if (!n->as.call.arg_names) return;
+    size_t ac = n->as.call.arg_count;
+    size_t first = 0;
+    while (first < ac && !n->as.call.arg_names[first]) first++;
+    if (first == ac) {
+        clear_arg_names(n);
+        return;
+    }
+    for (size_t i = first; i < ac; i++) {
+        if (!n->as.call.arg_names[i]) {
+            err(n->as.call.args[i]->loc, "positional argument after a named argument");
+            clear_arg_names(n);
+            return;
+        }
+    }
+    if (ft->param_count == 0 || first != ft->param_count - 1) {
+        err(n->loc, "named arguments must fill the last parameter");
+        clear_arg_names(n);
+        return;
+    }
+    Type *pt = ft->params[first];
+    if (!pt || pt->kind != TY_STRUCT || !pt->name) {
+        err(n->loc, "named arguments require the last parameter to be a struct");
+        clear_arg_names(n);
+        return;
+    }
+    size_t k = ac - first;
+    AstNode *pst = find_struct(pt->name);
+    /* Room for one `<name>__set` companion per supplied prop. */
+    FieldInit *fi = (FieldInit *)calloc(k * 2, sizeof(FieldInit));
+    if (!fi) yuga_fatal("out of memory");
+    size_t nf = 0;
+    for (size_t i = 0; i < k; i++) {
+        const char *fname = n->as.call.arg_names[first + i];
+        fi[nf].name = fname;
+        n->as.call.arg_names[first + i] = NULL; /* moved */
+        fi[nf].init = n->as.call.args[first + i];
+        nf++;
+        /* A props struct can declare `foo__set: bool = false` to learn whether
+           `foo` was actually passed — the only way to tell a supplied handler
+           from its default, since function values cannot be compared. */
+        if (!pst || !fname) continue;
+        size_t flen = strlen(fname);
+        char *flag = (char *)malloc(flen + 6);
+        if (!flag) yuga_fatal("out of memory");
+        memcpy(flag, fname, flen);
+        memcpy(flag + flen, "__set", 6);
+        int have = 0;
+        for (size_t f = 0; f < pst->as.strct.field_count; f++)
+            if (strcmp(pst->as.strct.fields[f].name, flag) == 0) { have = 1; break; }
+        if (!have) {
+            free(flag);
+            continue;
+        }
+        fi[nf].name = flag;
+        fi[nf].init = ast_bool(1, n->loc);
+        nf++;
+    }
+    n->as.call.args[first] = ast_struct_lit(yuga_dupn(pt->name, strlen(pt->name)), fi, nf, n->loc);
+    n->as.call.arg_count = first + 1;
+    clear_arg_names(n);
+}
+
 /** Check a call against a procedure type; monomorphize if `named` is generic. */
 static Type *finish_proc_call(AstNode *n, Type *ft, AstNode *named) {
     if (!ft) {
         err(n->loc, "invalid call");
         return ty_void();
     }
+    gather_props_arg(n, ft);
     size_t nt = named ? named->as.fn.tparam_count : 0;
     Type **bound = NULL;
     if (nt) bound = calloc(nt, sizeof(Type *));
@@ -662,6 +1042,12 @@ static Type *finish_proc_call(AstNode *n, Type *ft, AstNode *named) {
     for (size_t i = 0; i < ft->param_count; i++) {
         AstNode *arg = n->as.call.args[i];
         Type *pt = ft->params[i];
+        /* A value where `fn() -> T` is wanted becomes a thunk over that value. */
+        if (pt && pt->kind == TY_PROC && pt->param_count == 0 && pt->ret &&
+            pt->ret->kind != TY_VOID && needs_thunk(arg)) {
+            arg = make_thunk(arg);
+            n->as.call.args[i] = arg;
+        }
         Type *expect = pt;
         if (nt) {
             expect = subst_type(pt, named->as.fn.tparams, bound, nt);
@@ -931,8 +1317,16 @@ static int expand_children(AstNode *n) {
 
 /** Dispatch: Box::new, wrapping_add, fmt.println, method rewrite, mod.fn. */
 static Type *check_call(AstNode *n, Type *expect) {
+    /* A `{{x}}` string was already folded into a builtin concat/to-string
+       call (callee == NULL, c_builtin set) and type-checked when it folded;
+       re-checking it here — e.g. a chained method re-checks its receiver —
+       would hit `invalid call` because the callee is gone. Its parts were
+       validated during the fold, so the recorded type is authoritative. */
+    if (n->as.call.c_builtin && !n->as.call.callee) return n->ty ? n->ty : ty_void();
     if (reject_multi_child(n)) return ty_void();
     if (expand_children(n)) return check_call(n, expect);
+    /* `Point(x = 1)` builds a struct, not a call. */
+    if (try_struct_ctor(n)) return check_expr_ty(n, expect);
     AstNode *cal = n->as.call.callee;
 
     /* Box::new(expr) */
@@ -1045,12 +1439,35 @@ static Type *check_call(AstNode *n, Type *expect) {
 
     if (try_vec_builtin(n)) return n->ty;
 
-    /* fmt.println(...) */
-    if (cal && cal->kind == AST_FIELD && !cal->as.access.via_colon &&
+    /* fmt.println(...) / fmt.print(...), or unqualified println/print from
+       std:fmt — the roadmap drops module prefixes, so `import "std:fmt"`
+       makes `println` a plain call. The qualified form still requires the
+       explicit import; the unqualified form already proved fmt is reachable
+       through the resolution. */
+    int is_fmt_write = 0, is_fmt_print = 0;
+    int qualified_fmt = 0;
+    if (cal && !cal->as.access.via_colon && cal->as.access.field &&
         cal->as.access.target && cal->as.access.target->kind == AST_IDENT &&
         strcmp(cal->as.access.target->as.ident.name, "fmt") == 0 &&
-        cal->as.access.field && strcmp(cal->as.access.field, "println") == 0) {
-        if (!module_imported(Gmods[Gcur].ast, "fmt")) {
+        (strcmp(cal->as.access.field, "println") == 0 ||
+         strcmp(cal->as.access.field, "print") == 0)) {
+        qualified_fmt = 1;
+        is_fmt_print = strcmp(cal->as.access.field, "print") == 0;
+        is_fmt_write = 1;
+    } else if (cal && cal->kind == AST_IDENT &&
+               (strcmp(cal->as.ident.name, "println") == 0 ||
+                strcmp(cal->as.ident.name, "print") == 0)) {
+        AstNode *fn = find_unqualified_fn(cal->as.ident.name);
+        YugaModule *fmtm = find_mod("fmt");
+        if (fn && fmtm && fn == find_fn_in(fmtm, cal->as.ident.name)) {
+            is_fmt_print = strcmp(cal->as.ident.name, "print") == 0;
+            is_fmt_write = 1;
+            cal->as.ident.resolved = fn;
+            cal->as.ident.def_loc = fn->loc;
+        }
+    }
+    if (is_fmt_write) {
+        if (qualified_fmt && !module_imported(Gmods[Gcur].ast, "fmt")) {
             err(n->loc, "unknown module 'fmt' — add `import \"std:fmt\"`");
             return ty_void();
         }
@@ -1060,13 +1477,9 @@ static Type *check_call(AstNode *n, Type *expect) {
                 err(n->as.call.args[i]->loc, "fmt.println cannot print %s", type_name(t));
         }
         n->as.call.is_println = 1;
+        n->as.call.is_print = is_fmt_print;
         n->ty = ty_void();
-        mark_module_ident(cal->as.access.target, "fmt");
-        {
-            AstNode *prn = find_fn_in(find_mod("fmt"), "println");
-            cal->as.access.resolved = prn;
-            if (prn) cal->ty = fn_type_of(prn);
-        }
+        if (cal->kind == AST_FIELD) mark_module_ident(cal->as.access.target, "fmt");
         return n->ty;
     }
 
@@ -1149,7 +1562,7 @@ static Type *check_call(AstNode *n, Type *expect) {
             n->as.call.is_fn_val = 1;
             return finish_proc_call(n, lt, NULL);
         }
-        fn = find_fn_in(&Gmods[Gcur], cal->as.ident.name);
+        fn = find_unqualified_fn(cal->as.ident.name);
         if (!fn) {
             err(n->loc, "unknown function '%s'", cal->as.ident.name);
             return ty_void();
@@ -1157,6 +1570,9 @@ static Type *check_call(AstNode *n, Type *expect) {
         cal->as.ident.resolved = fn;
         cal->as.ident.def_loc = fn->loc;
         cal->ty = fn_type_of(fn);
+        /* Unqualified calls may resolve to an imported fn; pin its C name so
+           codegen does not rebuild one from the current module's name. */
+        if (!fn->as.fn.tparam_count) n->as.call.resolved_cname = fn->as.fn.cname;
     } else if (cal) {
         Type *ct = check_expr(cal);
         if (ct && ct->kind == TY_PROC) {
@@ -1174,11 +1590,29 @@ static Type *check_call(AstNode *n, Type *expect) {
     return finish_proc_call(n, ft, fn);
 }
 
+/** 1 if a trailing `if` statement is an if-expression: both branches end
+ * with an expression, so `{ if c { a } else { b } }` means `return if c { a }
+ * else { b }`. A branch ending in `return` (or a missing else) stays a
+ * statement — the function's own return is inside it. */
+static int if_tail_is_value(AstNode *n) {
+    if (!n || n->kind != AST_IF || !n->as.if_stmt.else_block) return 0;
+    if (n->as.if_stmt.else_block->kind == AST_IF)
+        return if_tail_is_value(n->as.if_stmt.else_block);
+    return ast_block_tail(n->as.if_stmt.then_block) && ast_block_tail(n->as.if_stmt.else_block);
+}
+
 /** Last expression in a block is the return value (`fn f() -> int { 1 }`,
     `|x| { x + 1 }`). `ret.expr` and `expr_stmt.expr` share the union layout. */
 static void tail_expr_to_return(AstNode *body) {
     if (!body || body->kind != AST_BLOCK || !body->as.block.stmt_count) return;
     AstNode *last = body->as.block.stmts[body->as.block.stmt_count - 1];
+    if (last->kind == AST_IF && if_tail_is_value(last)) {
+        AstNode *expr = ast_if(last->as.if_stmt.cond, last->as.if_stmt.then_block,
+                               last->as.if_stmt.else_block, last->loc);
+        last->kind = AST_RETURN;
+        last->as.ret.expr = expr;
+        return;
+    }
     if (last->kind != AST_EXPR_STMT) return;
     last->kind = AST_RETURN;
 }
@@ -1216,6 +1650,14 @@ static Type *check_closure(AstNode *n, Type *expect) {
     cur_clos = n;
     scope_push();
     clos_scope = scope;
+    int saved_depth = clos_depth;
+    if (clos_depth < MAX_CLOS_NEST) {
+        clos_stack[clos_depth] = n;
+        clos_scopes[clos_depth] = scope;
+        clos_depth++;
+    } else {
+        err(n->loc, "closures nested too deeply");
+    }
     for (size_t i = 0; i < npc; i++)
         scope_add(n->as.fn.params[i].name, ps[i], 0, 0, n->as.fn.params[i].loc, n);
 
@@ -1238,6 +1680,7 @@ static Type *check_closure(AstNode *n, Type *expect) {
     }
 
     scope_pop();
+    clos_depth = saved_depth;
     cur_ret = saved_ret;
     cur_clos = saved_clos;
     clos_scope = saved_cs;
@@ -1248,6 +1691,7 @@ static Type *check_closure(AstNode *n, Type *expect) {
 }
 
 /** Infer/check an expression; sets n->ty. May rewrite args for auto-borrow. */
+static Type *block_value_type(AstNode *block);
 static Type *check_expr_ty(AstNode *n, Type *expect) {
     if (!n) return ty_void();
     switch (n->kind) {
@@ -1269,6 +1713,41 @@ static Type *check_expr_ty(AstNode *n, Type *expect) {
         case AST_STRING:
             n->ty = ty_string();
             return n->ty;
+        case AST_INTERP_STRING: {
+            /* Fold `"a {{x}} b"` into left-nested yuga_str_concat calls, each
+               non-string part wrapped in a to-string builtin. Both backends
+               emit `c_builtin` calls directly, so nothing downstream needs to
+               know this node kind existed. */
+            AstNode *acc = NULL;
+            for (size_t i = 0; i < n->as.interp.count; i++) {
+                AstNode *part = n->as.interp.parts[i];
+                Type *t = check_expr(part);
+                AstNode *s = interp_to_string(part, t);
+                if (!s) {
+                    err(part->loc, "cannot interpolate %s; expected string, int, float, or bool",
+                        type_name(t));
+                    continue;
+                }
+                if (!acc) {
+                    acc = s;
+                } else {
+                    AstNode **a = (AstNode **)malloc(2 * sizeof(AstNode *));
+                    if (!a) yuga_fatal("out of memory");
+                    a[0] = acc;
+                    a[1] = s;
+                    acc = builtin_call("yuga_str_concat", a, 2, ty_string(), n->loc);
+                }
+            }
+            if (!acc) {
+                acc = ast_string(yuga_dupn("", 0), n->loc);
+                acc->ty = ty_string();
+            }
+            free(n->as.interp.parts);
+            AstNode moved = *acc;
+            *n = moved;
+            free(acc);
+            return n->ty;
+        }
         case AST_IDENT: {
             Type *ty = NULL;
             int mut = 0;
@@ -1276,12 +1755,16 @@ static Type *check_expr_ty(AstNode *n, Type *expect) {
             AstNode *dnode = NULL;
             Scope *found = scope_find_s(n->as.ident.name, &ty, &mut, NULL, &dloc, &dnode);
             if (found) {
-                if (cur_clos && clos_scope && !scope_is_inside(found, clos_scope)) {
+                /* Capture into every enclosing closure the definition sits
+                   outside of, so a nested closure's env is fed by the one
+                   around it rather than reading a name that is not in scope. */
+                for (int k = 0; k < clos_depth && found != mod_scope; k++) {
+                    if (scope_is_inside(found, clos_scopes[k])) continue;
                     if (!type_is_copy(ty) || (ty->kind == TY_PTR && ty->is_mut)) {
                         err(n->loc, "cannot capture non-Copy '%s'", n->as.ident.name);
-                    } else {
-                        add_cap(cur_clos, n->as.ident.name, cap_type_for(dnode, ty));
+                        break;
                     }
+                    add_cap(clos_stack[k], n->as.ident.name, cap_type_for(dnode, ty));
                 }
                 n->ty = ty;
                 n->place_mut = mut;
@@ -1289,7 +1772,7 @@ static Type *check_expr_ty(AstNode *n, Type *expect) {
                 n->as.ident.def_loc = dloc;
                 return ty;
             }
-            AstNode *fn = find_fn_in(&Gmods[Gcur], n->as.ident.name);
+            AstNode *fn = find_unqualified_fn(n->as.ident.name);
             if (fn) {
                 if (fn->as.fn.tparam_count) {
                     err(n->loc, "cannot use generic function '%s' as a value", n->as.ident.name);
@@ -1417,6 +1900,26 @@ static Type *check_expr_ty(AstNode *n, Type *expect) {
                     n->ty = ty_void();
                     return n->ty;
                 }
+                /* `Key.K` — an enum variant is an int constant. Lower to a
+                   number node so both backends treat it like any literal. */
+                AstNode *en = find_enum_in(base);
+                if (en) {
+                    for (size_t i = 0; i < en->as.enum_decl.variant_count; i++) {
+                        if (strcmp(en->as.enum_decl.variants[i], n->as.access.field) == 0) {
+                            int64_t v = en->as.enum_decl.values[i];
+                            ast_free(n->as.access.target);
+                            free((void *)n->as.access.field);
+                            n->kind = AST_NUMBER;
+                            n->as.lit.value = v;
+                            n->ty = ty_int();
+                            return n->ty;
+                        }
+                    }
+                    err(n->loc, "no variant '%s' on enum '%s'", n->as.access.field,
+                        en->as.enum_decl.name);
+                    n->ty = ty_void();
+                    return n->ty;
+                }
             }
             Type *t = check_expr(n->as.access.target);
             Type *base = peel_ref(t);
@@ -1501,7 +2004,20 @@ static Type *check_expr_ty(AstNode *n, Type *expect) {
                     continue;
                 }
                 seen[found] = 1;
+                /* A default the typechecker inserted was already validated in
+                   the struct's own module; re-checking it in the caller's
+                   module would misresolve names (e.g. `on_click: fn() = noop`
+                   when a trailing block re-checks the call). */
+                if (fi->checked) continue;
                 Type *want = nt ? NULL : tmpl->field_types[found];
+                /* A value where the field wants `fn() -> T` becomes a thunk
+                   over that value, exactly like a call argument — this is what
+                   makes `Box(width = 100)` and `Box(align_direction = if c {
+                   "row" } else { "column" })` reactive style props. */
+                if (want && want->kind == TY_PROC && want->param_count == 0 && want->ret &&
+                    want->ret->kind != TY_VOID && needs_thunk(fi->init)) {
+                    fi->init = make_thunk(fi->init);
+                }
                 Type *it = check_expr_ty(fi->init, want);
                 if (nt) {
                     if (!unify(tmpl->field_types[found], it, st->as.strct.tparams, bound, nt))
@@ -1512,8 +2028,41 @@ static Type *check_expr_ty(AstNode *n, Type *expect) {
                         fi->name, type_name(tmpl->field_types[found]), type_name(it));
                 }
             }
+            /* An omitted field falls back to its declared default; only a
+               field with no default is an error. */
             for (size_t f = 0; f < tmpl->field_count; f++) {
-                if (!seen[f]) err(n->loc, "missing field '%s'", tmpl->field_names[f]);
+                if (seen[f]) continue;
+                AstNode *dflt = f < st->as.strct.field_count
+                                    ? st->as.strct.fields[f].default_val : NULL;
+                AstNode *copy = ast_clone_const(dflt);
+                if (!copy) {
+                    err(n->loc, "missing field '%s'", tmpl->field_names[f]);
+                    continue;
+                }
+                Type *want = nt ? NULL : tmpl->field_types[f];
+                /* A default like `on_click: fn() = noop` names something in the
+                   struct's own module, not the caller's. */
+                int dmod = Gcur;
+                find_struct_in(n->as.struct_lit.type_name, &dmod);
+                int saved_mod = Gcur;
+                Gcur = dmod;
+                Type *dt = check_expr_ty(copy, want);
+                Gcur = saved_mod;
+                if (!nt && !type_eq(dt, tmpl->field_types[f])) {
+                    err(n->loc, "default for field '%s' has type %s, expected %s",
+                        tmpl->field_names[f], type_name(dt), type_name(tmpl->field_types[f]));
+                    ast_free(copy);
+                    continue;
+                }
+                size_t k = n->as.struct_lit.field_count;
+                n->as.struct_lit.fields = (FieldInit *)realloc(n->as.struct_lit.fields,
+                                                              (k + 1) * sizeof(FieldInit));
+                if (!n->as.struct_lit.fields) yuga_fatal("out of memory");
+                n->as.struct_lit.fields[k].name = yuga_dupn(tmpl->field_names[f],
+                                                            strlen(tmpl->field_names[f]));
+                n->as.struct_lit.fields[k].init = copy;
+                n->as.struct_lit.fields[k].checked = 1;
+                n->as.struct_lit.field_count = k + 1;
             }
             free(seen);
             if (nt) {
@@ -1549,6 +2098,30 @@ static Type *check_expr_ty(AstNode *n, Type *expect) {
             err(n->loc, "tuple is not a value; use `.children(a, b, ...)`");
             n->ty = ty_void();
             return n->ty;
+        case AST_IF:
+            if (!type_eq(check_expr(n->as.if_stmt.cond), ty_bool()))
+                err(n->as.if_stmt.cond->loc, "if condition must be bool");
+            if (!n->as.if_stmt.else_block) {
+                err(n->loc, "if used as a value requires an else branch");
+                n->ty = ty_void();
+                return n->ty;
+            }
+            check_block(n->as.if_stmt.then_block);
+            Type *tt = block_value_type(n->as.if_stmt.then_block);
+            Type *et;
+            if (n->as.if_stmt.else_block->kind == AST_IF) {
+                et = check_expr(n->as.if_stmt.else_block);
+            } else {
+                check_block(n->as.if_stmt.else_block);
+                et = block_value_type(n->as.if_stmt.else_block);
+            }
+            if (tt->kind == TY_VOID || et->kind == TY_VOID)
+                err(n->loc, "if branches must end with an expression");
+            else if (!type_eq(tt, et))
+                err(n->loc, "if branches have different types %s and %s", type_name(tt),
+                    type_name(et));
+            n->ty = tt;
+            return n->ty;
         default:
             n->ty = ty_void();
             return n->ty;
@@ -1556,6 +2129,13 @@ static Type *check_expr_ty(AstNode *n, Type *expect) {
 }
 
 static Type *check_expr(AstNode *n) { return check_expr_ty(n, NULL); }
+
+/** The type an if-branch block yields: its last expression statement's type,
+ * or void when the block does not end with an expression. */
+static Type *block_value_type(AstNode *block) {
+    AstNode *tail = ast_block_tail(block);
+    return tail && tail->ty ? tail->ty : ty_void();
+}
 
 static void check_stmt(AstNode *n);
 
@@ -1724,7 +2304,13 @@ static void check_fn(AstNode *fn) {
         scope_add(fn->as.fn.params[i].name, pt, 0, 0, fn->as.fn.params[i].loc, fn);
     }
     if (cur_ret && cur_ret->kind != TY_VOID) tail_expr_to_return(fn->as.fn.body);
-    check_block(fn->as.fn.body);
+    /* Body statements share the param scope, so `let x` cannot collide with a
+       parameter `x` (roadmap: duplicate names in one definition are an error).
+       Nested blocks still push their own scopes and may shadow. */
+    if (fn->as.fn.body && fn->as.fn.body->kind == AST_BLOCK) {
+        for (size_t i = 0; i < fn->as.fn.body->as.block.stmt_count; i++)
+            check_stmt(fn->as.fn.body->as.block.stmts[i]);
+    }
     scope_pop();
     cur_ret = NULL;
     cur_tparams = save_tp;
@@ -2005,6 +2591,7 @@ int typecheck_modules(YugaModule *mods, int nmods) {
     Gn = nmods;
     Gerr = 0;
     scope = NULL;
+    dup_exempt_scope = NULL;
     nmono = 0;
     nstruct_insts = 0;
     ngvars = 0;
@@ -2056,6 +2643,8 @@ int typecheck_modules(YugaModule *mods, int nmods) {
         }
     }
 
+    check_decl_collisions();
+
     /* pass 2a: type every module `let` so `mod.global` can see imported state. */
     for (int m = 0; m < nmods; m++) {
         Gcur = m;
@@ -2063,6 +2652,7 @@ int typecheck_modules(YugaModule *mods, int nmods) {
         AstNode *p = mods[m].ast;
         if (!p) continue;
         scope_push();
+        dup_exempt_scope = scope; /* global names are checked by the decl pass */
         for (size_t i = 0; i < p->as.program.decl_count; i++) {
             AstNode *d = p->as.program.decls[i];
             if (d->kind != AST_VAR_DECL) continue;
@@ -2079,6 +2669,7 @@ int typecheck_modules(YugaModule *mods, int nmods) {
                 ngvars++;
             }
         }
+        dup_exempt_scope = NULL;
         scope_pop();
     }
 
@@ -2090,11 +2681,14 @@ int typecheck_modules(YugaModule *mods, int nmods) {
         AstNode *p = mods[m].ast;
         if (!p) continue;
         scope_push();
+        mod_scope = scope;
+        dup_exempt_scope = scope;
         for (int g = 0; g < ngvars; g++) {
             if (gvars[g].mod != m || !gvars[g].var) continue;
             AstNode *d = gvars[g].var;
             scope_add(d->as.var.name, d->ty, d->as.var.is_mut, 0, d->loc, d);
         }
+        dup_exempt_scope = NULL;
         for (size_t i = 0; i < p->as.program.decl_count; i++) {
             AstNode *d = p->as.program.decls[i];
             if (d->kind == AST_FN_DECL && !d->as.fn.is_intrinsic)

@@ -1,0 +1,27 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Text input face: panel plate, hairline border, one line of text. `bind`
+// writes each edit back into the signal.
+
+struct TextFieldProps {
+    placeholder: string = "",
+    bind: Signal<string> = Signal { id: 0 },
+    grow: int = 0,
+}
+
+fn TextField(p: TextFieldProps) -> Node {
+    return Input(
+        placeholder = p.placeholder,
+        bind = p.bind,
+        grow = p.grow,
+        background = panel(),
+        color = text(),
+        font = font_px(1),
+        pad_x = input_px(1),
+        pad_y = input_py(1),
+        radius = radius_of(1),
+        border = 1,
+        border_color = line()
+    )
+}

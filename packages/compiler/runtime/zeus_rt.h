@@ -137,6 +137,7 @@ void yuga_zeus_on_action_global(yuga_str action, Signal sig, int64_t mode, int64
 void yuga_zeus_map_key(yuga_str spec, yuga_str action, yuga_str ctx);
 void yuga_zeus_remap_key(yuga_str spec, yuga_str action, yuga_str ctx);
 int zeus_handle_key_ev(int key, int mods);
+int zeus_handle_key_up_ev(int key, int mods);
 
 Node yuga_zeus_show_ge(Node node, Signal sig, int64_t value);
 Node yuga_zeus_show_le(Node node, Signal sig, int64_t value);
@@ -231,6 +232,13 @@ yuga_str yuga_platform_plat_edit_text(int64_t slot);
 int64_t yuga_platform_plat_edit_set(int64_t slot, yuga_str text);
 int64_t yuga_platform_plat_intern_fn(yuga_fn handler);
 void yuga_platform_plat_invoke_fn(int64_t id);
+bool yuga_platform_plat_fn_eq(yuga_fn a, yuga_fn b);
+yuga_fn yuga_zeus_keep_txt(yuga_fn h);
+yuga_fn yuga_zeus_keep_ev(yuga_fn h);
+yuga_fn yuga_zeus_keep_key(yuga_fn h);
+yuga_fn yuga_zeus_keep_sty_s(yuga_fn h);
+yuga_fn yuga_zeus_keep_sty_i(yuga_fn h);
+yuga_fn yuga_zeus_keep_sty_b(yuga_fn h);
 void yuga_platform_plat_sig_bind_int(int64_t id, int64_t value);
 int64_t yuga_platform_plat_overlay_scroll(void);
 int64_t yuga_platform_plat_inset_top(void);
@@ -257,6 +265,7 @@ int64_t yuga_zeus_engine_focus_ctx(int64_t i);
 int64_t yuga_zeus_engine_focus_step(int64_t back);
 int64_t yuga_zeus_engine_focus_captures_text(void);
 int64_t yuga_zeus_engine_key(int64_t key);
+int64_t yuga_zeus_engine_key_up(int64_t key, int64_t mods);
 
 void zeus_layout(int64_t width, int64_t height);
 int zeus_step(float dt);

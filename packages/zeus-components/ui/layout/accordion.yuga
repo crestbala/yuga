@@ -1,0 +1,35 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "../display/icons.yuga"
+
+// Accordion item: a title row that flips `open`; the body is shown while
+// `open` is non-zero.
+
+struct AccordionProps {
+    title: string = "",
+    body: string = "",
+    open: Signal<int> = Signal { id: 0 },
+}
+
+fn Accordion(p: AccordionProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Column, spacing = 0, pad_x = pad_x(1), pad_y = pad_y(1), radius = radius_of(1)) {
+        let row = Box(align_direction = DIRECTION.Row, spacing = gap_of(1), align_items = ALIGN.Center) {
+            let a = IconHit(markup = alt_arrow_right(), color = muted(), hit = icon_of(1), size = icon_of(1))
+            show_eq(a, p.open, 0)
+            let b = IconHit(markup = alt_arrow_down(), color = muted(), hit = icon_of(1), size = icon_of(1))
+            show_ne(b, p.open, 0)
+            Text(p.title, color = text(), font = font_px(1), grow = 1)
+        }
+        on_click_toggle(row, p.open)
+        hover_fade(row)
+        // `show_ne` hides it from layout as `open` changes. A build-time `if`
+        // ran once, so the body stayed visible after the arrow had collapsed.
+        let body = Text(p.body, color = muted(), font = font_px(1), wrap = true, pad_left = icon_of(1) + gap_of(1))
+        enter_fade(body)
+        show_ne(body, p.open, 0)
+    }
+    key(n, "enter", "accordion.toggle")
+    key(n, "space", "accordion.toggle")
+    on_key_toggle(n, "accordion.toggle", p.open)
+    return n
+}

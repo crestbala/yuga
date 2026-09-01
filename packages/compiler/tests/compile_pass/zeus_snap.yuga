@@ -2,14 +2,14 @@ import "std:fmt"
 import "std:zeus"
 
 fn main() {
-    let count = zeus.signal(0)
-    zeus.snapshot(320, 200, || {
-        let mut n = zeus.stack().class("container")
-        n = n.child(zeus.text("Hello").style(zeus.heading()))
-        n = n.child(zeus.button("Click").on_click_inc(count))
-        n
+    let count = signal(0)
+    snapshot(320, 200, || {
+        Box(align_direction = DIRECTION.Column, padding = 16, gap = 12) {
+            Text("Hello", font = 22)
+            Button("Click", on_click = fn() => count.set(count.get() + 1))
+        }
     })
-    if zeus.draw_count() < 1 {
+    if draw_count() < 1 {
         let z = 0
         let boom = 1 / z
         fmt.println(boom)

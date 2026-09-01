@@ -1,35 +1,130 @@
-//! Shared counter UI. Wasm, iOS, macOS, and Android all pass RPC results in.
+//! Shared counter UI, written in the declarative ZEUS_SPEC.md syntax:
+//! components are `fn`s, hierarchy comes from trailing blocks, and labels
+//! re-render from signals. Wasm, iOS, macOS, and Android all pass RPC
+//! results in.
 
 import "std:zeus"
-import "../../../packages/zeus/lib/ui.yuga"
-import "../../../packages/zeus/lib/theme.yuga"
 
-/// Page built once from RPC results. `chip` is the host label (Canvas2D / iOS / macOS / Android).
-/// `users`/`jobs`/`uptime` are static strings; `count0`/`load0` seed signals.
-fn Screen(title: string, chip: string, users: string, jobs: string, uptime: string, load0: int, count0: int) -> Node {
-    let count = zeus.signal(count0)
-    let load = zeus.signal(load0)
-    let dialogOpen = zeus.signal(0)
-    return theme.Page("Zeus", 560, 520).children(
-        zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).children(
-            zeus.text(title).style(zeus.heading()),
-            ui.Chip(ChipProps { label: chip, color: theme.accent() }),
-            ui.Badge(BadgeProps { label: "live", color: theme.success() }),
-        ),
-        ui.Alert(AlertProps { title: "RPC", body: "Count is Counter.Hello. Cards are Counter.Stats.", color: theme.accent() }),
-        ui.Stats(StatsProps { users_t: "Users", users: users, jobs_t: "Jobs", jobs: jobs, uptime_t: "Uptime", uptime: uptime, ticks_t: "Count", ticks: count }),
-        ui.Card().children(
-            ui.CardHeader(CardHeaderProps { title: "Count", subtitle: "Buttons write a signal. The starting value came from protobuf." }),
-            zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).children(
-                ui.Ghost(ButtonProps { label: "-1", on_press: || { count.set(count.get() - 1) } }),
-                zeus.label("").bind(count).font(16),
-                ui.Prominent(ButtonProps { label: "+1", on_press: || { count.set(count.get() + 1) } }),
-            ),
-            ui.Progress(ProgressProps { sig: count }),
-            ui.Divider(),
-            ui.Primary(ButtonProps { label: "Open Dialog", on_press: || { dialogOpen.set(1) } }),
-            ui.Dialog(DialogProps { title: "Dialog", body: "How are you feel today", cancel: "Close", discard: "Save", open: dialogOpen }),
-            zeus.row().gap(theme.space_md()).txt("Load", theme.label(), 13).child(ui.Progress(ProgressProps { sig: load })).bound(load, theme.muted(), 13),
-        ),
-    )
+// Catppuccin Mocha palette, the same hex strings ZEUS_SPEC.md uses.
+let bg      = "#1e1e2e"
+let surface = "#313244"
+let text    = "#cdd6f4"
+let muted   = "#a6adc8"
+let blue    = "#89b4fa"
+let green   = "#a6e3a1"
+let red     = "#f38ba8"
+let mauve   = "#cba6f7"
+
+struct ChipProps {
+    label: string = "",
+    color: string = blue,
+}
+
+fn Chip(p: ChipProps) {
+    Box(background = p.color, padding = 6, radius = 8) {
+        Text(p.label, color = bg, font = 11)
+    }
+}
+
+struct AlertProps {
+    title: string = "",
+    body: string = "",
+    color: string = blue,
+}
+
+fn Alert(p: AlertProps) {
+    Box(background = surface, padding = 12, radius = 8, gap = 4) {
+        Text(p.title, color = p.color, font = 13),
+        Text(p.body, color = muted, font = 12)
+    }
+}
+
+struct MetricProps {
+    title: string = "",
+    value: string = "",
+    color: string = text,
+}
+
+fn Metric(p: MetricProps) {
+    Box(background = surface, padding = 12, radius = 8) {
+        Text(p.title, color = muted, font = 11),
+        Text(p.value, color = p.color, font = 18)
+    }
+}
+
+struct LiveMetricProps {
+    title: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+    color: string = text,
+}
+
+fn LiveMetric(p: LiveMetricProps) {
+    Box(background = surface, padding = 12, radius = 8) {
+        Text(p.title, color = muted, font = 11),
+        Text("{{p.sig.get()}}", color = p.color, font = 18)
+    }
+}
+
+struct StatsProps {
+    users: string = "",
+    jobs: string = "",
+    uptime: string = "",
+    ticks: Signal<int> = Signal { id: 0 },
+}
+
+fn Stats(p: StatsProps) {
+    Grid(config = GridConfig(columns = 2, gap = 12)) {
+        Metric(title = "Users", value = p.users, color = blue),
+        Metric(title = "Jobs", value = p.jobs, color = mauve),
+        Metric(title = "Uptime", value = p.uptime, color = green),
+        LiveMetric(title = "Count", sig = p.ticks, color = red)
+    }
+}
+
+struct CardProps {
+    title: string = "",
+    subtitle: string = "",
+}
+
+/// Surface with a title and supporting copy; children come from the caller's
+/// trailing block, so a card is just a function that returns its own node.
+fn Card(p: CardProps) -> Node {
+    return Box(background = surface, padding = 16, radius = 8, spacing = 10) {
+        Text(p.title, color = text, font = 15),
+        Text(p.subtitle, color = muted, font = 12)
+    }
+}
+
+/// Page built once from RPC results. `chip` is the host label
+/// (Canvas2D / iOS / macOS / Android); `count0`/`load0` seed the signals.
+fn Screen(title: string, chip: string, users: string, jobs: string, uptime: string, load0: int, count0: int) {
+    let count = signal(count0)
+    let load = signal(load0)
+    let dialogOpen = signal(0)
+
+    Box(align_direction = DIRECTION.Column, background = bg, padding = 16, spacing = 14) {
+        Box(align_direction = DIRECTION.Row, spacing = 8) {
+            Text(title, color = text, font = 24),
+            Chip(label = chip, color = blue),
+            Chip(label = "live", color = green)
+        },
+        Alert(title = "RPC", body = "Count is Counter.Hello. Cards are Counter.Stats.", color = blue),
+        Stats(users = users, jobs = jobs, uptime = uptime, ticks = count),
+        Card(title = "Count", subtitle = "Buttons write a signal. The starting value came from protobuf.") {
+            Box(align_direction = DIRECTION.Row, spacing = 8) {
+                Button("-1", on_click = fn() => count.set(count.get() - 1)),
+                Text("{{count.get()}}", color = text, font = 16),
+                Button("+1", on_click = fn() => count.set(count.get() + 1))
+            },
+            Progress(sig = count),
+            Divider(),
+            Button("Open Dialog", on_click = fn() => dialogOpen.set(1)),
+            Box(align_direction = DIRECTION.Row, spacing = 10) {
+                Text("Load", color = muted, font = 13),
+                Text("{{load.get()}}%", color = muted, font = 13),
+                Progress(sig = load)
+            },
+            Dialog(title = "Dialog", body = "How are you feel today", cancel = "Close", discard = "Save", open = dialogOpen)
+        }
+    }
 }

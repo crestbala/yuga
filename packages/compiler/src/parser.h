@@ -18,6 +18,13 @@ typedef struct {
     Token previous;
     int had_error;
     int allow_struct_lit;
+    /* Alias the file imported `std:zeus` under, or NULL. A trailing UI block
+       (`Column(...) { ... }`) desugars to `<alias>.__ui_scope(...)`. */
+    const char *zeus_alias;
+    /* 1 while parsing a trailing UI block's body: a comma after a widget
+       call is a list separator (`Column { Text("a"), Text("b") }`), the
+       same list syntax the chain API's `.children(a, b)` used. */
+    int in_ui_block;
 } Parser;
 
 /** Bind `p` to lexer `l` and prime current/peek. */

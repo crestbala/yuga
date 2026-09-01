@@ -1,0 +1,245 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "../display/icons.yuga"
+
+// Date picker: a trigger showing the chosen date, and a calendar popover.
+//
+// The 42 day cells are built once and never rebuilt. Paging the month only
+// re-runs each cell's text thunk and its reactive style props, so the grid
+// follows the month through fine-grained updates rather than a tree rebuild.
+
+struct DatePickerProps {
+    day: Signal<int> = Signal { id: 0 },
+    month: Signal<int> = Signal { id: 0 },
+    year: Signal<int> = Signal { id: 0 },
+}
+
+// --- calendar arithmetic ---
+
+fn is_leap(y: int) -> bool {
+    if y % 400 == 0 {
+        return true
+    }
+    if y % 100 == 0 {
+        return false
+    }
+    return y % 4 == 0
+}
+
+fn days_in_month(y: int, m: int) -> int {
+    if m == 2 {
+        if is_leap(y) {
+            return 29
+        }
+        return 28
+    }
+    return [13]int{30, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}[m]
+}
+
+/// Sakamoto's algorithm, shifted so 0 = Monday.
+fn weekday(y: int, m: int, d: int) -> int {
+    let t = [12]int{0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4}
+    let mut yy = y
+    if m < 3 {
+        yy = yy - 1
+    }
+    let w = (yy + yy / 4 - yy / 100 + yy / 400 + t[m - 1] + d) % 7
+    return (w + 6) % 7
+}
+
+fn month_name(m: int) -> string {
+    return [13]string{"", "January", "February", "March", "April", "May", "June",
+                      "July", "August", "September", "October", "November", "December"}[m]
+}
+
+fn weekday_name(i: int) -> string {
+    return [7]string{"Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"}[i]
+}
+
+/// Two-digit, so the field reads 2026-09-07 rather than 2026-9-7.
+fn pad2(v: int) -> string {
+    if v < 10 {
+        return "0{{v}}"
+    }
+    return "{{v}}"
+}
+
+fn iso(y: int, m: int, d: int) -> string {
+    return "{{y}}-{{pad2(m)}}-{{pad2(d)}}"
+}
+
+/// Day number shown in grid slot `i` (0..41). Slots before the 1st and after
+/// the last spill into the neighbouring months, which are drawn muted.
+fn cell_day(y: int, m: int, i: int) -> int {
+    let dn = i - weekday(y, m, 1) + 1
+    if dn < 1 {
+        let mut pm = m - 1
+        let mut py = y
+        if pm < 1 {
+            pm = 12
+            py = y - 1
+        }
+        return days_in_month(py, pm) + dn
+    }
+    let dim = days_in_month(y, m)
+    if dn > dim {
+        return dn - dim
+    }
+    return dn
+}
+
+/// 1 when slot `i` belongs to the displayed month.
+fn in_month(y: int, m: int, i: int) -> bool {
+    let dn = i - weekday(y, m, 1) + 1
+    return dn >= 1 && dn <= days_in_month(y, m)
+}
+
+/// Step the month, rolling the year. Clamps the day so paging out of a long
+/// month never leaves an impossible date such as 31 February.
+fn step_month(day: Signal<int>, month: Signal<int>, year: Signal<int>, delta: int) {
+    let mut m = month.get() + delta
+    let mut y = year.get()
+    if m < 1 {
+        m = 12
+        y = y - 1
+    }
+    if m > 12 {
+        m = 1
+        y = y + 1
+    }
+    month.set(m)
+    year.set(y)
+    let dim = days_in_month(y, m)
+    if day.get() > dim {
+        day.set(dim)
+    }
+}
+
+fn step_year(day: Signal<int>, month: Signal<int>, year: Signal<int>, delta: int) {
+    let y = year.get() + delta
+    year.set(y)
+    let dim = days_in_month(y, month.get())
+    if day.get() > dim {
+        day.set(dim)
+    }
+}
+
+// --- pieces ---
+
+/// One day cell: a centred label in a square that outlines when selected.
+/// The conditional values are if-expressions: each prop's thunk reads the
+/// signals it needs, so a `day.set(...)` re-runs only the border props of the
+/// two affected cells and the label effect of the picked one.
+fn Cell(day: Signal<int>, month: Signal<int>, year: Signal<int>, chosen: Signal<int>, i: int) -> Node {
+    let cell = Box(
+        align_direction = DIRECTION.Row,
+        align_items = ALIGN.Center,
+        justify_content = ALIGN.Center,
+        size = hit_of(1),
+        radius = radius_of(1),
+        shrink = 0,
+        border = if in_month(year.get(), month.get(), i) && cell_day(year.get(), month.get(), i) == day.get() {
+            1
+        } else {
+            0
+        },
+        border_color = if in_month(year.get(), month.get(), i) && cell_day(year.get(), month.get(), i) == day.get() {
+            line_strong()
+        } else {
+            line()
+        }
+    ) {
+        Text(
+            "{{cell_day(year.get(), month.get(), i)}}",
+            color = if in_month(year.get(), month.get(), i) { text() } else { muted() },
+            font = font_px(1)
+        )
+    }
+    // Picking a day is what commits the date; opening the popover must not.
+    on_click(cell, fn() {
+        if in_month(year.get(), month.get(), i) {
+            day.set(cell_day(year.get(), month.get(), i))
+            chosen.set(1)
+        }
+    })
+    return cell
+}
+
+/// `< September 2026 >`, with the year steppable too.
+fn Header(p: DatePickerProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Row, align_items = ALIGN.Center, justify_content = ALIGN.Between, width = popover_w(), shrink = 0) {
+        let prev = IconHit(markup = alt_arrow_left(), color = muted(), hit = hit_of(1), size = icon_of(1))
+        on_click(prev, fn() => step_month(p.day, p.month, p.year, -1))
+        Text("{{month_name(p.month.get())}} {{p.year.get()}}", color = text(), font = font_px(1))
+        let next = IconHit(markup = alt_arrow_right(), color = muted(), hit = hit_of(1), size = icon_of(1))
+        on_click(next, fn() => step_month(p.day, p.month, p.year, 1))
+    }
+    return n
+}
+
+/// Mo Tu We Th Fr Sa Su
+fn WeekHead() -> Node {
+    let n = Grid(config = GridConfig(columns = 7, gap = SPACE.Xs2)) {
+        for i in 0..7 {
+            Box(align_direction = DIRECTION.Row, align_items = ALIGN.Center, justify_content = ALIGN.Center, size = hit_of(1), shrink = 0) {
+                Text(weekday_name(i), color = muted(), font = caption_px(1))
+            }
+        }
+    }
+    return n
+}
+
+fn Days(p: DatePickerProps, chosen: Signal<int>) -> Node {
+    let n = Grid(config = GridConfig(columns = 7, gap = SPACE.Xs2)) {
+        for i in 0..42 {
+            Cell(p.day, p.month, p.year, chosen, i)
+        }
+    }
+    return n
+}
+
+/// Trigger + popover.
+fn DatePicker(p: DatePickerProps) -> Node {
+    let open = signal(0)
+    let chosen = signal(0)
+
+    let n = Box(align_direction = DIRECTION.Column, spacing = SPACE.Snug, align_items = ALIGN.Start) {
+        let trigger = Box(align_direction = DIRECTION.Row, background = panel(), align_items = ALIGN.Center, justify_content = ALIGN.Between, width = popover_w(), height = input_height(), pad_x = input_pad_x(), pad_y = input_pad_y(), radius = button_radius(), border = 1, border_color = line(), shrink = 0) {
+            Text("", color = text(), font = font_px(1)),
+            Icon(markup = alt_arrow_down(), color = muted(), size = icon_sm())
+        }
+        on_click_toggle(trigger, open)
+
+        let pop = Box(align_direction = DIRECTION.Column, background = panel(), spacing = SPACE.Xs, width = popover_w(), border = 1, border_color = line(), radius = surface_radius(), padding = menu_pad()) {
+            Header(day = p.day, month = p.month, year = p.year),
+            WeekHead(),
+            Days(p, chosen)
+        }
+        show(pop, open)
+        enter_fade(pop)
+    }
+
+    // The trigger label is the first grandchild; bind it to the live date.
+    let field = node_kid(n.id, 0)
+    let label = node_kid(field, 0)
+    bind_text(nd(label), fn() -> string {
+        if chosen.get() == 0 {
+            return "Pick a date"
+        }
+        return iso(p.year.get(), p.month.get(), p.day.get())
+    })
+
+    key(n, "left", "date.prev_day")
+    key(n, "right", "date.next_day")
+    key(n, "up", "date.prev_week")
+    key(n, "down", "date.next_week")
+    key(n, "enter", "date.open")
+    key(n, "escape", "date.close")
+    on_range(n, "date.prev_day", p.day, -1, 1, 31)
+    on_range(n, "date.next_day", p.day, 1, 1, 31)
+    on_range(n, "date.prev_week", p.day, -7, 1, 31)
+    on_range(n, "date.next_week", p.day, 7, 1, 31)
+    on_key_toggle(n, "date.open", open)
+    on_key_set(n, "date.close", open, 0)
+    return n
+}

@@ -30,14 +30,19 @@ second tree type.
 |---|---|
 | `import "std:zeus"` only | done |
 | `packages/compiler/std/zeuscore/*.yuga` tree / layout / hit-test | done |
-| `.child()` / `.run()` / `.mount()` chain | done |
+| Declarative widgets (`Text`, `Button`, `Box`, `Input`, …) + trailing blocks | done |
 | PascalCase composers (`Wrap`, `Note`, `Orb`, `Card`, …) | done |
 | Buttons take `fn()`, not `Signal` | done |
 | `yugac build --target=native` | done |
 | `yugac build --target=wasm32` + Zeus Kit compile | done |
-| PascalCase widgets + `.size()` / `.look()` | done |
-| `each` / `when` combinators | done |
-| `.styled()` / tracking scopes | done |
+| Unqualified names (`Button`, `signal`, `println` — no `zeus.`/`fmt.` prefix) | done |
+| `Box(align_direction = DIRECTION.Row | "column")` (no `Row`/`Column`) | done |
+| No chaining — style is props, wiring is plain calls | done |
+| `enum Key { … }` (`e.key == Key.K`) | done |
+| Duplicate-definition errors | done |
+| `each` / `when` combinators (plain fns) | done |
+| Reactive style props (`color = if sel { a } else { b }`) — no `styled` closures, no paint-modifier fns | done |
+| If-expressions (`if c { a } else { b }` as a value) | done |
 | Per-file `*Props` + interned `fn()` clicks | done |
 | `Node(B: Backend)` generics | skipped (no traits) |
 
@@ -47,94 +52,88 @@ second tree type.
 
 ```yuga
 import "std:zeus"
-import "../../lib/theme.yuga"
-import "../../lib/ui.yuga"
+import "../packages/zeus-components/ui.yuga"
 
 fn Wrap() -> Node {
-    return zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).justify(zeus.flex_start()).flex_wrap()
+    return Box(align_direction = DIRECTION.Row, gap = SPACE.Sm, align_items = ALIGN.Center, justify_content = ALIGN.Start, overflow = overflow_auto())
 }
 
 fn Note(s: string) -> Node {
-    return zeus.label(s).fg(theme.muted()).font(11)
+    return Text(s, color = muted(), font = 11)
 }
 
 fn Orb(n: Node, s: string) -> Node {
-    return zeus.col().gap(theme.space_sm()).align(zeus.flex_center()).shrink(0).children(
+    return Box(align_direction = DIRECTION.Column, gap = SPACE.Sm, align_items = ALIGN.Center, shrink = 0) {
         n,
-        Note(s),
-    )
+        Note(s)
+    }
 }
 
 fn main() {
-    let mut ticks = 0
-    let load = zeus.signal(42)
-    // ... remaining signal declarations unchanged ...
+    let ticks = signal(0)
+    let load = signal(42)
 
-    theme.Page("Zeus Kit", 960, 2400).children(
-        ui.Navbar(NavbarProps { brand: "Zeus", a: "Foundations", b: "Components", c: "Patterns", appearance: "Dark" }),
-        ui.Breadcrumbs(BreadcrumbProps { a: "Zeus", b: "Examples", c: "Kit" }),
-        ui.Overline(TypeProps { text: "Library" }),
-        ui.Display(TypeProps { text: "Build interfaces with Zeus" }),
-        ui.Body(TypeProps { text: "Every widget ships medium..." }),
-        Wrap().children(
-            ui.Chip(ChipProps { label: "Stable", color: theme.success() }),
-            ui.Chip(ChipProps { label: "Headless tests", color: theme.accent() }),
-            ui.Badge(BadgeProps { label: "v1", color: theme.purple() }),
-            ui.Kbd(KbdProps { key: "Esc" }),
-        ),
-        ui.Card().children(
-            ui.CardHeader(CardHeaderProps { title: "Project card", subtitle: "..." }),
-            ui.CardFooter().children(
-                ui.Ghost(ButtonProps { label: "Cancel", on_press: || { ticks = ticks + 1 } }),
-                ui.Prominent(ButtonProps { label: "Save", on_press: || { ticks = ticks + 1 } }),
-                zeus.spacer(),
-            ).child(zeus.label("0").bind_n(ticks).fg(theme.muted()).font(12)),
-        ),
-        // ... every remaining section as one nested chain ...
-    ).run()
+    App("Zeus Kit", 960, 2400, fn() {
+        Scroll(background = canvas(), padding = SPACE.Page, spacing = SPACE.Section) {
+            Navbar(brand = "Zeus", a = "Foundations", b = "Components", c = "Patterns"),
+            Breadcrumbs(a = "Zeus", b = "Examples", c = "Kit"),
+            Overline(text = "Library"),
+            Display(text = "Build interfaces with Zeus"),
+            Body(text = "Every widget ships medium..."),
+            Wrap() {
+                Chip(label = "Stable", color = success()),
+                Chip(label = "Headless tests", color = accent()),
+                Badge(label = "v1", color = purple()),
+                Kbd(key = "Esc")
+            },
+            Card() {
+                CardHeader(title = "Project card", subtitle = "..."),
+                CardFooter() {
+                    Ghost(label = "Cancel", on_press = fn() => ticks.set(ticks.get() + 1)),
+                    Prominent(label = "Save", on_press = fn() => ticks.set(ticks.get() + 1)),
+                    Spacer(),
+                    Text("{{ticks.get()}}", color = muted(), font = 12)
+                }
+            }
+            // ... every remaining section as nested trailing blocks ...
+        }
+    })
 }
 ```
 
 Rules this locks in:
 
-1. **One import, always `std:zeus`.** Never `std:zeus` — that library name
-   is retired. Same source compiles to native or wasm32 based on the
-   build target flag alone.
-2. **The whole tree is one expression, ending with `.run()`** as the final
-   chained method on the built tree — never `run(tree)` as a wrapping
-   function, never a root stored in a `let` and run as a separate
-   statement.
+1. **One import, always `std:zeus`.** Same source compiles to native or
+   wasm32 based on the build target flag alone.
+2. **The tree comes from trailing blocks** — `Box(...) { ... }` attaches
+   every widget evaluated inside to that container. `App(title, w, h, fn) {
+   ... }` opens the window, builds, and runs.
 3. **Every function that composes other `Node`s and gets called like a
-   widget is PascalCase** — `Wrap`, `Note`, `Orb`, `CounterPanel`, `Card`,
-   `Button`, all of it, no exceptions. Lowercase is reserved for the
-   handful of `zeus` primitives (`row`, `col`, `text`, `signal`, `label`,
-   `spacer`) and chain/modifier methods (`.gap()`, `.child()`, `.children()`, `.bound()`,
-   `.align()`, `.size()`, `.look()`, `.each()`, `.styled()`, `.bind()`, `.run()`).
+   widget is PascalCase** — `Wrap`, `Note`, `Orb`, `Card`, `Button`, all of
+   it. Lowercase is reserved for `signal`, `hex`, the colour tokens
+   (`muted()`, `accent()`), and the plain wiring functions (`on_click`,
+   `show`, `key`, `each`, …). Layout constants are enum values:
+   `DIRECTION.Row`, `ALIGN.Center`, `SPACE.Sm`.
 4. **`Node` is the only type.** No `View` trait, no `impl View`.
-   Component functions are `fn Name(props...) -> Node`, body is a single
-   chained expression — never built across multiple intermediate `let`
-   bindings for the tree itself. (Signal `let` bindings above the chain
-   are fine — only the *tree construction* must stay one chain.)
-5. **Buttons take `fn()`, not `Signal`.** Captured `let mut int` is
-   component state; passing that value into a child is an `int` prop.
-   Write `ui.Prominent(ButtonProps { label: "Save", on_press: || { ticks = ticks + 1 } })`,
-   never a signal as the click payload. Intern copies the closure env, so
-   the handler still runs after the constructor returns.
-6. **`.size()` / `.look()` before `.child()` / `.children()`.** Containers that take
-   children (`Card`) must receive size/look first:
-   `ui.Card().size(ui.sm()).look(ui.outline()).children(...)`.
-   `.child(n)` is one node; `.children(a, b)` is several.
-7. **Constructors return a `Node`.** Size and look are tokens on that node
-   (`with_size` / `with_look`). `.size()` / `.look()` update the tokens and
-   re-run that node's `.styled()` closure. Never a parallel arg bag — no `keep`, `tag`,
-   or dummy `""` / `0` slots.
-8. **`.each` maps `(index, item)`.** `parent.each(jobs, |i, j| { ui.ScrollRow(j.title, j.meta) })`.
-   An integer sequence isn't an item list — loop it directly:
-   `for i in 1..(last + 1) { row.child(Page(i)) }`.
-9. **One `*Props` struct per widget file.** Constructors take that struct
-   (`ChipProps`, `ButtonProps`). Size/look stay chained. Names are global
-   (`find_struct` is name-only), so do not reuse `Props`. Apps write
-   `ChipProps { … }` — `ui.ChipProps { }` does not parse.
+   Component functions are `fn Name(props...) -> Node`.
+5. **Buttons take `fn()`, not `Signal`.** Signals are Copy handles:
+   `on_click = fn() => count.set(count.get() + 1)`. Intern copies the
+   closure env, so the handler still runs after the constructor returns.
+6. **Style is props, never chains.** `Box(align_direction = DIRECTION.Row, gap =
+   8, shrink = 0)`. There is no `.pad(8).gap(4)`; `Row`/`Column` do not
+   exist — one container, `Box`, with `align_direction`. Advanced wiring
+   (`key`, `show_eq`, `pulse`, …) is plain functions taking the node
+   first. Conditional style is an if-expression prop: `Box(border = if
+   sel { 1 } else { 0 })` re-applies just that prop when `sel` changes.
+7. **Constructors return a `Node`.** Size and look are props (`size =
+   sm()`, `look = solid()`).
+8. **`each` maps `(index, item)`** — `each(parent, jobs, |i, j| {
+   ScrollRow(title = j.title, meta = j.meta) })`. An integer sequence
+   isn't an item list — loop it directly.
+9. **One `*Props` struct per widget file.** Constructors take that struct;
+   named arguments build it. Names are global (`find_struct` is
+   name-only), so do not reuse `Props`. Apps write `ChipProps { … }` —
+   `ui.ChipProps { }` does not parse.
 
 ## 2. How the single API stays static across two targets
 
@@ -173,7 +172,6 @@ struct Node {
 
 fn child(parent: Node, node: Node) -> Node { ... }
 fn bind(label: Node, sig: Signal) -> Node { ... }
-fn styled(node: Node, handler: fn()) -> Node { ... }
 fn run(node: Node) { ... }
 ```
 
@@ -222,6 +220,11 @@ leaked out of `zeuscore`.
 
 ## 4. Migration plan
 
+The phases below record how the current API was reached. Phase 2–8 names
+are historical: the builder chain, `.size()`/`.look()` modifiers, and
+`.mount()`/`.run()` terminals were all replaced by the declarative API in
+section 1 (props, trailing blocks, plain wiring calls, `App`).
+
 **Phase 1 — Extract `zeuscore` — done.**
 Tree, layout, scene, input, and geometry live in `packages/compiler/std/zeuscore/*.yuga`.
 C is only `plat_*` FFI (`packages/compiler/runtime/zeus_plat.c`, `packages/zeus/desktop/mac.m`, `packages/zeus/web/wasm.c`).
@@ -266,7 +269,9 @@ import "api.yuga"
 fn main() {
     let body = http.client_get(api.hello_path())
     let initial = http.json_get_int(body, api.hello_count_key())
-    CounterPanel(initial).mount("Zeus", 480, 320).run()
+    App("Zeus", 480, 320, fn() {
+        CounterPanel(initial)
+    })
 }
 ```
 `.mount(title, w, h)` attaches window/canvas target info to the built
@@ -281,57 +286,65 @@ The counter example serves its wasm page with Vite in
 is converted, and delete any leftover `std:zeus` references in the
 codebase entirely.
 
-**Phase 8 — Fine-grained `.styled()` — done.**
-Tracking scopes in `packages/compiler/std/zeuscore/track.yuga`: `get(sig)` inside `.styled`
-records a dependency; `set(sig)` re-runs only those closures. Catalog
-widgets build children once. Theme and `.size()` / `.look()` update paint
-in place. `on_restyle` / public `drop_children` are gone.
+**Phase 8 — Fine-grained reactivity — done.**
+Tracking scopes in `packages/compiler/std/zeuscore/track.yuga`: a `get(sig)`
+inside a text thunk or a style-prop thunk records a dependency; `set(sig)`
+re-runs only those effects. Catalog widgets build children once. Theme and
+`.size()` / `.look()` update paint in place. `on_restyle` / public
+`drop_children` are gone.
 
-**Phase 9 — Interned click / styled `fn()` — done.**
-`plat_intern_fn` copies the closure env (`yuga_fn.env_size`). `.on()` and
-`.styled()` keep working after a `*Props` struct (or other `fn` field)
-is dropped. Clicks write signals; the next paint reads `.bind` / `.bound`.
+**Phase 9 — Interned click / text / style `fn()` — done.**
+`plat_intern_fn` copies the closure env (`yuga_fn.env_size`). `.on()` / text
+thunks / style-prop thunks keep working after a `*Props` struct (or other
+`fn` field) is dropped. Clicks write signals; the next paint reads
+`.bind` / `.bound`.
+
+**Phase 10 — Reactive style props — done.**
+Style props are thunks; `bind_style_*` registers each passed prop as a
+per-node effect whose dispatcher re-applies the setter when a signal the
+thunk read changes. `styled` closures and the paint-modifier functions are
+gone — style changes ride in props, `Box(border = if sel { 1 } else { 0 })`.
 
 ## 5. Reactivity contract
 
-Component functions run once, at construction. `.bind()` / `.styled()` /
-`.on()` wire the specific `Node` they are called on — they do not re-run
-the enclosing component. `each` / `show` only rebuild inserted, removed,
-or toggled children. A `.styled` closure must not call `.child()`.
+Component functions run once, at construction. `bind` / style props /
+`on_click` wire the specific `Node` they are called on — they do not
+re-run the enclosing component. `each` / `show` only rebuild inserted,
+removed, or toggled children. A style-prop thunk must not call `child`.
 
 | Hook | When it runs | What updates |
 |---|---|---|
-| `.bind(sig)` / `.bound(sig, …)` | Every layout and paint | Label / metric reads `sig` now |
-| `.styled` | Construction, then each `set` of a `get`'d signal | Paint tokens on existing nodes |
-| `.on(click, handler)` | Pointer hit after intern | `set` / `inc` (or captured `let mut`) |
+| `bind(n, sig)` / `bind_n(n, v)` | Every layout and paint | Label / metric reads `sig` now |
+| Style prop (`Box(color = …)`) | Construction, then each `set` of a `get`'d signal | Re-applies that prop's setter (`set_fg`, `set_border`, …) on its node |
+| `bind_text(n, body)` | Construction, then each `set` of a `get`'d signal | Repaints that one label |
+| `on_click(n, handler)` | Pointer hit after intern | `set` / `inc` (or captured `let mut`) |
 
-`.run()` keeps the tree (kit, counter). `zeus.view` / `zeus.app` rebuild
-every layout and reset interned handlers, then intern again from the new
-tree. Default is retained: intern once, paint reads live `Signal`s.
+`App` keeps the tree (kit, counter). `view` rebuilds every layout and
+resets interned handlers, then interns again from the new tree. Default
+is retained: intern once, paint reads live `Signal`s.
 
 A `fn()` in `ButtonProps.on_press` is interned by value. Intern copies
-the env so the click still sees captured `Signal` ids after `paint(p)`
-returns and drops `p`. Without that copy, `+1` would write a freed env
-and the Count label would stay put.
+the env so the click still sees captured `Signal` ids after the widget
+returns and drops its props. Without that copy, `+1` would write a freed
+env and the Count label would stay put. The moved-in value is dropped by
+intern — ownership follows the call.
 
 ## 6. Acceptance criteria
 
-- Only `std:zeus` exists as an import; `std:zeus` is gone from the
-  codebase entirely.
-- `main()` (or any root) ends with `.run()` as a chained terminal method
-  on the built tree.
-- Every composing function is PascalCase; every primitive/modifier call
-  is lowercase.
+- `import "std:zeus"` is the only UI import an app needs; kit apps add
+  `import "../packages/zeus-components/ui.yuga"`.
+- `main()` ends with `App(title, w, h, fn() { ... })`.
+- Every composing function is PascalCase; every token/wiring call
+  (`muted()`, `SPACE.Sm`, `on_click`, `show_eq`) is lowercase.
 - No `View` trait, no `impl View`, anywhere — `Node` is the only
-  tree/builder type, parameterized by `Backend` only inside
-  `zeuscore.yuga`.
+  tree/builder type.
 - The `Zeus Kit` example compiles and renders identically under
   `--target=native` and `--target=wasm32` from the same source.
 - Signal-bound widgets update without re-invoking their enclosing
-  component function. Interned `.on` / `.styled` handlers outlive the
+  component function. Interned `on_click` / text / style thunks outlive the
   `fn` value that was interned.
 - `zeuscore`'s tree/layout/diff/signal logic is Yuga code; C exists only
-  inside `zeus_plat.c` (and each `Backend`'s thin FFI calls into it) — no
+  inside `zeus_plat.c` (and each target's thin FFI calls into it) — no
   tree/diff/layout logic implemented in C and merely exposed through
   `zeuscore`.
 

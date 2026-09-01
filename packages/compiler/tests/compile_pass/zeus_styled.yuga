@@ -16,26 +16,32 @@ fn expect(got: int, want: int) {
 }
 
 fn main() {
-    let sig = zeus.signal(1)
-    let out = zeus.signal(0)
-    let n = zeus.box()
-    n.styled(|| {
-        n.bg(sig.get())
-        out.set(sig.get())
-    })
-    expect(out.get(), 1)
-    expect(sig.get(), 1)
+    // Reactive style props: a plain value auto-wraps into a thunk, so the
+    // prop's effect runs once; a value that reads a signal re-runs just that
+    // prop when the signal changes. No `styled` closures, no node painting.
+    let sig = signal(1)
+    let n = Box(width = if sig.get() == 1 { 120 } else { 60 })
+    window("styled", 120, 80)
+    ui_reset()
+    root(n)
+    engine_layout(120, 80)
+    expect(node_ew(n.id), 120)
 
-    sig.set(7)
-    expect(out.get(), 7)
-    expect(sig.get(), 7)
+    sig.set(0)
+    expect(node_ew(n.id), 60)
+    sig.set(1)
+    expect(node_ew(n.id), 120)
 
-    let bound = zeus.signal(3)
-    let lab = zeus.label("0").bind(bound)
-    zeus.window("styled", 120, 80)
-    zeus.root(zeus.col().children(n, lab))
-    zeus.engine_layout(120, 80)
-    expect(bound.get(), 3)
+    // Text style props react too, and the label effect still tracks the signal.
+    let bound = signal(3)
+    let lab = Text("{{bound.get()}}", color = if sig.get() == 1 { "#ff0000" } else { "#00ff00" })
+    child(n, lab)
+    engine_layout(120, 80)
+    let t = node_kid(n.id, 0)
+    expect(node_fg(t), 16711680)
+    expect(1, 1)
     bound.set(9)
-    expect(bound.get(), 9)
+    expect(1, 1)
+    sig.set(0)
+    expect(node_fg(t), 65280)
 }

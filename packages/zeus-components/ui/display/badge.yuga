@@ -1,0 +1,25 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Pill badge: panel background, tinted label.
+
+struct BadgeProps {
+    label: string = "",
+    color: string = "",
+    size: int = 1,
+}
+
+fn Badge(p: BadgeProps) -> Node {
+    return Box(
+        align_direction = DIRECTION.Row,
+        background = panel(),
+        align_items = ALIGN.Center,
+        pad_x = pad_x(p.size),
+        pad_y = pad_y(p.size) / 2,
+        height = chip_h(p.size),
+        radius = pill_radius(),
+        shrink = 0
+    ) {
+        Text(p.label, color = p.color, font = caption_px(p.size))
+    }
+}

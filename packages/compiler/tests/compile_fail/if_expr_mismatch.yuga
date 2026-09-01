@@ -1,0 +1,7 @@
+import "std:fmt"
+
+fn main() {
+    let a = 1
+    let x = if a < 2 { "a" } else { 3 }
+    fmt.println(x)
+}

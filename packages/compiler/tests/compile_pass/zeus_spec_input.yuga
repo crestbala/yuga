@@ -1,0 +1,64 @@
+// ZEUS_SPEC.md section 3C — two-way `Input(bind = ...)` and `on_key_down`
+// receiving a `KeyEvent` struct. `Key.K` is an enum constant.
+import "std:zeus"
+import "std:fmt"
+
+fn CommandPalette(input_text: Signal<string>, hits: Signal<int>) {
+    Box(align_direction = DIRECTION.Column, padding = 8) {
+        Input(
+            bind = input_text,
+            placeholder = "Type a command",
+            on_key_down = fn(e: KeyEvent) {
+                if e.ctrl && e.key == Key.K {
+                    hits.set(hits.get() + 1)
+                }
+            }
+        )
+        Text("query: {{input_text.get()}}")
+    }
+}
+
+fn main() {
+    window("Palette", 400, 200)
+    ui_reset()
+    let input_text = signal("")
+    let hits = signal(0)
+    CommandPalette(input_text, hits)
+    root(ui_root())
+    engine_layout(400, 200)
+
+    // root=1, Box=2, Input=3, Text=4.
+    let field = 3
+    let echo = 4
+    // Binding seeds the field from the signal, never the reverse: the signal
+    // keeps its own initial value instead of the placeholder text.
+    if !eq(input_text.get(), "") {
+        println("FAIL bind initial:", input_text.get())
+    }
+    if !eq(node_text(echo), "query: ") {
+        println("FAIL echo initial:", node_text(echo))
+    }
+    engine_click(node_x(field) + 2, node_y(field) + 2)
+
+    // Typing writes the edit buffer back into the bound signal, which the
+    // echo label depends on.
+    engine_key(104)
+    engine_key(105)
+    if !eq(input_text.get(), "hi") {
+        println("FAIL bind:", input_text.get())
+    }
+    if !eq(node_text(echo), "query: hi") {
+        println("FAIL echo:", node_text(echo))
+    }
+
+    // ctrl+k reaches on_key_down as a KeyEvent; plain k does not match.
+    engine_key_ev(Key.K, 2)
+    if hits.get() != 1 {
+        println("FAIL ctrl+k not seen:", hits.get())
+    }
+    engine_key_ev(Key.K, 0)
+    if hits.get() != 1 {
+        println("FAIL plain k matched:", hits.get())
+    }
+    println("input ok:", input_text.get(), hits.get())
+}

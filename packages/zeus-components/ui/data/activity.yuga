@@ -1,0 +1,24 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Activity row: title left, meta right, with the step-row padding.
+
+struct ActivityProps {
+    title: string = "",
+    meta: string = "",
+}
+
+fn Activity(p: ActivityProps) -> Node {
+    let n = Box(
+        align_direction = DIRECTION.Row,
+        spacing = SPACE.Sm,
+        align_items = ALIGN.Center,
+        pad_x = step_pad_x(),
+        pad_y = step_pad_y()
+    ) {
+        Text(p.title, color = text(), font = font_px(1)),
+        Spacer(),
+        Text(p.meta, color = muted(), font = type_caption())
+    }
+    return n
+}

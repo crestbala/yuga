@@ -20,7 +20,7 @@ fn of(id: int) -> PageResp {
             "Syntax",
             "Statically typed. let is immutable, let mut is mutable. Semicolons are optional.",
             "fn name(params) -> T { ... }. Closures are values: |x| { x + 1 }, zero-arg || { ... }. fn is only for named items. Type: fn(T, U) -> R. Captures Copy locals. (x, y) => { ... } is sugar for |x, y| { ... }.\n\nStructs: struct Name { field: T }. Generics are monomorphized. Comments: // and /* */, /// docs, //! module docs.",
-            "import \"std:fmt\"\n\nstruct Counter {\n    name: string,\n    count: int,\n}\n\nfn increment(c: &mut Counter) {\n    c.count += 1\n}\n\nfn greet(c: &Counter) {\n    fmt.println(\"hello,\", c.name)\n}\n\nfn main() {\n    let mut c = Counter { name: \"tick\", count: 0 }\n    increment(&mut c)\n    increment(c)\n    greet(c)\n    let b = Box::new(42)\n    fmt.println(\"boxed:\", *b)\n}"
+            "import \"std:fmt\"\n\nstruct Counter {\n    name: string,\n    count: int,\n}\n\nfn increment(c: &mut Counter) {\n    c.count += 1\n}\n\nfn greet(c: &Counter) {\n    println(\"hello,\", c.name)\n}\n\nfn main() {\n    let mut c = Counter { name: \"tick\", count: 0 }\n    increment(&mut c)\n    increment(c)\n    greet(c)\n    let b = Box::new(42)\n    println(\"boxed:\", *b)\n}"
         )
     }
     if id == 3 {
@@ -28,7 +28,7 @@ fn of(id: int) -> PageResp {
             "Types",
             "Scalars, heap types, arrays, generics, and function types.",
             "int is int64_t; + - * trap on overflow. float is double. bool is true / false. string is {ptr, len} UTF-8, Copy. Box<T> via Box::new. []T is a growable array (push / pop / .len). [N]T is a fixed array. &T / &mut T are borrows. fn(T) -> R is a function type.\n\nHex ints: 0xff. wrapping_add and friends when you need wrap instead of trap.",
-            "import \"std:fmt\"\n\nfn sum(xs: &[]int) -> int {\n    let mut s = 0\n    for i in 0..xs.len {\n        s += xs[i]\n    }\n    return s\n}\n\nfn main() {\n    let mut v = []int {}\n    push(v, 10)\n    v.push(20)\n    fmt.println(\"sum:\", sum(v))\n}"
+            "import \"std:fmt\"\n\nfn sum(xs: &[]int) -> int {\n    let mut s = 0\n    for i in 0..xs.len {\n        s += xs[i]\n    }\n    return s\n}\n\nfn main() {\n    let mut v = []int {}\n    push(v, 10)\n    v.push(20)\n    println(\"sum:\", sum(v))\n}"
         )
     }
     if id == 4 {
@@ -36,7 +36,7 @@ fn of(id: int) -> PageResp {
             "Ownership",
             "Rust-like ownership without lifetime syntax. Copy types duplicate; everything else moves.",
             "Copy: int, float, bool, string, [N]T if T is Copy, &T, structs of Copy fields. Not Copy: Box<T>, []T, fn(...), &mut T.\n\n&T shared, &mut T exclusive. Auto-borrow: passing an owned place to a &T / &mut T param inserts the borrow. Stored borrows last until the binding leaves scope (not NLL).",
-            "fn increment(c: &mut Counter) {\n    c.count += 1\n}\n\nfn greet(c: &Counter) {\n    fmt.println(\"hello,\", c.name)\n}\n\nfn main() {\n    let mut c = Counter { name: \"tick\", count: 0 }\n    increment(&mut c)\n    increment(c)\n    greet(c)\n}"
+            "fn increment(c: &mut Counter) {\n    c.count += 1\n}\n\nfn greet(c: &Counter) {\n    println(\"hello,\", c.name)\n}\n\nfn main() {\n    let mut c = Counter { name: \"tick\", count: 0 }\n    increment(&mut c)\n    increment(c)\n    greet(c)\n}"
         )
     }
     if id == 5 {
@@ -44,39 +44,39 @@ fn of(id: int) -> PageResp {
             "Control flow",
             "if, for, while, and match. break and continue have no labels.",
             "Ranges are half-open: for i in lo..hi runs while i < hi. match patterns: literals, or-patterns, _. bool needs both arms or _; other types need _.",
-            "if n > 0 {\n    fmt.println(\"positive\")\n}\n\nfor i in 0..10 {\n    fmt.println(i)\n}\n\nmatch x {\n    0 | 1 => { fmt.println(\"small\") }\n    _ => { fmt.println(\"other\") }\n}"
+            "if n > 0 {\n    println(\"positive\")\n}\n\nfor i in 0..10 {\n    println(i)\n}\n\nmatch x {\n    0 | 1 => { println(\"small\") }\n    _ => { println(\"other\") }\n}"
         )
     }
     if id == 6 {
         return pack(
             "Modules",
-            "Quoted imports only. No glob imports. Symbols are always name.symbol.",
-            "import \"std:foo\" loads packages/compiler/std/foo.yuga. Relative import \"rel/path.yuga\" is from the importing file; the module name is the file stem.\n\nMethod rewrite: n.pad(8) is zeus.pad(n, 8). Cycles are errors. Do not name an entry file ui.yuga if it also imports the kit module ui.",
-            "import \"std:zeus\"\nimport \"../packages/zeus/lib/ui.yuga\"\n\nfn main() {\n    ui.Card().child(zeus.text(\"Hello\")).run()\n}"
+            "Quoted imports only. No glob imports. Names are unqualified; the qualified form is the escape hatch.",
+            "import \"std:foo\" loads packages/compiler/std/foo.yuga. Relative import \"rel/path.yuga\" is from the importing file; the module name is the file stem.\n\nImported names are used unqualified: import \"std:fmt\" exposes println. Resolution walks imports by depth — own declarations first, then imports' declarations (last import wins), then theirs. A local definition shadows an import; the qualified form (fmt.println) still works. Cycles are errors.",
+            "import \"std:zeus\"\n\nfn main() {\n    App(\"Hello\", 400, 300, fn() {\n        Box(align_direction = \"column\", padding = 16) {\n            Text(\"Hello\")\n        }\n    })\n}"
         )
     }
     if id == 7 {
         return pack(
             "Libraries",
             "Language libraries live in packages/compiler/std/. Import with import \"std:name\".",
-            "std:fmt — stdout, not printf. std:zeus — UI Node tree and Signal<T>. std:http — unary RPC, #[proto], gRPC-Web and h2c. std:maya — 3D/2D, integer world units. std:sys — env, files, exec (native). std:net — TCP; used by http, not a typical app import.\n\nZeus kit widgets live in packages/zeus/lib/ (relative import).",
-            "import \"std:fmt\"\n\nfn main() {\n    fmt.println(\"hello, yuga\")\n}"
+            "std:fmt — stdout, not printf. std:zeus — UI Node tree and Signal<T>. std:http — unary RPC, #[proto], gRPC-Web and h2c. std:maya — 3D/2D, integer world units. std:sys — env, files, exec (native). std:net — TCP; used by http, not a typical app import.\n\nZeus kit widgets live in packages/zeus-components/ (relative import).",
+            "import \"std:fmt\"\n\nfn main() {\n    println(\"hello, yuga\")\n}"
         )
     }
     if id == 8 {
         return pack(
             "fmt",
             "Write to stdout. No heap, no printf, no C strings.",
-            "fmt.println is not a real function: the compiler turns mixed string / int / bool / float arguments into write / write_int / write_bool / write_float plus a newline.\n\nfmt.write(s) uses s.len bytes. fmt.eq is length-based string equality — Yuga strings are not C strcmp.",
-            "import \"std:fmt\"\n\nfn main() {\n    fmt.println(\"hello,\", 42, true)\n    if fmt.eq(name, \"ok\") {\n        fmt.println(\"yes\")\n    }\n}"
+            "println is not a real function: the compiler turns mixed string / int / bool / float arguments into write / write_int / write_bool / write_float plus a newline. print is the same without the newline.\n\nwrite(s) uses s.len bytes. eq is length-based string equality — Yuga strings are not C strcmp.",
+            "import \"std:fmt\"\n\nfn main() {\n    println(\"hello,\", 42, true)\n    if eq(name, \"ok\") {\n        println(\"yes\")\n    }\n}"
         )
     }
     if id == 9 {
         return pack(
             "zeus",
             "UI toolkit. Native Cocoa and WASM/Canvas2D run the same source. Backend is a --target flag, not an import.",
-            "A component is fn(Props) -> Node. Signal<T> is a Copy handle; T must be Copy. Read and write with sig.get() and sig.set(v). n.on_click(handler) is the click API.\n\nMethods chain: n.pad(8) is zeus.pad(n, 8). .child(n) takes one node; .children(a, b, c) takes several. .each(items, |i, item| node) maps a []T. Kit: import lib/ui.yuga. ZEUS_HEADLESS=1 layouts once and exits.",
-            "import \"std:zeus\"\n\nfn main() {\n    let n = zeus.signal(0)\n    zeus.col().pad(16).gap(8).children(\n        zeus.text(\"Count\").font(22),\n        zeus.label(\"\").bind(n).font(28),\n        zeus.row().gap(8).children(\n            zeus.button(\"-\").on_click(|| { n.set(n.get() - 1) }),\n            zeus.button(\"+\").on_click(|| { n.set(n.get() + 1) }),\n        ),\n    ).run()\n}"
+            "A component is fn(Props) -> Node. Signal<T> is a Copy handle; T must be Copy. Read and write with sig.get() and sig.set(v).\n\nWidgets take named props: Box(align_direction = \"row\" | \"column\", gap = 8) — there is no Row/Column. Containers take children in a trailing block. Events are props with inline closures: on_click = fn() => ..., on_key_down = fn(e: KeyEvent) { if e.ctrl && e.key == Key.K { ... } }. Key codes are enum constants (Key.K).\n\nNo chaining: style is props, wiring is plain calls (on_click(n, f), show_eq(n, sig, v), key(n, \"enter\", \"x.toggle\")). each(parent, items, |i, item| node) maps a []T. Names are unqualified: signal, Text, Button, App. Kit: import ../packages/zeus-components/ui.yuga. ZEUS_HEADLESS=1 layouts once and exits.",
+            "import \"std:zeus\"\n\nfn main() {\n    let n = signal(0)\n    App(\"Zeus\", 560, 520, fn() {\n        Box(align_direction = \"column\", padding = 16, gap = 8) {\n            Text(\"Count: \{{n.get()}}\")\n            Box(align_direction = \"row\", gap = 8) {\n                Button(\"-\", on_click = fn() => n.set(n.get() - 1)),\n                Button(\"+\", on_click = fn() => n.set(n.get() + 1))\n            }\n        }\n    })\n}"
         )
     }
     if id == 10 {
@@ -100,7 +100,7 @@ fn of(id: int) -> PageResp {
             "sys",
             "Language-level seam into the runtime. Bodyless fns resolve to yuga_sys_<name>.",
             "sys.env_set(name) is 1 if set and non-empty. sys.env(name) is the value (empty on wasm). sys.exit(code). sys.write_file / read_file are native (wasm fails / empty). sys.exec runs a shell command; sys.exec_status is the last exit code.",
-            "import \"std:sys\"\nimport \"std:fmt\"\n\nfn main() {\n    if sys.env_set(\"YUGA_TIME\") {\n        fmt.println(\"timing on\")\n    }\n    fmt.println(sys.env(\"HOME\"))\n}"
+            "import \"std:sys\"\nimport \"std:fmt\"\n\nfn main() {\n    if sys.env_set(\"YUGA_TIME\") {\n        println(\"timing on\")\n    }\n    println(sys.env(\"HOME\"))\n}"
         )
     }
     if id == 13 {
@@ -130,7 +130,7 @@ fn of(id: int) -> PageResp {
     return pack(
         "Yuga",
         "A memory-safe systems language: Odin-like syntax, Rust-like ownership.",
-        "The compiler (yugac) typechecks a program, lowers it to IR, emits C99, and invokes cc. C is the platform binding target, not the language's semantics.\n\nQuoted imports only: import \"std:foo\" loads packages/compiler/std/foo.yuga. Call imported items as foo.bar(...).\n\nThis site is a Zeus app. Page copy comes from Docs.Page over gRPC-Web (Yuga backend). Vite serves the Canvas2D wasm and proxies /Docs to :8082.",
-        "import \"std:fmt\"\n\nfn main() {\n    fmt.println(\"hello, yuga\")\n}"
+        "The compiler (yugac) typechecks a program, lowers it to IR, emits C99, and invokes cc. C is the platform binding target, not the language's semantics.\n\nQuoted imports only: import \"std:foo\" loads packages/compiler/std/foo.yuga. Names are used unqualified — import \"std:fmt\" exposes println.\n\nThis site is a Zeus app. Page copy comes from Docs.Page over gRPC-Web (Yuga backend). Vite serves the Canvas2D wasm and proxies /Docs to :8082.",
+        "import \"std:fmt\"\n\nfn main() {\n    println(\"hello, yuga\")\n}"
     )
-))
+}

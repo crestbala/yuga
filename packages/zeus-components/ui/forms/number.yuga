@@ -1,0 +1,39 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "../display/icons.yuga"
+
+// Number stepper: label, live value, and clamped -/+ buttons. Arrow keys
+// nudge within `min..max`.
+
+struct NumberProps {
+    label: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+    min: int = 0,
+    max: int = 100,
+}
+
+fn step_clamped(sig: Signal<int>, delta: int, min: int, max: int) {
+    let mut v = sig.get() + delta
+    if v < min {
+        v = min
+    }
+    if v > max {
+        v = max
+    }
+    sig.set(v)
+}
+
+fn Number(p: NumberProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Row, background = panel(), align_items = ALIGN.Center, pad_x = input_px(1), pad_y = input_py(1), gap = gap_of(1), radius = radius_of(1)) {
+        Text(p.label, color = label(), font = caption_px(1)),
+        Text("{{p.sig.get()}}", color = text(), font = title_px(1)),
+        Button("-", on_click = fn() => step_clamped(p.sig, -1, p.min, p.max), color = muted(), pad_x = gap_of(1), pad_y = 2, radius = radius_of(1), font = font_px(1), shrink = 0),
+        let plus = IconHit(markup = plus(), color = text(), hit = hit_of(1), size = icon_of(1), radius = radius_of(1))
+        on_click(plus, fn() => step_clamped(p.sig, 1, p.min, p.max))
+    }
+    key(n, "up", "number.inc")
+    key(n, "down", "number.dec")
+    on_range(n, "number.inc", p.sig, 1, p.min, p.max)
+    on_range(n, "number.dec", p.sig, -1, p.min, p.max)
+    return n
+}

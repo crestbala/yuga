@@ -1,0 +1,415 @@
+//! `ui` — Bezel kit widgets on top of Zeus, in the declarative syntax.
+//!
+//! The barrel re-exports every kit widget as a thin wrapper (each calls the
+//! implementing file qualified, so nothing recurses). Apps import this file
+//! and call `Button`, `Chip`, `Tabs`, … unqualified — no `ui.` / `zeus.`
+//! prefix. Because the wrappers are declarations of this module, they shadow
+//! the same-named std:zeus widgets for any app that imports this barrel —
+//! that is the layering: kit widgets replace the raw std ones.
+//!
+//! Example:
+//! ```
+//! import "std:zeus"
+//! import "../packages/zeus-components/ui.yuga"
+//!
+//! fn main() {
+//!     App("Hello", 400, 300, fn() {
+//!         Box(align_direction = DIRECTION.Column, background = canvas(), padding = SPACE.Page, spacing = SPACE.Section) {
+//!             Card() {
+//!                 CardHeader(title = "Hello", subtitle = "A short subtitle"),
+//!                 Chip(label = "live", color = accent()),
+//!             }
+//!         }
+//!     })
+//! }
+//! ```
+//!
+//! Widgets take props as named arguments (`size = sm()`, `look = solid()`);
+//! containers take children in a trailing block. Handlers ride in as
+//! `on_press` / `on_click` props. Each widget file holds its own `*Props`
+//! struct and defines its public name directly.
+
+import "std:zeus"
+import "theme.yuga"
+import "ui/typography/type.yuga"
+import "ui/navigation/navbar.yuga"
+import "ui/navigation/toolbar.yuga"
+import "ui/navigation/breadcrumbs.yuga"
+import "ui/navigation/header.yuga"
+import "ui/navigation/tabs.yuga"
+import "ui/navigation/pagination.yuga"
+import "ui/actions/button.yuga"
+import "ui/actions/button_group.yuga"
+import "ui/display/chip.yuga"
+import "ui/display/badge.yuga"
+import "ui/display/avatar.yuga"
+import "ui/display/user.yuga"
+import "ui/display/kbd.yuga"
+import "ui/display/link.yuga"
+import "ui/display/icons.yuga"
+import "ui/display/metric.yuga"
+import "ui/feedback/alert.yuga"
+import "ui/feedback/toast.yuga"
+import "ui/feedback/spinner.yuga"
+import "ui/feedback/skeleton.yuga"
+import "ui/feedback/progress.yuga"
+import "ui/feedback/empty.yuga"
+import "ui/feedback/tooltip.yuga"
+import "ui/feedback/snippet.yuga"
+import "ui/feedback/loader.yuga"
+import "ui/overlays/dialog.yuga"
+import "ui/overlays/hover_card.yuga"
+import "ui/forms/field.yuga"
+import "ui/forms/text_field.yuga"
+import "ui/forms/input_group.yuga"
+import "ui/forms/number.yuga"
+import "ui/forms/radio.yuga"
+import "ui/forms/select.yuga"
+import "ui/forms/checkbox.yuga"
+import "ui/forms/switch.yuga"
+import "ui/forms/slider.yuga"
+import "ui/forms/date_picker.yuga"
+import "ui/layout/accordion.yuga"
+import "ui/layout/card.yuga"
+import "ui/layout/divider.yuga"
+import "ui/layout/group_box.yuga"
+import "ui/layout/panel.yuga"
+import "ui/layout/scroll.yuga"
+import "ui/layout/surface.yuga"
+import "ui/data/activity.yuga"
+import "ui/data/list.yuga"
+import "ui/data/stats.yuga"
+import "ui/data/table.yuga"
+
+// --- size / look tokens ---
+/// `size = sm()` / `md()` / `lg()`. Same values as the theme's scale tokens.
+fn sm() -> int {
+    return 0
+}
+fn md() -> int {
+    return 1
+}
+fn lg() -> int {
+    return 2
+}
+/// `look = solid()` / `soft()` / `outline()` / `ghost()` / `danger_look()`.
+fn solid() -> int {
+    return 0
+}
+fn soft() -> int {
+    return 1
+}
+fn outline() -> int {
+    return 2
+}
+fn ghost() -> int {
+    return 3
+}
+/// Named `danger_look`, not `danger`: the theme's `danger()` is the danger
+/// colour (a hex string), and apps use both. `look = danger_look()`.
+fn danger_look() -> int {
+    return 4
+}
+
+// --- typography ---
+
+fn Overline(p: TypeProps) {
+    type.Overline(p)
+}
+fn Display(p: TypeProps) {
+    type.Display(p)
+}
+fn Title(p: TypeProps) {
+    type.Title(p)
+}
+fn Heading(p: TypeProps) {
+    type.Heading(p)
+}
+fn Body(p: TypeProps) {
+    type.Body(p)
+}
+
+// --- navigation ---
+
+fn Navbar(p: NavbarProps) {
+    navbar.Navbar(p)
+}
+fn Toolbar() -> Node {
+    return toolbar.Toolbar()
+}
+fn Breadcrumbs(p: BreadcrumbProps) -> Node {
+    return breadcrumbs.Breadcrumbs(p)
+}
+fn Header(p: HeaderProps) {
+    header.Header(p)
+}
+fn Tabs(p: TabsProps) -> Node {
+    return tabs.Tabs(p)
+}
+fn Tab(p: TabProps) -> Node {
+    return tabs.Tab(p)
+}
+fn Pagination(p: PaginationProps) -> Node {
+    return pagination.Pagination(p)
+}
+
+// --- actions ---
+
+fn Ghost(p: ButtonProps) -> Node {
+    return button.Ghost(p)
+}
+fn Soft(p: ButtonProps) -> Node {
+    return button.Soft(p)
+}
+fn Button(p: ButtonProps) -> Node {
+    return button.Button(p)
+}
+fn Prominent(p: ButtonProps) -> Node {
+    return button.Prominent(p)
+}
+fn Destructive(p: ButtonProps) -> Node {
+    return button.Destructive(p)
+}
+fn Primary(p: ButtonProps) -> Node {
+    return button.Prominent(p)
+}
+fn Secondary(p: ButtonProps) -> Node {
+    return button.Ghost(p)
+}
+fn Outline(p: ButtonProps) -> Node {
+    return button.Outline(p)
+}
+fn Danger(p: ButtonProps) -> Node {
+    return button.Destructive(p)
+}
+fn Close(p: ButtonProps) -> Node {
+    return button.Ghost(p)
+}
+fn Discard(p: ButtonProps) -> Node {
+    return button.Destructive(p)
+}
+fn Open(p: ButtonProps) -> Node {
+    return button.Prominent(p)
+}
+fn GhostOpen(p: ButtonProps) -> Node {
+    return button.Ghost(p)
+}
+fn Press(p: ButtonProps) -> Node {
+    return button.Press(p)
+}
+fn ButtonGroup() -> Node {
+    return button_group.ButtonGroup()
+}
+
+// --- display ---
+
+fn Chip(p: ChipProps) -> Node {
+    return chip.Chip(p)
+}
+fn Badge(p: BadgeProps) -> Node {
+    return badge.Badge(p)
+}
+fn Avatar(p: AvatarProps) -> Node {
+    return avatar.Avatar(p)
+}
+fn User(p: UserProps) {
+    user.User(p)
+}
+fn Kbd(p: KbdProps) -> Node {
+    return kbd.Kbd(p)
+}
+fn Link(p: LinkProps) {
+    link.Link(p)
+}
+fn Icon(p: GlyphProps) -> Node {
+    return icons.Icon(p)
+}
+fn IconHit(p: HitProps) -> Node {
+    return icons.IconHit(p)
+}
+fn Metric(p: MetricProps) {
+    metric.Metric(p)
+}
+fn LiveMetric(p: LiveMetricProps) {
+    metric.LiveMetric(p)
+}
+
+// --- feedback ---
+
+fn Alert(p: AlertProps) -> Node {
+    return alert.Alert(p)
+}
+fn Toast(p: ToastProps) {
+    toast.Toast(p)
+}
+fn Spinner(p: SpinnerProps) {
+    spinner.Spinner(p)
+}
+fn Skeleton(p: SkeletonProps) -> Node {
+    return skeleton.Skeleton(p)
+}
+fn Progress(p: ProgressProps) -> Node {
+    return progress.Progress(p)
+}
+fn Empty(p: EmptyProps) -> Node {
+    return empty.Empty(p)
+}
+fn Tooltip(p: TooltipProps) {
+    tooltip.Tooltip(p)
+}
+fn Snippet(p: SnippetProps) {
+    snippet.Snippet(p)
+}
+fn LoaderDot(p: LoaderProps) -> Node {
+    return loader.LoaderDot(p)
+}
+fn LoaderOrb(p: LoaderProps) -> Node {
+    return loader.LoaderOrb(p)
+}
+fn LoaderCluster() -> Node {
+    return loader.LoaderCluster()
+}
+fn LoaderRing() -> Node {
+    return loader.LoaderRing()
+}
+fn LoaderConverge() -> Node {
+    return loader.LoaderConverge()
+}
+fn LoaderBloom() -> Node {
+    return loader.LoaderBloom()
+}
+fn LoaderPulse() -> Node {
+    return loader.LoaderPulse()
+}
+fn LoaderBar() -> Node {
+    return loader.LoaderBar()
+}
+fn LoaderMatrix() -> Node {
+    return loader.LoaderMatrix()
+}
+fn LoaderGrid() -> Node {
+    return loader.LoaderGrid()
+}
+fn LoaderMini() -> Node {
+    return loader.LoaderMini()
+}
+fn LoaderWord(p: LoaderProps) -> Node {
+    return loader.LoaderWord(p)
+}
+fn LoaderStack() -> Node {
+    return loader.LoaderStack()
+}
+
+// --- overlays ---
+
+fn Dialog(p: DialogProps) {
+    dialog.Dialog(p)
+}
+fn HoverCard(p: HoverCardProps) {
+    hover_card.HoverCard(p)
+}
+
+// --- forms ---
+
+fn Field(p: FieldProps) {
+    field.Field(p)
+}
+fn TextField(p: TextFieldProps) {
+    text_field.TextField(p)
+}
+fn InputGroup(p: InputGroupProps) {
+    input_group.InputGroup(p)
+}
+fn Number(p: NumberProps) -> Node {
+    return number.Number(p)
+}
+fn RadioGroup(p: RadioGroupProps) -> Node {
+    return radio.RadioGroup(p)
+}
+fn Radio(p: RadioProps) -> Node {
+    return radio.Radio(p)
+}
+fn Select(p: SelectProps) -> Node {
+    return select.Select(p)
+}
+fn Checkbox(p: CheckboxProps) {
+    checkbox.Checkbox(p)
+}
+fn Switch(p: SwitchProps) -> Node {
+    return switch.Switch(p)
+}
+fn Slider(p: SliderProps) {
+    slider.Slider(p)
+}
+fn DatePicker(p: DatePickerProps) -> Node {
+    return date_picker.DatePicker(p)
+}
+
+// --- layout ---
+
+fn Card(p: CardProps) -> Node {
+    return card.Card(p)
+}
+fn CardHeader(p: CardHeaderProps) -> Node {
+    return card.CardHeader(p)
+}
+fn CardBody() -> Node {
+    return card.CardBody()
+}
+fn CardFooter() -> Node {
+    return card.CardFooter()
+}
+fn Panel(p: PanelProps) -> Node {
+    return panel.Panel(p)
+}
+fn Surface() -> Node {
+    return surface.Surface()
+}
+fn GroupBox() -> Node {
+    return group_box.GroupBox()
+}
+fn GroupRow(p: GroupRowProps) {
+    group_box.GroupRow(p)
+}
+fn GroupSplit() {
+    group_box.GroupSplit()
+}
+fn Divider() -> Node {
+    return divider.Divider()
+}
+fn Accordion(p: AccordionProps) -> Node {
+    return accordion.Accordion(p)
+}
+fn Scroll(p: ScrollProps) -> Node {
+    return scroll.Scroll(p)
+}
+fn ScrollRow(p: ScrollRowProps) {
+    scroll.ScrollRow(p)
+}
+
+// --- data ---
+
+fn List() -> Node {
+    return list.List()
+}
+fn ListItem(p: ListItemProps) -> Node {
+    return list.ListItem(p)
+}
+fn Table() -> Node {
+    return table.Table()
+}
+fn TableHead(p: TableHeadProps) -> Node {
+    return table.TableHead(p)
+}
+fn TableBody() -> Node {
+    return table.TableBody()
+}
+fn TableRow(p: TableRowProps) -> Node {
+    return table.TableRow(p)
+}
+fn Stats(p: StatsProps) {
+    stats.Stats(p)
+}
+fn Activity(p: ActivityProps) {
+    activity.Activity(p)
+}

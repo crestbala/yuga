@@ -1,37 +1,26 @@
-//! Zeus kit example. Same widgets as the counter app, no backend.
+//! Zeus declarative example — same widgets as the counter app, no backend.
 //!
 //! `yugac --run demo.yuga` opens a native window. In the playground, pick `ui`.
 
 import "std:zeus"
-import "../../../packages/zeus/lib/ui.yuga"
-import "../../../packages/zeus/lib/theme.yuga"
 
 fn main() {
-    let count = zeus.signal(5)
-    let load = zeus.signal(42)
-    theme.Page("Zeus", 560, 520).children(
-        zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).children(
-            zeus.text("Counter").style(zeus.heading()),
-            ui.Chip(ChipProps { label: "Canvas2D", color: theme.accent() }),
-            ui.Badge(BadgeProps { label: "live", color: theme.success() }),
-        ),
-        ui.Alert(AlertProps {
-            title: "Zeus",
-            body: "Buttons write a signal. This is the same tree on web, macOS, iOS, and Android.",
-            color: theme.accent(),
-        }),
-        ui.Card().children(
-            ui.CardHeader(CardHeaderProps { title: "Count", subtitle: "Ghost and Prominent buttons; the bar is Progress." }),
-            zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).children(
-                ui.Ghost(ButtonProps { label: "-1", on_press: || { count.set(count.get() - 1) } }),
-                zeus.label("").bind(count).font(16),
-                ui.Prominent(ButtonProps { label: "+1", on_press: || { count.set(count.get() + 1) } }),
-            ),
-            ui.Progress(ProgressProps { sig: count }),
-            ui.Divider(),
-            zeus.row().gap(theme.space_md()).txt("Load", theme.label(), 13).child(
-                ui.Progress(ProgressProps { sig: load }),
-            ).bound(load, theme.muted(), 13),
-        ),
-    ).run()
+    let count = signal(5)
+    let load = signal(42)
+    App("Zeus", 560, 520, fn() {
+        Box(align_direction = DIRECTION.Column, background = "#1e1e2e", padding = 16, spacing = 12) {
+            Text("Counter", color = "#cdd6f4", font = 24),
+            Box(align_direction = DIRECTION.Row, spacing = 8) {
+                Button("-1", on_click = fn() => count.set(count.get() - 1)),
+                Text("{{count.get()}}", color = "#cdd6f4", font = 16),
+                Button("+1", on_click = fn() => count.set(count.get() + 1))
+            },
+            Progress(sig = count),
+            Divider(),
+            Box(align_direction = DIRECTION.Row, spacing = 10) {
+                Text("Load", color = "#a6adc8", font = 13),
+                Progress(sig = load)
+            }
+        }
+    })
 }

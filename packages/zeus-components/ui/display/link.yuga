@@ -1,0 +1,13 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Inline text link in the accent colour, hover-faded.
+
+struct LinkProps {
+    label: string = "",
+    size: int = 1,
+}
+
+fn Link(p: LinkProps) {
+    Text(p.label, color = accent(), font = font_px(p.size), hover_fade = true)
+}

@@ -1,8 +1,8 @@
 import "std:fmt"
 import "std:zeus"
 
-/// A capturing `on_press` lives in a struct field, is interned by
-/// `.on_click()`, then the struct is dropped. The click must still see the
+/// A capturing `on_press` lives in a struct field, is interned by the
+/// `on_click` prop, then the struct is dropped. The click must still see the
 /// captured signal.
 struct ClickProps {
     on_press: fn(),
@@ -23,18 +23,18 @@ fn expect(got: int, want: int) {
 }
 
 fn wire(p: ClickProps) -> Node {
-    return zeus.button("+").on_click(p.on_press).w(120).h(40)
+    return Button("+", on_click = p.on_press, width = 120, height = 40)
 }
 
 fn main() {
-    let n = zeus.signal(5)
+    let n = signal(5)
     let b = wire(ClickProps { on_press: || { n.set(n.get() + 1) } })
-    zeus.window("click-signal", 120, 40)
-    zeus.root(b)
-    zeus.engine_layout(120, 40)
+    window("click-signal", 120, 40)
+    root(b)
+    engine_layout(120, 40)
     expect(n.get(), 5)
-    zeus.engine_click(60, 20)
+    engine_click(60, 20)
     expect(n.get(), 6)
-    zeus.engine_click(60, 20)
+    engine_click(60, 20)
     expect(n.get(), 7)
 }

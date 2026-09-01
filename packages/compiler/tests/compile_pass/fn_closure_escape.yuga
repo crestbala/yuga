@@ -1,0 +1,13 @@
+// `fn(...)` closures capture Copy locals into a heap env and may escape,
+// exactly as the `|x| { ... }` form does (see escape_clos.yuga).
+import "std:fmt"
+
+fn make() -> fn(int) -> int {
+    let n = 1
+    return fn(x: int) -> int { return x + n }
+}
+
+fn main() {
+    let f = make()
+    fmt.println(f(10))
+}

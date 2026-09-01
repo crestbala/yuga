@@ -16,10 +16,10 @@ use Material widgets or system colors.
 |---|---|
 | Rasterizer | **Canvas2D**. No WebGPU, no WebGL. |
 | Text | `fillText` / `measureText` in the loader (v1). Native Core Text will not match pixel-for-pixel. |
-| Reactivity | **Signals**, retained tree. `zeus.mount` builds once. `zeus.view` (rebuild every frame) is the VDOM alternative and is not the Zeus default. |
-| View type | `zeus.Node`. Yuga has no traits / `impl View`. |
-| Imports | `import "std:zeus"`. No glob prelude. |
-| Events | `.on_click(handler)` or a widget's `on_press` argument. Intern copies the closure env (`yuga_fn.env_size`). Captures stay Copy-only. `.bind` / `.bound` read the signal on the next paint. |
+| Reactivity | **Signals**, retained tree. `App` builds once. `view` (rebuild every frame) is the VDOM alternative and is not the Zeus default. |
+| View type | `Node`. Yuga has no traits / `impl View`. |
+| Imports | `import "std:zeus"` — names unqualified (`Button`, `signal`). Kit: `import "../packages/zeus-components/ui.yuga"`. |
+| Events | Props: `on_click`, `on_key_down = fn(e: KeyEvent) { … }` (codes are `Key.*` enums). Intern copies the closure env (`yuga_fn.env_size`) and drops the moved-in value. Captures stay Copy-only. `bind` / `bind_n` read the signal on the next paint. |
 | HTTP types | Shared `.yuga` module with `#[proto]` structs + `*_rpc()` name helpers. Wasm: `http.client("").call` (Vite proxy). macOS/iOS: `http.client(api.native_addr())`. Android emulator: `http.client(api.android_addr())` (`10.0.2.2:8080`). |
 | SSR | Out of scope. First paint is client WASM. |
 
@@ -131,7 +131,7 @@ Output is `examples/zeus/counter/macos/build/app`.
 ```
 std/zeus.yuga              public API
 std/zeuscore/              layout, paint, hit-test (shared)
-packages/zeus/lib/                  kit widgets (shared)
+packages/zeus-components/            kit widgets + bezel theme tokens (shared)
 examples/zeus/                 same apps on every host
 packages/zeus/desktop/mac.m         Cocoa present
 packages/zeus/ios/ios.m             iOS Simulator present (paint only)

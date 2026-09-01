@@ -32,6 +32,7 @@ typedef enum {
     AST_IMPORT,
     AST_FN_DECL,
     AST_STRUCT_DECL,
+    AST_ENUM_DECL,
     AST_VAR_DECL,
     AST_BLOCK,
     AST_IF,
@@ -62,6 +63,7 @@ typedef enum {
     AST_ADDR,
     AST_TYPE,
     AST_CLOSURE,
+    AST_INTERP_STRING, /* "a {{x}} b" — alternating literal / expression parts */
 } AstKind;
 
 typedef struct AstNode AstNode;
@@ -70,17 +72,20 @@ typedef struct {
     const char *name;
     AstNode *type;
     SourceLoc loc;
+    AstNode *default_val; /* `x: int = 3`, or NULL */
 } Param;
 
 typedef struct {
     const char *name;
     AstNode *type;
     const char *doc; /* `///` above this field, or NULL */
+    AstNode *default_val; /* `x: int = 3`, or NULL */
 } Field;
 
 typedef struct {
     const char *name;
     AstNode *init;
+    int checked; /* 1: a default the typechecker inserted; skip on re-checks */
 } FieldInit;
 
 struct AstNode {
@@ -130,6 +135,12 @@ struct AstNode {
             size_t tparam_count;
             int is_proto; /* inject encode_/decode_ as Yuga calling std:http */
         } strct;
+        struct {
+            const char *name;
+            const char **variants; /* variant names, owned */
+            int64_t *values;       /* parallel: int constant per variant */
+            size_t variant_count;
+        } enum_decl;
         struct {
             const char *name;
             AstNode *type;
@@ -189,7 +200,11 @@ struct AstNode {
             AstNode *callee;
             AstNode **args;
             size_t arg_count;
+            /* Parallel to `args`: the `name` in `f(name = v)`, else NULL.
+               Typecheck reorders args into parameter order and clears this. */
+            const char **arg_names;
             int is_println;
+            int is_print; /* like is_println but no trailing newline (fmt.print) */
             int is_box_new;
             int is_wrapping_add;
             int is_saturating_add;
@@ -240,6 +255,10 @@ struct AstNode {
             AstNode **targs; /* named type arguments: Pair<int> */
             size_t targ_count;
         } type;
+        struct {
+            AstNode **parts; /* AST_STRING literals interleaved with exprs */
+            size_t count;
+        } interp;
     } as;
 };
 
@@ -251,9 +270,13 @@ AstNode *ast_program(AstNode **imps, size_t ni, AstNode **decls, size_t nd, Sour
 AstNode *ast_import(const char *alias, const char *path, SourceLoc loc);
 AstNode *ast_fn(const char *name, Param *params, size_t pc, AstNode *ret, AstNode *body, SourceLoc loc);
 AstNode *ast_struct(const char *name, Field *fields, size_t fc, SourceLoc loc);
+AstNode *ast_enum(const char *name, const char **variants, int64_t *values, size_t vc, SourceLoc loc);
 AstNode *ast_var(const char *name, AstNode *type, AstNode *init, int is_mut, SourceLoc loc);
 AstNode *ast_block(AstNode **stmts, size_t n, SourceLoc loc);
 AstNode *ast_if(AstNode *cond, AstNode *thenb, AstNode *elseb, SourceLoc loc);
+/** The value a block yields as an if-expression branch: the last statement's
+ * expression when it is an expression statement, else NULL. */
+AstNode *ast_block_tail(AstNode *block);
 AstNode *ast_for(const char *var, AstNode *iter, AstNode *body, SourceLoc loc);
 AstNode *ast_while(AstNode *cond, AstNode *body, SourceLoc loc);
 AstNode *ast_match(AstNode *scrut, AstNode **arms, size_t n, SourceLoc loc);
@@ -267,6 +290,15 @@ AstNode *ast_binary(TokenKind op, AstNode *l, AstNode *r, SourceLoc loc);
 AstNode *ast_unary(TokenKind op, AstNode *opnd, SourceLoc loc);
 AstNode *ast_cast(AstNode *expr, AstNode *type, SourceLoc loc);
 AstNode *ast_call(AstNode *callee, AstNode **args, size_t n, SourceLoc loc);
+/** As ast_call, but `names[i]` (owned, may be NULL) labels `args[i]`. */
+AstNode *ast_call_named(AstNode *callee, AstNode **args, const char **names, size_t n, SourceLoc loc);
+/** `"a {{x}} b"` — `parts` alternates string literals and expressions. */
+AstNode *ast_interp_string(AstNode **parts, size_t n, SourceLoc loc);
+
+/** Deep-copy a constant expression (number, float, string, bool, or a negated
+ * number). Returns NULL for anything else. Used to give each site that omits a
+ * defaulted field or parameter its own copy of the default. */
+AstNode *ast_clone_const(const AstNode *n);
 AstNode *ast_index(AstNode *target, AstNode *idx, SourceLoc loc);
 AstNode *ast_field(AstNode *target, const char *field, int via_colon, SourceLoc loc);
 AstNode *ast_ident(const char *name, SourceLoc loc);

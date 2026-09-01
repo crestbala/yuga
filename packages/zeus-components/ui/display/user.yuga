@@ -1,0 +1,23 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "avatar.yuga"
+
+// Avatar + name/role column.
+
+struct UserProps {
+    initials: string = "",
+    name: string = "",
+    role: string = "",
+    color: string = "",
+    size: int = 1,
+}
+
+fn User(p: UserProps) {
+    Box(align_direction = DIRECTION.Row, spacing = gap_of(p.size), align_items = ALIGN.Center) {
+        Avatar(initials = p.initials, color = p.color, size = p.size),
+        Box(align_direction = DIRECTION.Column, spacing = SPACE.Xs2) {
+            Text(p.name, color = text(), font = font_px(p.size)),
+            Text(p.role, color = muted(), font = caption_px(p.size))
+        }
+    }
+}

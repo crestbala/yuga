@@ -1,0 +1,21 @@
+import "std:zeus"
+
+fn main() {
+    let sig = signal(0)
+    App("t", 400, 300, fn() {
+        Box(align_direction = "row", spacing = 4, align_items = align_center()) {
+            Text("a"),
+            Box(align_direction = "row") {
+                Text("b")
+            },
+            Box(align_direction = "row") {
+                let g = raw_svg("<circle/>")
+                w(g, 16)
+                h(g, 16)
+            },
+            let row = Box(align_direction = "row")
+            key(row, "right", "tab.next")
+            key(row, "left", "tab.prev")
+        }
+    })
+}

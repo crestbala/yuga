@@ -1,0 +1,191 @@
+//! style — internal node-style setters for the declarative widgets.
+//!
+//! Plain functions, never chained: every setter takes the node id explicitly
+//! and returns nothing. They exist so the widget bodies in `std/zeus.yuga`
+//! stay readable without exposing a chainable API to app code.
+//! `-1` means "not set" wherever 0 is a meaningful value.
+
+import "arena.yuga"
+
+fn set_grow(id: int, v: int) {
+    arena.nodes[id].grow = v
+}
+fn set_shrink(id: int, v: int) {
+    arena.nodes[id].shrink = v
+}
+
+fn set_pad(id: int, all: int) {
+    arena.nodes[id].pad = all
+    arena.nodes[id].pad_t = all
+    arena.nodes[id].pad_r = all
+    arena.nodes[id].pad_b = all
+    arena.nodes[id].pad_l = all
+}
+fn set_pad_x(id: int, px: int) {
+    arena.nodes[id].pad_l = px
+    arena.nodes[id].pad_r = px
+}
+fn set_pad_y(id: int, py: int) {
+    arena.nodes[id].pad_t = py
+    arena.nodes[id].pad_b = py
+}
+fn set_pad_top(id: int, px: int) {
+    arena.nodes[id].pad_t = px
+}
+fn set_pad_right(id: int, px: int) {
+    arena.nodes[id].pad_r = px
+}
+fn set_pad_bottom(id: int, px: int) {
+    arena.nodes[id].pad_b = px
+}
+fn set_pad_left(id: int, px: int) {
+    arena.nodes[id].pad_l = px
+}
+fn set_margin(id: int, all: int) {
+    arena.nodes[id].m_t = all
+    arena.nodes[id].m_r = all
+    arena.nodes[id].m_b = all
+    arena.nodes[id].m_l = all
+}
+fn set_margin_x(id: int, px: int) {
+    arena.nodes[id].m_l = px
+    arena.nodes[id].m_r = px
+}
+fn set_margin_y(id: int, py: int) {
+    arena.nodes[id].m_t = py
+    arena.nodes[id].m_b = py
+}
+fn set_margin_top(id: int, px: int) {
+    arena.nodes[id].m_t = px
+}
+fn set_margin_right(id: int, px: int) {
+    arena.nodes[id].m_r = px
+}
+fn set_margin_bottom(id: int, px: int) {
+    arena.nodes[id].m_b = px
+}
+fn set_margin_left(id: int, px: int) {
+    arena.nodes[id].m_l = px
+}
+fn set_border(id: int, width: int) {
+    arena.nodes[id].border_w = width
+}
+fn set_border_color(id: int, rgb: int) {
+    arena.nodes[id].border_c = rgb
+}
+
+fn set_gap(id: int, g: int) {
+    arena.nodes[id].gap = g
+}
+fn set_gap_row(id: int, g: int) {
+    arena.nodes[id].gap_row = g
+}
+fn set_gap_col(id: int, g: int) {
+    arena.nodes[id].gap_col = g
+}
+
+/// Pin a pixel width; `-1` restores the 100% default.
+fn set_w(id: int, px: int) {
+    if px < 0 {
+        arena.nodes[id].ew = -1
+        arena.nodes[id].w_pct = 100
+    } else {
+        arena.nodes[id].ew = px
+        arena.nodes[id].w_pct = -1
+    }
+}
+fn set_h(id: int, px: int) {
+    arena.nodes[id].eh = px
+}
+fn set_size_px(id: int, px: int) {
+    set_w(id, px)
+    set_h(id, px)
+}
+fn set_width_pct(id: int, pct: int) {
+    arena.nodes[id].ew = -1
+    arena.nodes[id].w_pct = pct
+}
+fn set_height_pct(id: int, pct: int) {
+    arena.nodes[id].h_pct = pct
+}
+fn set_min_w(id: int, px: int) {
+    arena.nodes[id].min_w = px
+}
+fn set_max_w(id: int, px: int) {
+    arena.nodes[id].max_w = px
+}
+fn set_min_h(id: int, px: int) {
+    arena.nodes[id].min_h = px
+}
+fn set_max_h(id: int, px: int) {
+    arena.nodes[id].max_h = px
+}
+fn set_aspect(id: int, aw: int, ah: int) {
+    arena.nodes[id].aspect_w = aw
+    arena.nodes[id].aspect_h = ah
+}
+
+/// Main-axis direction: 0 row, 1 column. Kinds 2 (grid), 9 (overlay) and
+/// 11 (scroll) keep their own layout, exactly like the removed flex_row/col.
+fn set_dir(id: int, dir: int) {
+    if arena.nodes[id].kind != 2 {
+        if arena.nodes[id].kind != 9 {
+            if arena.nodes[id].kind != 11 {
+                arena.nodes[id].kind = 1
+            }
+        }
+    }
+    arena.nodes[id].dir = dir
+    arena.nodes[id].reverse = 0
+}
+fn set_flex_wrap(id: int) {
+    arena.nodes[id].wrap = 1
+}
+fn set_align_self(id: int, mode: int) {
+    arena.nodes[id].align_self = mode
+}
+fn set_span(id: int, columns: int) {
+    arena.nodes[id].span = columns
+}
+fn set_justify(id: int, mode: int) {
+    arena.nodes[id].justify = mode
+}
+fn set_align(id: int, mode: int) {
+    arena.nodes[id].align = mode
+}
+fn set_position(id: int, mode: int) {
+    arena.nodes[id].pos = mode
+}
+fn set_pin_top(id: int, px: int) {
+    arena.nodes[id].pin_t = px
+}
+fn set_pin_right(id: int, px: int) {
+    arena.nodes[id].pin_r = px
+}
+fn set_pin_bottom(id: int, px: int) {
+    arena.nodes[id].pin_b = px
+}
+fn set_pin_left(id: int, px: int) {
+    arena.nodes[id].pin_l = px
+}
+fn set_z_index(id: int, z: int) {
+    arena.nodes[id].z_index = z
+}
+fn set_bg(id: int, rgb: int) {
+    arena.nodes[id].bg = rgb
+}
+fn set_fg(id: int, rgb: int) {
+    arena.nodes[id].fg = rgb
+}
+fn set_radius(id: int, px: int) {
+    arena.nodes[id].radius = px
+}
+fn set_opacity(id: int, pct: int) {
+    arena.nodes[id].opacity = pct
+}
+fn set_overflow(id: int, mode: int) {
+    arena.nodes[id].overflow = mode
+}
+fn set_font(id: int, px: int) {
+    arena.nodes[id].font = px
+}

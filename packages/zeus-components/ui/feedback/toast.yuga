@@ -1,0 +1,15 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Toast: dim scrim and a centered card with a success strip, title, body.
+// `open` is 0 hidden / 1 shown; clicking the dim dismisses it.
+
+struct ToastProps {
+    title: string = "",
+    body: string = "",
+    open: Signal<int> = Signal { id: 0 },
+}
+
+fn Toast(p: ToastProps) {
+    Dialog(title = p.title, body = p.body, cancel = "Close", discard = "", open = p.open, background = canvas(), radius = surface_radius())
+}

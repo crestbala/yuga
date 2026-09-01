@@ -1,0 +1,47 @@
+import "std:zeus"
+import "../packages/zeus-components/theme.yuga"
+import "../packages/zeus-components/ui/navigation/navbar.yuga"
+import "../packages/zeus-components/ui/navigation/toolbar.yuga"
+import "../packages/zeus-components/ui/navigation/breadcrumbs.yuga"
+import "../packages/zeus-components/ui/navigation/header.yuga"
+import "../packages/zeus-components/ui/navigation/tabs.yuga"
+import "../packages/zeus-components/ui/navigation/pagination.yuga"
+import "../packages/zeus-components/ui/actions/button.yuga"
+import "../packages/zeus-components/ui/actions/button_group.yuga"
+import "../packages/zeus-components/ui/display/chip.yuga"
+import "../packages/zeus-components/ui/display/badge.yuga"
+import "../packages/zeus-components/ui/display/avatar.yuga"
+import "../packages/zeus-components/ui/display/user.yuga"
+import "../packages/zeus-components/ui/display/kbd.yuga"
+import "../packages/zeus-components/ui/display/link.yuga"
+import "../packages/zeus-components/ui/display/metric.yuga"
+
+fn main() {
+    let sig = signal(0)
+    let page = signal(2)
+    App("Smoke", 600, 900, fn() {
+        Box(align_direction = "column", padding = page(), spacing = section()) {
+        Navbar(brand = "Zeus", a = "A", b = "B", c = "C"),
+        Toolbar() {
+            Button(label = "Go", on_press = fn() => sig.set(1)),
+            Ghost(label = "Ghost", on_press = fn() => sig.set(2))
+        },
+        Breadcrumbs(a = "Zeus", b = "Examples", c = "Kit"),
+        Header(title = "Team", live_label = "members", sig = sig, btn = "Invite"),
+        Tabs(a = "One", b = "Two", c = "Three", sig = sig),
+        Pagination(page = page, last = 8),
+        ButtonGroup() {
+            Prominent(label = "Save", on_press = fn() => sig.set(3)),
+            Soft(label = "Soft", on_press = fn() => sig.set(4))
+        },
+        Chip(label = "Stable", color = success(), on_close = fn() => sig.set(5)),
+        Badge(label = "v1", color = purple()),
+        Avatar(initials = "SM", color = accent()),
+        User(initials = "JD", name = "Jane Doe", role = "Editor", color = purple()),
+        Kbd(key = "Esc"),
+        Link(label = "docs"),
+        Metric(title = "Users", value = "1,204", color = text()),
+        LiveMetric(title = "Ticks", sig = sig, color = accent())
+        }
+    })
+}

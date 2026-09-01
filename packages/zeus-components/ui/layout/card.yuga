@@ -1,0 +1,58 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Card: panel surface with a header (title + dot, subtitle) and room for
+// body rows and a footer — children come from the caller's trailing block.
+
+struct CardProps {
+    grow: int = 0,
+    shrink: int = -1,
+}
+
+fn Card(p: CardProps) -> Node {
+    return Box(
+        align_direction = DIRECTION.Column,
+        background = panel(),
+        spacing = gap_of(1),
+        pad_x = surface_x(1),
+        pad_y = surface_y(1),
+        radius = radius_of(1),
+        overflow = overflow_hidden(),
+        grow = p.grow,
+        shrink = p.shrink
+    )
+}
+
+struct CardHeaderProps {
+    title: string = "",
+    subtitle: string = "",
+}
+
+fn CardHeader(p: CardHeaderProps) -> Node {
+    return Box(align_direction = DIRECTION.Column, spacing = SPACE.Snug) {
+        Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, justify_content = ALIGN.Between, align_items = ALIGN.Center) {
+            Text(p.title, color = text(), font = 16),
+            Box(
+                background = muted(),
+                width = dot(),
+                height = dot(),
+                radius = dot() / 2
+            )
+        },
+        Text(p.subtitle, color = muted(), font = font_px(1))
+    }
+}
+
+fn CardBody() -> Node {
+    return Box(align_direction = DIRECTION.Column, spacing = SPACE.Cozy)
+}
+
+fn CardFooter() -> Node {
+    return Box(
+        align_direction = DIRECTION.Row,
+        spacing = SPACE.Sm,
+        justify_content = ALIGN.Start,
+        align_items = ALIGN.Center,
+        shrink = 0
+    )
+}

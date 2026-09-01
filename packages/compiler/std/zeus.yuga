@@ -1,33 +1,40 @@
-//! `zeus` — UI toolkit. Native Cocoa and WASM/Canvas2D run the same source.
+//! `zeus` — declarative UI toolkit. Native Cocoa and WASM/Canvas2D run the
+//! same source.
 //!
-//! Build a tree of `Node`s, then `.run()`. Clicks and keys write `Signal`s
-//! (or captured `let mut` ints). Methods chain: `n.pad(8)` is `zeus.pad(n, 8)`.
-//! Extra `.children(a, b, c)` arguments become nested `.child` calls.
-//! `.child` takes one node.
+//! Widgets are functions taking named props; containers take a trailing
+//! block. No chaining: style and behavior are props, not `.pad(8).gap(4)`
+//! method calls. Names are unqualified — `import "std:zeus"` exposes
+//! `Text`, `Button`, `Box`, `signal`, `App`, … directly.
 //!
 //! Example:
 //! ```
 //! import "std:zeus"
 //!
+//! fn Counter() {
+//!     let count = signal(0)
+//!     Box(align_direction = DIRECTION.Column, spacing = 8, padding = 16) {
+//!         Text("Count: {{count.get()}}")
+//!         Button("Increment", on_click = fn() => count.set(count.get() + 1))
+//!     }
+//! }
+//!
 //! fn main() {
-//!     let n = zeus.signal(0)
-//!     zeus.col().pad(16).gap(8).children(
-//!         zeus.text("Count").font(22),
-//!         zeus.label("").bind(n).font(28),
-//!         zeus.row().gap(8).children(
-//!             zeus.button("-").on_click(|| { n.set(n.get() - 1) }),
-//!             zeus.button("+").on_click(|| { n.set(n.get() + 1) }),
-//!         ),
-//!     ).run()
+//!     App("Counter", 320, 200, fn() { Counter() })
 //! }
 //! ```
 //!
-//! Per-frame rebuild: `zeus.view(|| { ... })` or `zeus.app(title, w, h, || { ... })`.
-//! Kit apps that build once stay retained (omit `view`).
-//! Internals: `std/zeuscore/*.yuga`. C is host FFI (`platform.yuga`), not a Zeus
-//! runtime file. `Node` is `{ id: int }` (not generic). `each<T>` is the
-//! generic list helper (`|i, item|`). See `docs/boundary.md`.
-//! `ZEUS_HEADLESS=1` layouts once and exits.
+//! `Box(align_direction = DIRECTION.Row | DIRECTION.Column)` replaces the old
+//! `Row` / `Column` widgets. Events ride in as props (`on_click`, `on_key_down`,
+//! `on_mouse_down`, …) with inline `fn(e)` closures; `Key.K`-style enum
+//! constants name key codes. State is `signal` / `sig.get()` / `sig.set()`.
+//! Advanced wiring (`key`, `show`, `each`, …) stays available as plain
+//! functions taking the node first — never as method chains. Style is props,
+//! and a prop value that reads a signal re-applies just that prop.
+//!
+//! Per-frame rebuild: `view(|| { ... })`. Kit apps that build once stay
+//! retained (omit `view`). Internals: `std/zeuscore/*.yuga`. `Node` is
+//! `{ id: int }` (not generic). `each<T>` is the generic list helper.
+//! See `docs/boundary.md`. `ZEUS_HEADLESS=1` layouts once and exits.
 
 import "zeuscore/geometry.yuga"
 import "zeuscore/platform.yuga"
@@ -36,33 +43,26 @@ import "zeuscore/layout.yuga"
 import "zeuscore/scene.yuga"
 import "zeuscore/input.yuga"
 import "zeuscore/track.yuga"
+import "zeuscore/style.yuga"
 import "std:fmt"
 
-/// A widget in the tree. Copy handle (`id`). Chain layout and `.child` / `.run`.
+/// A widget in the tree. Copy handle (`id`). Never constructed by hand; use
+/// the declarative widgets (`Text`, `Button`, `Box`, …).
 struct Node {
-    /// Slot in the engine arena. Do not construct by hand; use `zeus.row()` etc.
+    /// Slot in the engine arena.
     id: int,
 }
 
 /// Opaque reactive cell. Copy handle (`id`). `T` must be Copy (`int`,
 /// `string`, `float`, `bool`, or a Copy struct). Read and write with
-/// `.get()` / `.set(v)`:
+/// `sig.get()` / `sig.set(v)`:
 ///
 /// ```
-/// let n = zeus.signal(0)
+/// let n = signal(0)
 /// n.set(n.get() + 1)
 /// ```
 struct Signal<T> {
     id: int,
-}
-
-struct Style {
-    pad: int,
-    gap: int,
-    bg: int,
-    fg: int,
-    font: int,
-    radius: int,
 }
 
 fn empty_view() -> Node {
@@ -107,18 +107,18 @@ fn init() {
 }
 
 /// Open a native window. Sizes are CSS-like points, not pixels.
-/// Prefer `n.run()` or `zeus.app(...)` over calling this alone.
+/// Prefer `App(...)` or `run(...)` over calling this alone.
 fn window(title: string, width: int, height: int) {
     init()
     open_window(title, width, height)
 }
 
-/// Enter the event loop. Chain on the built tree: `page.child(...).run()`.
-/// `ZEUS_HEADLESS=1` layouts once and exits (tests).
+/// Enter the event loop for the built tree. `ZEUS_HEADLESS=1` layouts once
+/// and exits (tests).
 ///
 /// Example:
 /// ```
-/// zeus.text("Hi").pad(16).run()
+/// App("Demo", 400, 300, fn() { Text("Hi") })
 /// ```
 fn run(node: Node) {
     init()
@@ -134,49 +134,29 @@ fn view(build: fn() -> Node) {
     has_view = 1
 }
 
-/// Alias for `box()` — a direction-agnostic container. Chain `.flex_row()` /
-/// `.flex_col()` to pick a direction.
-fn container() -> Node {
-    return raw_box()
-}
-
-/// Open a window, install `build` as the per-frame view, and run.
-///
-/// Example:
-/// ```
-/// zeus.app("Demo", 400, 300, || {
-///     zeus.text("frame")
-/// })
-/// ```
-fn app(title: string, width: int, height: int, build: fn() -> Node) {
-    window(title, width, height)
-    view(build)
-    init()
-    raw_run()
-}
-
 // --- signals (live Copy state) ---
 
 /// Allocate a live cell. `T` is inferred from `value`.
 ///
 /// Example:
 /// ```
-/// let count = zeus.signal(0)
-/// zeus.button("+").on_click(|| { count.set(count.get() + 1) })
+/// let count = signal(0)
+/// Button("+", on_click = fn() => count.set(count.get() + 1))
 /// ```
 fn signal<T>(value: T) -> Signal<T> {
     arena.ensure()
     Signal { id: __sig_push(value) }
 }
 
-/// Read the current value of `sig`. Inside a `.styled` closure this records
-/// `sig` as a dependency of that closure. Call as `sig.get()`.
+/// Read the current value of `sig`. Inside a tracked effect (a text thunk or
+/// a style-prop thunk) this records `sig` as a dependency of that effect.
+/// Call as `sig.get()`.
 fn get<T>(sig: Signal<T>) -> T {
     arena.ensure()
     track.note_read(sig.id)
     __sig_load(sig.id)
 }
-/// Write `value` into `sig`. Re-runs every `.styled` closure that last read it.
+/// Write `value` into `sig`. Re-runs every tracked effect that last read it.
 /// Call as `sig.set(value)`.
 fn set<T>(sig: Signal<T>, value: T) {
     arena.ensure()
@@ -273,131 +253,9 @@ fn raw_hover(node: Node, sig: Signal<int>) -> Node {
     return node
 }
 
-// --- primitives ---
-
-/// Horizontal flex row. Cross-axis centered. Chain `.gap` / `.child` / `.children`.
-///
-/// Example:
-/// ```
-/// zeus.row().gap(8).children(zeus.button("-"), zeus.button("+"))
-/// ```
-fn row() -> Node {
-    return raw_row().align(geometry.flex_center())
-}
-
-/// Vertical flex column. Cross-axis stretched (children fill width).
-fn col() -> Node {
-    return raw_col().align(geometry.flex_stretch())
-}
-
-fn box() -> Node {
-    return raw_box()
-}
-
-fn grid(columns: int, gap: int) -> Node {
-    let id = arena.alloc_node(2)
-    arena.nodes[id].grid_cols = columns
-    arena.nodes[id].gap = gap
-    return nd(id)
-}
-
-fn grid_auto(min_width: int, gap: int) -> Node {
-    let id = arena.alloc_node(2)
-    arena.nodes[id].grid_auto = 1
-    arena.nodes[id].grid_min = min_width
-    arena.nodes[id].gap = gap
-    return nd(id)
-}
-
-fn label(text: string) -> Node {
-    return raw_label(text)
-}
-
-/// Static text label.
-fn text(s: string) -> Node {
-    return raw_label(s)
-}
-
-/// Clickable text button. Pair with `.on_click(|| { ... })`.
-fn button(text: string) -> Node {
-    return raw_button(text)
-}
-
-fn spacer() -> Node {
-    return raw_spacer().grow(1)
-}
-
-fn progress() -> Node {
-    return raw_progress()
-}
-
-fn slider() -> Node {
-    return raw_slider()
-}
-
-fn toggle() -> Node {
-    return raw_toggle()
-}
-
-fn check() -> Node {
-    return raw_check("")
-}
-
-fn overlay() -> Node {
-    let n = raw_overlay()
-    arena.nodes[n.id].dir = 1
-    return n.center().z_index(50)
-}
-
-fn input(placeholder: string) -> Node {
-    return raw_input(placeholder)
-}
-
-/// Text currently in an input (typed buffer, else placeholder).
-fn input_value(node: Node) -> string {
-    return arena.input_shown(node.id)
-}
-
-/// Replace the typed buffer for `node`. No-op if it is not an input.
-fn set_input(node: Node, text: string) -> Node {
-    let mut slot = arena.nodes[node.id].edit_slot
-    if slot < 0 {
-        arena.stamp_edits()
-        slot = arena.nodes[node.id].edit_slot
-    }
-    if slot >= 0 {
-        platform.plat_edit_set(slot, text)
-    }
-    return node
-}
-
-fn scroll() -> Node {
-    return raw_scroll()
-}
-
-/// Both-axis auto: H and V bars only when content overflows the viewport.
-fn scroll_xy() -> Node {
-    let n = raw_scroll()
-    arena.nodes[n.id].overflow = geometry.overflow_auto()
-    return n
-}
-
-fn svg(markup: string) -> Node {
-    return raw_svg(markup).shrink(0)
-}
-
 // --- tree ---
 
-/// Attach `node` under `parent` and return `parent` (chain siblings).
-/// One node only. Several nodes: `.children(a, b, c)` (nested `.child` calls).
-///
-/// Example:
-/// ```
-/// zeus.col().children(
-///     zeus.text("A"),
-///     zeus.text("B"),
-/// )
-/// ```
+/// Attach `node` under `parent`. Plain call — never chained.
 fn child(parent: Node, node: Node) -> Node {
     arena.ensure()
     push(arena.nodes[parent.id].kids, node.id)
@@ -405,6 +263,22 @@ fn child(parent: Node, node: Node) -> Node {
     return parent
 }
 
+/// Attach `node` under `parent` and return `node`, so a component can fill it
+/// after building (the counterpart of `child`, which returns the parent).
+fn add(parent: Node, node: Node) -> Node {
+    parent.child(node)
+    return node
+}
+
+fn root(node: Node) -> Node {
+    arena.ensure()
+    arena.root_id = node.id
+    return node
+}
+
+/// Run `handler` now and again whenever a `Signal` it `get`s changes.
+/// Kept for compatibility: style changes belong in reactive props now
+/// (`Box(border = if sel { 1 } else { 0 })`), so new code should not need it.
 fn with_size(node: Node, s: int) -> Node {
     arena.nodes[node.id].ui_size = s
     track.run_node(node.id)
@@ -425,301 +299,11 @@ fn look_of(node: Node) -> int {
     return arena.nodes[node.id].ui_look
 }
 
-/// Run `handler` now and again whenever a `Signal` it `get`s changes.
-/// The closure only updates paint state on existing nodes — it must not
-/// call `.child()` or rebuild the tree.
-fn styled(node: Node, handler: fn()) -> Node {
-    arena.ensure()
-    let eid = track.alloc(platform.plat_intern_fn(handler), node.id)
-    track.run(eid)
-    return node
-}
-
-/// Attach `node` under `parent` and return `node`. `child` returns the parent
-/// so a builder can chain siblings; `add` returns the new node so callers can
-/// fill it. Components that do `let n = parent.add(row())` then `n.txt(...)`
-/// must use this, not `child`.
-fn add(parent: Node, node: Node) -> Node {
-    parent.child(node)
-    return node
-}
-
-fn root(node: Node) -> Node {
-    arena.ensure()
-    arena.root_id = node.id
-    return node
-}
-
-// --- style ---
-/// Chainable. `n.pad(8)` rewrites to `zeus.pad(n, 8)`.
-/// Flex: grow/shrink, justify/align (`flex_start` … `flex_stretch`).
-/// Size: `w`/`h` in points; `width_pct`/`height_pct`; min/max; `aspect`.
-/// Box: pad*, margin*, border, gap, radius, overflow, opacity.
-/// Color: `bg`/`fg` packed RGB (`zeus.rgb(r,g,b)`). `-1` means no fill/stroke.
-
-fn grow(node: Node, weight: int) -> Node {
-    arena.nodes[node.id].grow = weight
-    return node
-}
-fn shrink(node: Node, weight: int) -> Node {
-    arena.nodes[node.id].shrink = weight
-    return node
-}
-
-fn pad(node: Node, all: int) -> Node {
-    arena.nodes[node.id].pad = all
-    arena.nodes[node.id].pad_t = all
-    arena.nodes[node.id].pad_r = all
-    arena.nodes[node.id].pad_b = all
-    arena.nodes[node.id].pad_l = all
-    return node
-}
-fn padX(node: Node, px: int) -> Node {
-    arena.nodes[node.id].pad_l = px
-    arena.nodes[node.id].pad_r = px
-    return node
-}
-fn padY(node: Node, py: int) -> Node {
-    arena.nodes[node.id].pad_t = py
-    arena.nodes[node.id].pad_b = py
-    return node
-}
-fn padTop(node: Node, px: int) -> Node {
-    arena.nodes[node.id].pad_t = px
-    return node
-}
-fn padRight(node: Node, px: int) -> Node {
-    arena.nodes[node.id].pad_r = px
-    return node
-}
-fn padBottom(node: Node, px: int) -> Node {
-    arena.nodes[node.id].pad_b = px
-    return node
-}
-fn padLeft(node: Node, px: int) -> Node {
-    arena.nodes[node.id].pad_l = px
-    return node
-}
-fn margin(node: Node, all: int) -> Node {
-    arena.nodes[node.id].m_t = all
-    arena.nodes[node.id].m_r = all
-    arena.nodes[node.id].m_b = all
-    arena.nodes[node.id].m_l = all
-    return node
-}
-fn marginX(node: Node, px: int) -> Node {
-    arena.nodes[node.id].m_l = px
-    arena.nodes[node.id].m_r = px
-    return node
-}
-fn marginY(node: Node, py: int) -> Node {
-    arena.nodes[node.id].m_t = py
-    arena.nodes[node.id].m_b = py
-    return node
-}
-fn marginTop(node: Node, px: int) -> Node {
-    arena.nodes[node.id].m_t = px
-    return node
-}
-fn marginRight(node: Node, px: int) -> Node {
-    arena.nodes[node.id].m_r = px
-    return node
-}
-fn marginBottom(node: Node, px: int) -> Node {
-    arena.nodes[node.id].m_b = px
-    return node
-}
-fn marginLeft(node: Node, px: int) -> Node {
-    arena.nodes[node.id].m_l = px
-    return node
-}
-fn border(node: Node, width: int) -> Node {
-    arena.nodes[node.id].border_w = width
-    return node
-}
-fn border_color(node: Node, rgb: int) -> Node {
-    arena.nodes[node.id].border_c = rgb
-    return node
-}
-
-fn gap(node: Node, g: int) -> Node {
-    arena.nodes[node.id].gap = g
-    return node
-}
-fn gap_row(node: Node, g: int) -> Node {
-    arena.nodes[node.id].gap_row = g
-    return node
-}
-fn gap_col(node: Node, g: int) -> Node {
-    arena.nodes[node.id].gap_col = g
-    return node
-}
-
-/// Default node width is 100% of the parent. `.w(px)` pins a pixel width
-/// and clears the percentage. `.w(-1)` restores the 100% default.
-fn w(node: Node, px: int) -> Node {
-    if px < 0 {
-        arena.nodes[node.id].ew = -1
-        arena.nodes[node.id].w_pct = 100
-    } else {
-        arena.nodes[node.id].ew = px
-        arena.nodes[node.id].w_pct = -1
-    }
-    return node
-}
-fn h(node: Node, px: int) -> Node {
-    arena.nodes[node.id].eh = px
-    return node
-}
-/// `.w(px).h(px)` in one call. Named `size_px`, not `size`: kit widgets expose
-/// `.size()` for the sm/md/lg token, and two chain methods sharing a name and
-/// a `(Node, int)` shape resolve by import order — which is how `.size(ui.sm())`
-/// once silently became a 0x0 box. The `_px` suffix also keeps the unit at the
-/// call site, next to kit's token form.
-fn size_px(node: Node, px: int) -> Node {
-    return node.w(px).h(px)
-}
-fn width_pct(node: Node, pct: int) -> Node {
-    arena.nodes[node.id].ew = -1
-    arena.nodes[node.id].w_pct = pct
-    return node
-}
-fn height_pct(node: Node, pct: int) -> Node {
-    arena.nodes[node.id].h_pct = pct
-    return node
-}
-fn min_w(node: Node, px: int) -> Node {
-    arena.nodes[node.id].min_w = px
-    return node
-}
-fn max_w(node: Node, px: int) -> Node {
-    arena.nodes[node.id].max_w = px
-    return node
-}
-fn min_h(node: Node, px: int) -> Node {
-    arena.nodes[node.id].min_h = px
-    return node
-}
-fn max_h(node: Node, px: int) -> Node {
-    arena.nodes[node.id].max_h = px
-    return node
-}
-fn aspect(node: Node, aw: int, ah: int) -> Node {
-    arena.nodes[node.id].aspect_w = aw
-    arena.nodes[node.id].aspect_h = ah
-    return node
-}
-
-fn flex_row(node: Node) -> Node {
-    if arena.nodes[node.id].kind != 2 {
-        if arena.nodes[node.id].kind != 9 {
-            if arena.nodes[node.id].kind != 11 {
-                arena.nodes[node.id].kind = 1
-            }
-        }
-    }
-    arena.nodes[node.id].dir = 0
-    arena.nodes[node.id].reverse = 0
-    return node
-}
-fn flex_col(node: Node) -> Node {
-    if arena.nodes[node.id].kind != 2 {
-        if arena.nodes[node.id].kind != 9 {
-            if arena.nodes[node.id].kind != 11 {
-                arena.nodes[node.id].kind = 1
-            }
-        }
-    }
-    arena.nodes[node.id].dir = 1
-    arena.nodes[node.id].reverse = 0
-    return node
-}
-fn flex_row_reverse(node: Node) -> Node {
-    arena.nodes[node.id].dir = 0
-    arena.nodes[node.id].reverse = 1
-    return node
-}
-fn flex_col_reverse(node: Node) -> Node {
-    arena.nodes[node.id].dir = 1
-    arena.nodes[node.id].reverse = 1
-    return node
-}
-fn flex_wrap(node: Node) -> Node {
-    arena.nodes[node.id].wrap = 1
-    return node
-}
-fn align_self(node: Node, mode: int) -> Node {
-    arena.nodes[node.id].align_self = mode
-    return node
-}
-fn span(node: Node, columns: int) -> Node {
-    arena.nodes[node.id].span = columns
-    return node
-}
-
-fn justify(node: Node, mode: int) -> Node {
-    arena.nodes[node.id].justify = mode
-    return node
-}
-fn align(node: Node, mode: int) -> Node {
-    arena.nodes[node.id].align = mode
-    return node
-}
-
-fn position(node: Node, mode: int) -> Node {
-    arena.nodes[node.id].pos = mode
-    return node
-}
-fn top(node: Node, px: int) -> Node {
-    arena.nodes[node.id].pin_t = px
-    return node
-}
-fn right(node: Node, px: int) -> Node {
-    arena.nodes[node.id].pin_r = px
-    return node
-}
-fn bottom(node: Node, px: int) -> Node {
-    arena.nodes[node.id].pin_b = px
-    return node
-}
-fn left(node: Node, px: int) -> Node {
-    arena.nodes[node.id].pin_l = px
-    return node
-}
-fn z_index(node: Node, z: int) -> Node {
-    arena.nodes[node.id].z_index = z
-    return node
-}
-
-fn bg(node: Node, rgb: int) -> Node {
-    arena.nodes[node.id].bg = rgb
-    return node
-}
-fn fg(node: Node, rgb: int) -> Node {
-    arena.nodes[node.id].fg = rgb
-    return node
-}
-fn radius(node: Node, px: int) -> Node {
-    arena.nodes[node.id].radius = px
-    return node
-}
-fn opacity(node: Node, pct: int) -> Node {
-    arena.nodes[node.id].opacity = pct
-    return node
-}
-fn overflow(node: Node, mode: int) -> Node {
-    arena.nodes[node.id].overflow = mode
-    return node
-}
-fn font(node: Node, px: int) -> Node {
-    arena.nodes[node.id].font = px
-    return node
-}
-
 // --- reactivity ---
-/// Clicks write a signal (inc / toggle / set / add). `show` / `show_eq` /
-/// `show_ne` / `show_ge` / `show_le` hide a node from layout when false.
-/// `bind` paints a label from a signal's int.
+/// Clicks write a signal (`on_click_inc` / `on_click_toggle` / `on_click_set`
+/// / `on_click_add`). `show` / `show_eq` / `show_ne` / `show_ge` / `show_le`
+/// hide a node from layout while false. `bind` paints a label from a signal's
+/// int, `bind_n` from a captured `let mut`.
 
 fn bind(label: Node, sig: Signal<int>) -> Node {
     arena.nodes[label.id].bind_sig = sig.id
@@ -734,9 +318,6 @@ fn bind_n(label: Node, n: int) -> Node {
     return label
 }
 
-fn digits(n: int) -> Node {
-    return label("0").bind_n(n)
-}
 fn on_click_inc(button: Node, sig: Signal<int>) -> Node {
     arena.nodes[button.id].click_sig = sig.id
     arena.nodes[button.id].click_mode = 0
@@ -771,49 +352,6 @@ fn click() -> int {
     return 1
 }
 
-fn heading() -> Style {
-    return Style { pad: 0, gap: 0, bg: -1, fg: rgb(23, 23, 23), font: 22, radius: 0 }
-}
-
-fn class(node: Node, name: string) -> Node {
-    if fmt.eq(name, "container") {
-        return node.pad(16).gap(12).flex_col().bg(rgb(250, 250, 250))
-    }
-    if fmt.eq(name, "heading") {
-        return node.font(22).fg(rgb(23, 23, 23))
-    }
-    if fmt.eq(name, "muted") {
-        return node.font(13).fg(rgb(113, 113, 122))
-    }
-    if fmt.eq(name, "card") {
-        return node.pad(16).gap(8).radius(10).bg(rgb(255, 255, 255)).border(1).border_color(rgb(228, 228, 231))
-    }
-    return node
-}
-
-fn style(node: Node, s: Style) -> Node {
-    let mut n = node
-    if s.pad > 0 {
-        n = n.pad(s.pad)
-    }
-    if s.gap > 0 {
-        n = n.gap(s.gap)
-    }
-    if s.bg >= 0 {
-        n = n.bg(s.bg)
-    }
-    if s.fg >= 0 {
-        n = n.fg(s.fg)
-    }
-    if s.font > 0 {
-        n = n.font(s.font)
-    }
-    if s.radius > 0 {
-        n = n.radius(s.radius)
-    }
-    return n
-}
-
 fn on(node: Node, event: int, handler: fn()) -> Node {
     if event == 1 {
         arena.nodes[node.id].click_fn = platform.plat_intern_fn(handler)
@@ -821,12 +359,12 @@ fn on(node: Node, event: int, handler: fn()) -> Node {
     return node
 }
 
-/// Click handler. `n.on_click(h)` is `n.on(zeus.click(), h)`.
+/// Click handler. `on_click(n, h)` is `on(n, click(), h)`.
 fn on_click(node: Node, handler: fn()) -> Node {
     return on(node, click(), handler)
 }
 
-/// Map `items` into children. `build` receives `(index, item)`.
+/// Map `items` into children of `parent`. `build` receives `(index, item)`.
 fn each<T>(parent: Node, items: []T, build: fn(int, T) -> Node) -> Node {
     let n = items.len
     for i in 0..n {
@@ -835,11 +373,10 @@ fn each<T>(parent: Node, items: []T, build: fn(int, T) -> Node) -> Node {
     return parent
 }
 
-/// `zeus.when(sig, || { node })` — combinator form of show. Builds the child
-/// once and hides it from layout while `sig` is 0. `n.show(sig)` remains the
-/// modifier (Yuga cannot overload `show`).
+/// Combinator form of `show`: builds the child once and hides it from layout
+/// while `sig` is 0.
 fn when(sig: Signal<int>, build: fn() -> Node) -> Node {
-    return build().show(sig)
+    return show(build(), sig)
 }
 
 fn show(node: Node, sig: Signal<int>) -> Node {
@@ -859,6 +396,56 @@ fn show_ne(node: Node, sig: Signal<int>, value: int) -> Node {
     arena.nodes[node.id].show_val = value
     return node
 }
+fn show_ge(node: Node, sig: Signal<int>, value: int) -> Node {
+    arena.nodes[node.id].show_sig = sig.id
+    arena.nodes[node.id].show_mode = 3
+    arena.nodes[node.id].show_val = value
+    return node
+}
+fn show_le(node: Node, sig: Signal<int>, value: int) -> Node {
+    arena.nodes[node.id].show_sig = sig.id
+    arena.nodes[node.id].show_mode = 4
+    arena.nodes[node.id].show_val = value
+    return node
+}
+
+fn hover(node: Node, sig: Signal<int>) -> Node {
+    return raw_hover(node, sig)
+}
+
+fn hover_delay(node: Node, ms: int) -> Node {
+    return node
+}
+fn hover_leave(node: Node, ms: int) -> Node {
+    return node
+}
+
+fn pulse(node: Node) -> Node {
+    arena.nodes[node.id].pulse = 1
+    return node
+}
+
+/// Pin a node's pulse phase (0..143) rather than deriving it from `nid`.
+/// Evenly spaced phases around a ring turn the alpha wave into apparent
+/// rotation without rotating anything.
+fn phase(node: Node, p: int) -> Node {
+    arena.nodes[node.id].pulse_phase = p
+    return node
+}
+
+fn hover_fade(node: Node) -> Node {
+    arena.nodes[node.id].hover_fade = 1
+    return node
+}
+
+fn enter_fade(node: Node) -> Node {
+    arena.nodes[node.id].enter_fade = 1
+    return node
+}
+fn dismiss(node: Node) -> Node {
+    return node
+}
+
 // --- keyboard ---
 /// A chord on a focused node resolves to a named action; a handler on that
 /// same node writes a signal. App remaps (`map_key` / `remap_key`) still use
@@ -890,8 +477,8 @@ fn remap_key(spec: string, action: string, ctx: string) {}
 
 /// Chord → action on this node. The action family (`button.press` → `button`)
 /// is the keymap context; `key_context` is only needed to override that name.
-/// Implies `.focusable()` — a node with a key binding needs focus to receive
-/// it, so components don't chain both.
+/// Implies focusable — a node with a key binding needs focus to receive it,
+/// so components don't call both.
 fn key(node: Node, spec: string, action: string) -> Node {
     let mut ctx = arena.nodes[node.id].key_ctx
     if ctx == 0 {
@@ -925,77 +512,24 @@ fn global_key_set(action: string, sig: Signal<int>, value: int) {
     on_action_global(action, sig, 2, value)
 }
 
-fn show_ge(node: Node, sig: Signal<int>, value: int) -> Node {
-    arena.nodes[node.id].show_sig = sig.id
-    arena.nodes[node.id].show_mode = 3
-    arena.nodes[node.id].show_val = value
-    return node
-}
-fn show_le(node: Node, sig: Signal<int>, value: int) -> Node {
-    arena.nodes[node.id].show_sig = sig.id
-    arena.nodes[node.id].show_mode = 4
-    arena.nodes[node.id].show_val = value
-    return node
-}
-
-fn hover(node: Node, sig: Signal<int>) -> Node {
-    return raw_hover(node, sig)
-}
-
-fn hover_delay(node: Node, ms: int) -> Node {
-    return node
-}
-fn hover_leave(node: Node, ms: int) -> Node {
-    return node
-}
-
-fn pulse(node: Node) -> Node {
-    arena.nodes[node.id].pulse = 1
-    return node
-}
-
-fn hover_fade(node: Node) -> Node {
-    arena.nodes[node.id].hover_fade = 1
-    return node
-}
-
-fn enter_fade(node: Node) -> Node {
-    arena.nodes[node.id].enter_fade = 1
-    return node
-}
-fn dismiss(node: Node) -> Node {
-    return node
-}
 fn keys(node: Node, sig: Signal<int>, lo: int, hi: int) -> Node {
-    return node.key("right", "slider.inc").key("left", "slider.dec").focusable().on_range("slider.inc", sig, 1, lo, hi).on_range("slider.dec", sig, -1, lo, hi)
+    let mut n = on_range(node, "slider.inc", sig, 1, lo, hi)
+    n = on_range(n, "slider.dec", sig, -1, lo, hi)
+    n = key(n, "right", "slider.inc")
+    n = key(n, "left", "slider.dec")
+    n = focusable(n)
+    return n
 }
 fn keys_page(node: Node, sig: Signal<int>) -> Node {
-    return node.key("right", "page.next").key("left", "page.prev").focusable().on_key_add("page.next", sig, 1).on_key_add("page.prev", sig, -1)
+    let mut n = key(node, "right", "page.next")
+    n = key(n, "left", "page.prev")
+    n = on_key_add(n, "page.next", sig, 1)
+    n = on_key_add(n, "page.prev", sig, -1)
+    return focusable(n)
 }
 
-// --- flex constants (public; implemented in geometry) ---
+// --- position / overflow constants (public; implemented in geometry) ---
 
-fn flex_start() -> int {
-    return geometry.flex_start()
-}
-fn flex_center() -> int {
-    return geometry.flex_center()
-}
-fn flex_end() -> int {
-    return geometry.flex_end()
-}
-fn flex_between() -> int {
-    return geometry.flex_between()
-}
-fn flex_around() -> int {
-    return geometry.flex_around()
-}
-fn flex_evenly() -> int {
-    return geometry.flex_evenly()
-}
-fn flex_stretch() -> int {
-    return geometry.flex_stretch()
-}
 fn pos_relative() -> int {
     return geometry.pos_relative()
 }
@@ -1016,10 +550,6 @@ fn overflow_auto() -> int {
 }
 fn rgb(r: int, g: int, b: int) -> int {
     return geometry.rgb(r, g, b)
-}
-
-fn center(node: Node) -> Node {
-    return node.justify(flex_center()).align(flex_center())
 }
 
 fn appearance() -> Signal<int> {
@@ -1094,22 +624,6 @@ fn engine_key_apply(sid: int, mode: int, value: int, lo: int, hi: int) {
     arena.store_sig(sid, next)
 }
 
-fn txt(parent: Node, s: string, color: int, px: int) -> Node {
-    return parent.child(label(s).fg(color).font(px))
-}
-
-fn bound(parent: Node, sig: Signal<int>, color: int, px: int) -> Node {
-    return parent.child(label("0").bind(sig).fg(color).font(px))
-}
-
-/// Open a window and install a scrollable root — not the generic `container()`
-/// alias for `box()` above; this one bootstraps a whole app/test window.
-fn window_root(title: string, width: int, height: int) -> Node {
-    window(title, width, height)
-    return root(scroll())
-}
-
-
 fn engine_layout(width: int, height: int) {
     if has_view != 0 {
         arena.snapshot_focus()
@@ -1166,16 +680,70 @@ fn engine_focus_captures_text() -> int {
 }
 
 fn engine_key(key: int) -> int {
-    return input.key(key)
+    return dispatch_key(key, 0, input.key(key))
 }
 
 fn engine_key_ev(key: int, mods: int) -> int {
-    return platform.plat_key_ev(key, mods)
+    return dispatch_key(key, mods, platform.plat_key_ev(key, mods))
+}
+
+fn engine_key_up(key: int, mods: int) -> int {
+    return dispatch_key_up(key, mods)
+}
+
+/// Deliver a `KeyEvent` to the focused node's `on_key_down`, after the normal
+/// text/binding handling has run. `mods` is a bitmask: 1 shift, 2 ctrl, 4 alt.
+/// The key is remembered so its `key_up` can complete the press.
+fn dispatch_key(key: int, mods: int, r: int) -> int {
+    let id = arena.focus_id
+    if id <= 0 {
+        return r
+    }
+    let h = arena.nodes[id].key_down_fn
+    if h <= 0 {
+        return r
+    }
+    ev_key = key
+    ev_shift = mods % 2 == 1
+    ev_ctrl = (mods / 2) % 2 == 1
+    ev_alt = (mods / 4) % 2 == 1
+    press_key = key
+    fire_key(h)
+    return r
+}
+
+/// Deliver a `KeyEvent` to the focused node's `on_key_up`; when this is the
+/// key that went down, also fire its `on_key_press` — a full down→up cycle,
+/// the keyboard analog of a click.
+fn dispatch_key_up(key: int, mods: int) -> int {
+    let id = arena.focus_id
+    if id <= 0 {
+        return 0
+    }
+    ev_key = key
+    ev_shift = mods % 2 == 1
+    ev_ctrl = (mods / 2) % 2 == 1
+    ev_alt = (mods / 4) % 2 == 1
+    let mut fired = 0
+    let h = arena.nodes[id].key_up_fn
+    if h > 0 {
+        fire_key(h)
+        fired = 1
+    }
+    let p = arena.nodes[id].key_press_fn
+    if press_key == key && p > 0 {
+        fire_key(p)
+        fired = 1
+    }
+    if press_key == key {
+        press_key = 0
+    }
+    return fired
 }
 
 // --- engine trampolines ---
 /// Cocoa calls these through zeus_plat.c (`yuga_zeus_engine_*`). Do not use
-/// from app code; use `.run()`, clicks, and signals instead.
+/// from app code; use `App(...)`, clicks, and signals instead.
 
 fn engine_paint() {
     scene.paint()
@@ -1186,7 +754,16 @@ fn engine_step() -> int {
 }
 
 fn engine_click(px: int, py: int) -> int {
-    return input.click(px, py)
+    ev_x = px
+    ev_y = py
+    ev_button = 0
+    arena.last_hit = 0
+    let r = input.click(px, py)
+    let id = arena.last_hit
+    if id > 0 {
+        fire_mouse(arena.nodes[id].mouse_down_fn)
+    }
+    return r
 }
 
 fn engine_scroll(px: int, py: int, dx: int, dy: int) -> int {
@@ -1198,6 +775,12 @@ fn engine_drag(px: int, py: int) -> int {
 }
 
 fn engine_mouseup() {
+    let id = arena.last_hit
+    if id > 0 {
+        ev_x = arena.nodes[id].x
+        ev_y = arena.nodes[id].y
+        fire_mouse(arena.nodes[id].mouse_up_fn)
+    }
     input.mouseup()
 }
 
@@ -1209,44 +792,31 @@ fn engine_over_button() -> int {
     return input.over_button()
 }
 
-fn stack() -> Node {
-    return col()
-}
-
-fn body() -> Style {
-    return Style { pad: 0, gap: 0, bg: -1, fg: rgb(82, 82, 82), font: 14, radius: 0 }
-}
-
-fn mount(node: Node, title: string, width: int, height: int) -> Node {
-    window(title, width, height)
-    return root(node)
-}
-
 fn draw_count() -> int {
     return scene.draws.len
 }
 
 fn dump() {
     let n = scene.draws.len
-    fmt.println("DRAW", n)
+    println("DRAW", n)
     for i in 0..n {
         let d = scene.draws[i]
         if d.kind == 0 {
-            fmt.println("fill", d.x, d.y, d.w, d.h, d.rgb, d.radius)
+            println("fill", d.x, d.y, d.w, d.h, d.rgb, d.radius)
         } else if d.kind == 1 {
-            fmt.println("fill_a", d.x, d.y, d.w, d.h, d.rgb, d.alpha)
+            println("fill_a", d.x, d.y, d.w, d.h, d.rgb, d.alpha)
         } else if d.kind == 2 {
-            fmt.println("text", d.x, d.y, d.rgb, d.font, d.text)
+            println("text", d.x, d.y, d.rgb, d.font, d.text)
         } else if d.kind == 3 {
-            fmt.println("text_int", d.x, d.y, d.value, d.rgb, d.font)
+            println("text_int", d.x, d.y, d.value, d.rgb, d.font)
         } else if d.kind == 4 {
-            fmt.println("text_wrap", d.x, d.y, d.w, d.text)
+            println("text_wrap", d.x, d.y, d.w, d.text)
         } else if d.kind == 6 {
-            fmt.println("save")
+            println("save")
         } else if d.kind == 7 {
-            fmt.println("clip", d.x, d.y, d.w, d.h)
+            println("clip", d.x, d.y, d.w, d.h)
         } else if d.kind == 8 {
-            fmt.println("restore")
+            println("restore")
         }
     }
 }
@@ -1260,3 +830,1761 @@ fn snapshot(width: int, height: int, build: fn() -> Node) {
     dump()
 }
 
+// =====================================================================
+// Declarative UI
+// =====================================================================
+//
+// Components are ordinary `fn`s. Containers take a trailing block, and every
+// widget evaluated inside it attaches to that container, so the tree comes
+// from block structure rather than explicit parenting:
+//
+//     fn Counter() {
+//         let count = signal(0)
+//         Box(align_direction = DIRECTION.Column, spacing = 8) {
+//             Text("Count: {{count.get()}}")
+//             Button("Increment", on_click = fn() => count.set(count.get() + 1))
+//         }
+//     }
+//
+// `Box(...) { ... }` is sugar for `__ui_scope(Box(...), || { ... })`.
+// Props are structs with defaults filled by named arguments. Text is taken as
+// `fn() -> string`, so a signal read inside it is recorded as a dependency of
+// that one label's effect: setting the signal repaints that label alone.
+
+/// Containers currently being built, innermost last.
+let mut ui_stack: []int = []int {}
+/// Implicit top-level container, created on first emit.
+let mut ui_root_id: int = -1
+
+/// Default for optional handler props. Never invoked: a props struct pairs
+/// each handler with a `<name>__set` flag the compiler sets when the argument
+/// is actually passed.
+/// Bodies are deliberately non-empty: an empty body marks a std function as a
+/// runtime hook, which would suppress the `__as_fn` adapter these need to be
+/// usable as values.
+fn noop() {
+    return
+}
+fn noop_mouse(e: MouseEvent) {
+    return
+}
+fn noop_key(e: KeyEvent) {
+    return
+}
+
+/// Drop any partly built tree and start over.
+fn ui_reset() {
+    arena.ensure()
+    ui_stack = []int {}
+    // Allocate the root up front so widget ids follow build order. Creating it
+    // lazily on first emit would give the first widget a lower id than its own
+    // parent.
+    let r = raw_col()
+    style.set_align(r.id, ALIGN.Stretch)
+    ui_root_id = r.id
+    arena.root_id = r.id
+}
+
+/// The implicit root container. Created lazily so a component can be called
+/// without an enclosing container.
+fn ui_root() -> Node {
+    if ui_root_id < 0 {
+        ui_reset()
+    }
+    return nd(ui_root_id)
+}
+
+/// Attach `n` to the container being built, else to the implicit root.
+/// Every declarative widget ends with this.
+fn ui_emit(n: Node) -> Node {
+    if ui_stack.len > 0 {
+        nd(ui_stack[ui_stack.len - 1]).child(n)
+    } else {
+        ui_root().child(n)
+    }
+    return n
+}
+
+/// Make `n` the current parent, run `body`, then restore. Trailing UI blocks
+/// desugar to this; see `parse_ui_trailing_block` in the compiler.
+fn __ui_scope(n: Node, body: fn()) -> Node {
+    push(ui_stack, n.id)
+    body()
+    if ui_stack.len > 0 {
+        pop(ui_stack)
+    }
+    return n
+}
+
+// --- colors ---
+
+/// Parse `"#rrggbb"` or `"#rgb"` into a packed RGB int. `-1` for empty or
+/// malformed input, which every style setter reads as "leave unset".
+fn hex(s: string) -> int {
+    if s.len == 0 {
+        return -1
+    }
+    let mut i = 0
+    if s[0] == 35 {
+        i = 1
+    }
+    let mut v = 0
+    let mut n = 0
+    while i < s.len {
+        let c = s[i]
+        let mut d = -1
+        if c >= 48 && c <= 57 {
+            d = c - 48
+        }
+        if c >= 97 && c <= 102 {
+            d = c - 87
+        }
+        if c >= 65 && c <= 70 {
+            d = c - 55
+        }
+        if d < 0 {
+            return -1
+        }
+        v = v * 16 + d
+        n = n + 1
+        i = i + 1
+    }
+    if n == 3 {
+        let r = v / 256
+        let g = (v / 16) % 16
+        let b = v % 16
+        return rgb(r * 17, g * 17, b * 17)
+    }
+    if n == 6 {
+        return v
+    }
+    return -1
+}
+
+// --- event payloads ---
+
+/// Pointer event. `button` is 0 for the primary button.
+struct MouseEvent {
+    x: int = 0,
+    y: int = 0,
+    button: int = 0,
+}
+
+/// Key event. `key` is a character code or a `Key.*` constant.
+struct KeyEvent {
+    key: int = 0,
+    ctrl: bool = false,
+    shift: bool = false,
+    alt: bool = false,
+}
+
+/// Event being dispatched. The engine invokes interned `fn()` adapters, so the
+/// payload rides here rather than through the call.
+let mut ev_x: int = 0
+let mut ev_y: int = 0
+let mut ev_button: int = 0
+let mut ev_key: int = 0
+let mut ev_ctrl: bool = false
+let mut ev_shift: bool = false
+let mut ev_alt: bool = false
+/// Key that went down; `dispatch_key_up` matches it to complete a press.
+let mut press_key: int = 0
+
+/// The pointer event currently being delivered.
+fn current_mouse() -> MouseEvent {
+    return MouseEvent { x: ev_x, y: ev_y, button: ev_button }
+}
+
+/// The key event currently being delivered.
+fn current_key() -> KeyEvent {
+    return KeyEvent { key: ev_key, ctrl: ev_ctrl, shift: ev_shift, alt: ev_alt }
+}
+
+/// Payload-carrying handlers, held by slot so a node stores a plain int.
+///
+/// Runtime hooks (empty body): a handler is read out of a props struct, which
+/// Yuga drops on return, freeing the closure's captured env. The runtime
+/// snapshots that env, so the stored handler stays valid for the app's life.
+/// The typed call is made here, in Yuga, so C never sees the event layouts.
+fn keep_ev(h: fn(MouseEvent)) -> fn(MouseEvent) {}
+fn keep_key(h: fn(KeyEvent)) -> fn(KeyEvent) {}
+
+let mut mouse_fns: []fn(MouseEvent) = []fn(MouseEvent) {}
+let mut key_fns: []fn(KeyEvent) = []fn(KeyEvent) {}
+
+/// Register `h`, returning its 1-based slot (0 means "no handler").
+fn add_mouse_fn(h: fn(MouseEvent)) -> int {
+    push(mouse_fns, keep_ev(h))
+    return mouse_fns.len
+}
+
+fn add_key_fn(h: fn(KeyEvent)) -> int {
+    push(key_fns, keep_key(h))
+    return key_fns.len
+}
+
+/// Invoke slot `i` with the event being dispatched. Called through the vec
+/// directly: binding it to a local would make Yuga drop (and free) it.
+fn fire_mouse(i: int) {
+    if i > 0 && i <= mouse_fns.len {
+        mouse_fns[i - 1](current_mouse())
+    }
+}
+
+fn fire_key(i: int) {
+    if i > 0 && i <= key_fns.len {
+        key_fns[i - 1](current_key())
+    }
+}
+
+// --- props ---
+
+/// Multi-value box styling, per ZEUS_SPEC.md section 2C. `-1` means auto.
+struct BoxStyle {
+    width: int = -1,
+    height: int = -1,
+    background: string = "",
+    padding: int = 0,
+    flex: int = 0,
+}
+
+/// 2D grid configuration.
+struct GridConfig {
+    columns: int = 1,
+    gap: int = 0,
+    padding: int = 0,
+}
+
+/// Shared container/box props. `style` supplies several at once; the flat
+/// fields override it, so `Box(style = s, padding = 4)` works. Every style
+/// prop is a thunk (`fn() -> T`); plain values auto-wrap, and a value that
+/// reads a signal re-applies just that prop when the signal changes, so
+/// `Box(align_direction = if a { DIRECTION.Row } else { DIRECTION.Column })`
+/// is reactive. Each thunk prop has a `name__set` companion the widget uses
+/// to learn whether it was actually passed.
+struct BoxProps {
+    style: fn() -> BoxStyle = style_box_default,
+    style__set: bool = false,
+    width: fn() -> int = style_int_default,
+    width__set: bool = false,
+    height: fn() -> int = style_int_default,
+    height__set: bool = false,
+    background: fn() -> string = style_str_default,
+    background__set: bool = false,
+    color: fn() -> string = style_str_default,
+    color__set: bool = false,
+    padding: fn() -> int = style_int_default,
+    padding__set: bool = false,
+    flex: fn() -> int = style_int_default,
+    flex__set: bool = false,
+    gap: fn() -> int = style_int_default,
+    gap__set: bool = false,
+    spacing: fn() -> int = style_int_default,
+    spacing__set: bool = false,
+    radius: fn() -> int = style_int_default,
+    radius__set: bool = false,
+    font: fn() -> int = style_int_default,
+    font__set: bool = false,
+    align_items: fn() -> int = style_int_default,
+    align_items__set: bool = false,
+    justify_content: fn() -> int = style_int_default,
+    justify_content__set: bool = false,
+    /// Main-axis direction: `"row"` or `"column"` (the replacement for the
+    /// old `Row` / `Column` widgets). Empty leaves the engine default (row).
+    /// Main-axis direction: `DIRECTION.Row` or `DIRECTION.Column` (the
+    /// replacement for the old `Row` / `Column` widgets). A row box centers on
+    /// the cross axis, a column box stretches, unless `align_items` is given.
+    align_direction: fn() -> int = style_int_default,
+    align_direction__set: bool = false,
+    // Box model. The sentinels (`0` / `-1`) are checked by the dispatcher.
+    pad_x: fn() -> int = style_int_default,
+    pad_x__set: bool = false,
+    pad_y: fn() -> int = style_int_default,
+    pad_y__set: bool = false,
+    pad_top: fn() -> int = style_int_default,
+    pad_top__set: bool = false,
+    pad_right: fn() -> int = style_int_default,
+    pad_right__set: bool = false,
+    pad_bottom: fn() -> int = style_int_default,
+    pad_bottom__set: bool = false,
+    pad_left: fn() -> int = style_int_default,
+    pad_left__set: bool = false,
+    margin: fn() -> int = style_int_default,
+    margin__set: bool = false,
+    border: fn() -> int = style_int_default,
+    border__set: bool = false,
+    border_color: fn() -> string = style_str_default,
+    border_color__set: bool = false,
+    overflow: fn() -> int = style_int_default,
+    overflow__set: bool = false,
+    // Sizing.
+    size: fn() -> int = style_int_default,
+    size__set: bool = false,
+    grow: fn() -> int = style_int_default,
+    grow__set: bool = false,
+    shrink: fn() -> int = style_int_default,
+    shrink__set: bool = false,
+    min_w: fn() -> int = style_int_default,
+    min_w__set: bool = false,
+    max_w: fn() -> int = style_int_default,
+    max_w__set: bool = false,
+    min_h: fn() -> int = style_int_default,
+    min_h__set: bool = false,
+    max_h: fn() -> int = style_int_default,
+    max_h__set: bool = false,
+    opacity: fn() -> int = style_int_default,
+    opacity__set: bool = false,
+    // Absolute placement.
+    position: fn() -> int = style_int_default,
+    position__set: bool = false,
+    top: fn() -> int = style_int_default,
+    top__set: bool = false,
+    left: fn() -> int = style_int_default,
+    left__set: bool = false,
+    z_index: fn() -> int = style_int_default,
+    z_index__set: bool = false,
+    align_self: fn() -> int = style_int_default,
+    align_self__set: bool = false,
+    hover_fade: bool = false,
+    on_click: fn() = noop,
+    on_click__set: bool = false,
+    on_mouse_down: fn(MouseEvent) = noop_mouse,
+    on_mouse_down__set: bool = false,
+    on_mouse_up: fn(MouseEvent) = noop_mouse,
+    on_mouse_up__set: bool = false,
+    on_key_down: fn(KeyEvent) = noop_key,
+    on_key_down__set: bool = false,
+    on_key_up: fn(KeyEvent) = noop_key,
+    on_key_up__set: bool = false,
+    on_key_press: fn(KeyEvent) = noop_key,
+    on_key_press__set: bool = false,
+}
+
+struct TextProps {
+    color: fn() -> string = style_str_default,
+    color__set: bool = false,
+    font: fn() -> int = style_int_default,
+    font__set: bool = false,
+    width: fn() -> int = style_int_default,
+    width__set: bool = false,
+    grow: fn() -> int = style_int_default,
+    grow__set: bool = false,
+    shrink: fn() -> int = style_int_default,
+    shrink__set: bool = false,
+    min_w: fn() -> int = style_int_default,
+    min_w__set: bool = false,
+    pad_x: fn() -> int = style_int_default,
+    pad_x__set: bool = false,
+    pad_y: fn() -> int = style_int_default,
+    pad_y__set: bool = false,
+    pad_left: fn() -> int = style_int_default,
+    pad_left__set: bool = false,
+    pad_right: fn() -> int = style_int_default,
+    pad_right__set: bool = false,
+    wrap: bool = false,
+    hover_fade: bool = false,
+}
+
+struct BtnProps {
+    color: fn() -> string = style_str_default,
+    color__set: bool = false,
+    background: fn() -> string = style_str_default,
+    background__set: bool = false,
+    font: fn() -> int = style_int_default,
+    font__set: bool = false,
+    padding: fn() -> int = style_int_default,
+    padding__set: bool = false,
+    pad_x: fn() -> int = style_int_default,
+    pad_x__set: bool = false,
+    pad_y: fn() -> int = style_int_default,
+    pad_y__set: bool = false,
+    radius: fn() -> int = style_int_default,
+    radius__set: bool = false,
+    size: fn() -> int = style_int_default,
+    size__set: bool = false,
+    width: fn() -> int = style_int_default,
+    width__set: bool = false,
+    height: fn() -> int = style_int_default,
+    height__set: bool = false,
+    shrink: fn() -> int = style_int_default,
+    shrink__set: bool = false,
+    border: fn() -> int = style_int_default,
+    border__set: bool = false,
+    border_color: fn() -> string = style_str_default,
+    border_color__set: bool = false,
+    enabled: bool = true,
+    on_click: fn() = noop,
+    on_click__set: bool = false,
+}
+
+struct GridProps {
+    config: GridConfig = GridConfig {},
+    columns: int = -1,
+    gap: int = -1,
+    padding: int = -1,
+}
+
+struct InputProps {
+    placeholder: string = "",
+    width: fn() -> int = style_int_default,
+    width__set: bool = false,
+    grow: fn() -> int = style_int_default,
+    grow__set: bool = false,
+    font: fn() -> int = style_int_default,
+    font__set: bool = false,
+    background: fn() -> string = style_str_default,
+    background__set: bool = false,
+    color: fn() -> string = style_str_default,
+    color__set: bool = false,
+    padding: fn() -> int = style_int_default,
+    padding__set: bool = false,
+    pad_x: fn() -> int = style_int_default,
+    pad_x__set: bool = false,
+    pad_y: fn() -> int = style_int_default,
+    pad_y__set: bool = false,
+    radius: fn() -> int = style_int_default,
+    radius__set: bool = false,
+    border: fn() -> int = style_int_default,
+    border__set: bool = false,
+    border_color: fn() -> string = style_str_default,
+    border_color__set: bool = false,
+    bind: Signal<string> = Signal { id: 0 },
+    bind__set: bool = false,
+    on_key_down: fn(KeyEvent) = noop_key,
+    on_key_down__set: bool = false,
+    on_key_up: fn(KeyEvent) = noop_key,
+    on_key_up__set: bool = false,
+    on_key_press: fn(KeyEvent) = noop_key,
+    on_key_press__set: bool = false,
+}
+
+// --- shared prop application ---
+
+/// Apply the container props shared by every `Box` (and the widgets built on
+/// it). Each passed style prop becomes a tracked effect on the node; `bind_style_*`
+/// runs it now and re-applies the setter when a signal the thunk reads changes.
+/// `gap` and `spacing` share one slot — when both are passed, `gap` wins,
+/// exactly like the old plain-value props.
+fn apply_box(node: Node, p: BoxProps) -> Node {
+    let n = node
+    // `style` first so the flat fields win.
+    if p.style__set {
+        let t = p.style
+        bind_style_b(n, t)
+    }
+    // `align_direction = DIRECTION.Row | DIRECTION.Column` replaces the old
+    // Row/Column widgets. Row's default cross-axis alignment is center,
+    // Column's is stretch — applied only when `align_items` was not passed.
+    if p.align_direction__set {
+        let t = p.align_direction
+        let m = if p.align_items__set { StyleInt.DirOnly } else { StyleInt.DirDefaultAlign }
+        bind_style_i(n, m, t)
+    }
+    if p.width__set {
+        let t = p.width
+        bind_style_i(n, StyleInt.W, t)
+    }
+    if p.height__set {
+        let t = p.height
+        bind_style_i(n, StyleInt.H, t)
+    }
+    if p.padding__set {
+        let t = p.padding
+        bind_style_i(n, StyleInt.Pad, t)
+    }
+    if p.flex__set {
+        let t = p.flex
+        bind_style_i(n, StyleInt.Flex, t)
+    }
+    if p.radius__set {
+        let t = p.radius
+        bind_style_i(n, StyleInt.Radius, t)
+    }
+    if p.font__set {
+        let t = p.font
+        bind_style_i(n, StyleInt.Font, t)
+    }
+    if p.gap__set {
+        let t = p.gap
+        bind_style_i(n, StyleInt.Gap, t)
+    } else if p.spacing__set {
+        let t = p.spacing
+        bind_style_i(n, StyleInt.Gap, t)
+    }
+    if p.background__set {
+        let t = p.background
+        bind_style_s(n, StyleStr.Bg, t)
+    }
+    if p.color__set {
+        let t = p.color
+        bind_style_s(n, StyleStr.Fg, t)
+    }
+    if p.size__set {
+        let t = p.size
+        bind_style_i(n, StyleInt.SizePx, t)
+    }
+    if p.pad_x__set {
+        let t = p.pad_x
+        bind_style_i(n, StyleInt.PadX, t)
+    }
+    if p.pad_y__set {
+        let t = p.pad_y
+        bind_style_i(n, StyleInt.PadY, t)
+    }
+    if p.pad_top__set {
+        let t = p.pad_top
+        bind_style_i(n, StyleInt.PadTop, t)
+    }
+    if p.pad_right__set {
+        let t = p.pad_right
+        bind_style_i(n, StyleInt.PadRight, t)
+    }
+    if p.pad_bottom__set {
+        let t = p.pad_bottom
+        bind_style_i(n, StyleInt.PadBottom, t)
+    }
+    if p.pad_left__set {
+        let t = p.pad_left
+        bind_style_i(n, StyleInt.PadLeft, t)
+    }
+    if p.margin__set {
+        let t = p.margin
+        bind_style_i(n, StyleInt.Margin, t)
+    }
+    if p.border__set {
+        let t = p.border
+        bind_style_i(n, StyleInt.Border, t)
+    }
+    if p.border_color__set {
+        let t = p.border_color
+        bind_style_s(n, StyleStr.BorderColor, t)
+    }
+    if p.overflow__set {
+        let t = p.overflow
+        bind_style_i(n, StyleInt.Overflow, t)
+    }
+    if p.grow__set {
+        let t = p.grow
+        bind_style_i(n, StyleInt.Grow, t)
+    }
+    if p.shrink__set {
+        let t = p.shrink
+        bind_style_i(n, StyleInt.Shrink, t)
+    }
+    if p.min_w__set {
+        let t = p.min_w
+        bind_style_i(n, StyleInt.MinW, t)
+    }
+    if p.max_w__set {
+        let t = p.max_w
+        bind_style_i(n, StyleInt.MaxW, t)
+    }
+    if p.min_h__set {
+        let t = p.min_h
+        bind_style_i(n, StyleInt.MinH, t)
+    }
+    if p.max_h__set {
+        let t = p.max_h
+        bind_style_i(n, StyleInt.MaxH, t)
+    }
+    if p.opacity__set {
+        let t = p.opacity
+        bind_style_i(n, StyleInt.Opacity, t)
+    }
+    if p.position__set {
+        let t = p.position
+        bind_style_i(n, StyleInt.Position, t)
+    }
+    if p.top__set {
+        let t = p.top
+        bind_style_i(n, StyleInt.PinTop, t)
+    }
+    if p.left__set {
+        let t = p.left
+        bind_style_i(n, StyleInt.PinLeft, t)
+    }
+    if p.z_index__set {
+        let t = p.z_index
+        bind_style_i(n, StyleInt.ZIndex, t)
+    }
+    if p.align_self__set {
+        let t = p.align_self
+        bind_style_i(n, StyleInt.AlignSelf, t)
+    }
+    if p.hover_fade {
+        hover_fade(n)
+    }
+    if p.align_items__set {
+        let t = p.align_items
+        bind_style_i(n, StyleInt.Align, t)
+    }
+    if p.justify_content__set {
+        let t = p.justify_content
+        bind_style_i(n, StyleInt.Justify, t)
+    }
+    if p.on_click__set {
+        on_click(n, p.on_click)
+    }
+    if p.on_mouse_down__set {
+        arena.nodes[n.id].mouse_down_fn = add_mouse_fn(p.on_mouse_down)
+    }
+    if p.on_mouse_up__set {
+        arena.nodes[n.id].mouse_up_fn = add_mouse_fn(p.on_mouse_up)
+    }
+    if p.on_key_down__set {
+        arena.nodes[n.id].key_down_fn = add_key_fn(p.on_key_down)
+    }
+    if p.on_key_up__set {
+        arena.nodes[n.id].key_up_fn = add_key_fn(p.on_key_up)
+    }
+    if p.on_key_press__set {
+        arena.nodes[n.id].key_press_fn = add_key_fn(p.on_key_press)
+    }
+    return n
+}
+
+// --- reactive text ---
+
+/// One effect per bound label. `txt_dispatch` is registered as the handler for
+/// all of them; the effect id that is currently running selects the slot, so
+/// no closure has to capture the node or the thunk.
+let mut txt_eids: []int = []int {}
+let mut txt_nodes: []int = []int {}
+/// `body` is a parameter, which Yuga drops when the widget returns; `keep_txt`
+/// snapshots its captured env so the stored thunk stays valid.
+let mut txt_bodies: []fn() -> string = []fn() -> string {}
+
+fn keep_txt(h: fn() -> string) -> fn() -> string {}
+
+/// Re-render the single label whose effect is running. `track.run` pushes the
+/// effect id before invoking, and `get` records reads against it, so each
+/// label depends only on the signals its own thunk touched.
+fn txt_dispatch() {
+    if track.stack.len == 0 {
+        return
+    }
+    let eid = track.stack[track.stack.len - 1]
+    let n = txt_eids.len
+    for i in 0..n {
+        if txt_eids[i] == eid {
+            arena.nodes[txt_nodes[i]].text = txt_bodies[i]()
+            return
+        }
+    }
+}
+
+/// Paint `node`'s text from `body`, re-running only this node when a signal
+/// `body` read changes.
+fn bind_text(node: Node, body: fn() -> string) -> Node {
+    arena.ensure()
+    let eid = track.alloc(platform.plat_intern_fn(txt_dispatch), node.id)
+    push(txt_eids, eid)
+    push(txt_nodes, node.id)
+    push(txt_bodies, keep_txt(body))
+    track.run(eid)
+    return node
+}
+
+// --- reactive style props ---
+//
+// A style prop is a thunk (`fn() -> int` / `fn() -> string` / `fn() -> BoxStyle`):
+// the compiler auto-wraps a plain value, so `color = "red"` and
+// `color = if sel { accent() } else { muted() }` behave identically. Each
+// widget registers the thunk as a tracked effect on its node, and a `get(sig)`
+// inside it re-runs just that prop — re-applying its setter — when `sig`
+// changes. This is the declarative replacement for `styled(node, fn() {
+// paint(node) })` closures: no node mutation after build, everything rides in
+// the props. `mode` picks the setter (see the `StyleStr` / `StyleInt` enums);
+// the sentinel checks mirror the old plain-value props (`> 0` / `>= 0`).
+
+/// Default thunks for props the caller did not pass. Their values are never
+/// consulted — an unpassed prop registers no effect — so one default per type
+/// is enough.
+fn style_str_default() -> string {
+    return ""
+}
+fn style_int_default() -> int {
+    return 0
+}
+fn style_box_default() -> BoxStyle {
+    return BoxStyle {}
+}
+
+/// Main-axis direction for `Box(align_direction = ...)`. Values are the
+/// engine's `dir` codes — `DIRECTION.Row` is a plain `int` constant.
+enum DIRECTION {
+    Row = 0,
+    Column = 1,
+}
+
+/// Cross-axis / main-axis alignment for `align_items` / `justify_content`.
+/// Values mirror `zeuscore/geometry.yuga`'s `flex_*` constants.
+enum ALIGN {
+    Start = 0,
+    Center = 1,
+    End = 2,
+    Between = 3,
+    Around = 4,
+    Evenly = 5,
+    Stretch = 6,
+}
+
+/// Mode codes for `bind_style_s`.
+enum StyleStr {
+    Fg = 0,
+    Bg = 1,
+    BorderColor = 2,
+}
+
+/// Mode codes for `bind_style_i`. `Border` applies unconditionally so a
+/// reactive `border = if sel { 1 } else { 0 }` can clear the border; every
+/// other mode keeps its sentinel check. `DirDefaultAlign` also applies the
+/// row/column default cross-axis alignment (used when `align_items` was not
+/// passed); `DirOnly` is used when `align_items` was passed explicitly.
+enum StyleInt {
+    W = 0,
+    H = 1,
+    Pad = 2,
+    Radius = 3,
+    Font = 4,
+    SizePx = 5,
+    Grow = 6,
+    Shrink = 7,
+    MinW = 8,
+    MaxW = 9,
+    MinH = 10,
+    MaxH = 11,
+    Opacity = 12,
+    Position = 13,
+    PinTop = 14,
+    PinLeft = 15,
+    ZIndex = 16,
+    AlignSelf = 17,
+    Margin = 18,
+    PadX = 19,
+    PadY = 20,
+    PadTop = 21,
+    PadRight = 22,
+    PadBottom = 23,
+    PadLeft = 24,
+    Gap = 25,
+    Border = 26,
+    Align = 27,
+    Justify = 28,
+    Overflow = 29,
+    Flex = 30,
+    DirDefaultAlign = 31,
+    DirOnly = 32,
+}
+
+let mut sty_eids: []int = []int {}
+let mut sty_nodes: []int = []int {}
+/// 0 = string body, 1 = int body, 2 = BoxStyle body.
+let mut sty_kinds: []int = []int {}
+let mut sty_modes: []int = []int {}
+/// Index of this row's body in its kind's table: each body table holds only
+/// its own kind's entries, so rows cannot share one index.
+let mut sty_idxs: []int = []int {}
+let mut sty_bodies_s: []fn() -> string = []fn() -> string {}
+let mut sty_bodies_i: []fn() -> int = []fn() -> int {}
+let mut sty_bodies_b: []fn() -> BoxStyle = []fn() -> BoxStyle {}
+
+fn keep_sty_s(h: fn() -> string) -> fn() -> string {}
+fn keep_sty_i(h: fn() -> int) -> fn() -> int {}
+fn keep_sty_b(h: fn() -> BoxStyle) -> fn() -> BoxStyle {}
+
+/// One dispatch for every style effect: `track.run` pushes the effect id before
+/// invoking, so the row selects the node, the body thunk, and the setter.
+fn sty_dispatch() {
+    if track.stack.len == 0 {
+        return
+    }
+    let eid = track.stack[track.stack.len - 1]
+    let n = sty_eids.len
+    for i in 0..n {
+        if sty_eids[i] == eid {
+            let id = sty_nodes[i]
+            let m = sty_modes[i]
+            let ix = sty_idxs[i]
+            if sty_kinds[i] == 0 {
+                sty_apply_s(id, m, sty_bodies_s[ix]())
+            } else if sty_kinds[i] == 1 {
+                sty_apply_i(id, m, sty_bodies_i[ix]())
+            } else {
+                sty_apply_b(id, sty_bodies_b[ix]())
+            }
+            return
+        }
+    }
+}
+
+fn sty_apply_s(id: int, m: int, v: string) {
+    let c = hex(v)
+    if c >= 0 {
+        if m == StyleStr.Fg {
+            style.set_fg(id, c)
+        } else if m == StyleStr.Bg {
+            style.set_bg(id, c)
+        } else if m == StyleStr.BorderColor {
+            style.set_border_color(id, c)
+        }
+    }
+}
+
+fn sty_apply_i(id: int, m: int, v: int) {
+    if m == StyleInt.Border {
+        style.set_border(id, v)
+    } else if m == StyleInt.W {
+        if v >= 0 {
+            style.set_w(id, v)
+        }
+    } else if m == StyleInt.H {
+        if v >= 0 {
+            style.set_h(id, v)
+        }
+    } else if m == StyleInt.Pad {
+        if v > 0 {
+            style.set_pad(id, v)
+        }
+    } else if m == StyleInt.Radius {
+        if v > 0 {
+            style.set_radius(id, v)
+        }
+    } else if m == StyleInt.Font {
+        if v > 0 {
+            style.set_font(id, v)
+        }
+    } else if m == StyleInt.SizePx {
+        if v > 0 {
+            style.set_size_px(id, v)
+        }
+    } else if m == StyleInt.Grow || m == StyleInt.Flex {
+        if v > 0 {
+            style.set_grow(id, v)
+        }
+    } else if m == StyleInt.Shrink {
+        if v >= 0 {
+            style.set_shrink(id, v)
+        }
+    } else if m == StyleInt.MinW {
+        if v >= 0 {
+            style.set_min_w(id, v)
+        }
+    } else if m == StyleInt.MaxW {
+        if v >= 0 {
+            style.set_max_w(id, v)
+        }
+    } else if m == StyleInt.MinH {
+        if v >= 0 {
+            style.set_min_h(id, v)
+        }
+    } else if m == StyleInt.MaxH {
+        if v >= 0 {
+            style.set_max_h(id, v)
+        }
+    } else if m == StyleInt.Opacity {
+        if v >= 0 {
+            style.set_opacity(id, v)
+        }
+    } else if m == StyleInt.Position {
+        if v >= 0 {
+            style.set_position(id, v)
+        }
+    } else if m == StyleInt.PinTop {
+        if v >= 0 {
+            style.set_pin_top(id, v)
+        }
+    } else if m == StyleInt.PinLeft {
+        if v >= 0 {
+            style.set_pin_left(id, v)
+        }
+    } else if m == StyleInt.ZIndex {
+        if v > 0 {
+            style.set_z_index(id, v)
+        }
+    } else if m == StyleInt.AlignSelf {
+        if v >= 0 {
+            style.set_align_self(id, v)
+        }
+    } else if m == StyleInt.Margin {
+        if v > 0 {
+            style.set_margin(id, v)
+        }
+    } else if m == StyleInt.PadX {
+        if v > 0 {
+            style.set_pad_x(id, v)
+        }
+    } else if m == StyleInt.PadY {
+        if v > 0 {
+            style.set_pad_y(id, v)
+        }
+    } else if m == StyleInt.PadTop {
+        if v > 0 {
+            style.set_pad_top(id, v)
+        }
+    } else if m == StyleInt.PadRight {
+        if v > 0 {
+            style.set_pad_right(id, v)
+        }
+    } else if m == StyleInt.PadBottom {
+        if v > 0 {
+            style.set_pad_bottom(id, v)
+        }
+    } else if m == StyleInt.PadLeft {
+        if v > 0 {
+            style.set_pad_left(id, v)
+        }
+    } else if m == StyleInt.Gap {
+        if v > 0 {
+            style.set_gap(id, v)
+        }
+    } else if m == StyleInt.Align {
+        if v >= 0 {
+            style.set_align(id, v)
+        }
+    } else if m == StyleInt.Justify {
+        if v >= 0 {
+            style.set_justify(id, v)
+        }
+    } else if m == StyleInt.Overflow {
+        if v >= 0 {
+            style.set_overflow(id, v)
+        }
+    } else if m == StyleInt.DirDefaultAlign || m == StyleInt.DirOnly {
+        // `align_direction = DIRECTION.Row | DIRECTION.Column`. Row's default
+        // cross-axis alignment is center, Column's is stretch — applied only
+        // when `align_items` was not passed.
+        if v == DIRECTION.Row {
+            style.set_dir(id, 0)
+            if m == StyleInt.DirDefaultAlign {
+                style.set_align(id, ALIGN.Center)
+            }
+        } else if v == DIRECTION.Column {
+            style.set_dir(id, 1)
+            if m == StyleInt.DirDefaultAlign {
+                style.set_align(id, ALIGN.Stretch)
+            }
+        }
+    }
+}
+
+fn sty_apply_b(id: int, s: BoxStyle) {
+    if s.width >= 0 {
+        style.set_w(id, s.width)
+    }
+    if s.height >= 0 {
+        style.set_h(id, s.height)
+    }
+    if s.padding > 0 {
+        style.set_pad(id, s.padding)
+    }
+    if s.flex > 0 {
+        style.set_grow(id, s.flex)
+    }
+    let bg = hex(s.background)
+    if bg >= 0 {
+        style.set_bg(id, bg)
+    }
+}
+
+/// Register `body` as a tracked style effect on `node`: run it now (applying
+/// the value) and again whenever a signal `body` reads changes.
+fn bind_style_s(node: Node, mode: int, body: fn() -> string) -> Node {
+    arena.ensure()
+    let eid = track.alloc(platform.plat_intern_fn(sty_dispatch), node.id)
+    push(sty_eids, eid)
+    push(sty_nodes, node.id)
+    push(sty_kinds, 0)
+    push(sty_modes, mode)
+    push(sty_bodies_s, keep_sty_s(body))
+    push(sty_idxs, sty_bodies_s.len - 1)
+    track.run(eid)
+    return node
+}
+
+fn bind_style_i(node: Node, mode: int, body: fn() -> int) -> Node {
+    arena.ensure()
+    let eid = track.alloc(platform.plat_intern_fn(sty_dispatch), node.id)
+    push(sty_eids, eid)
+    push(sty_nodes, node.id)
+    push(sty_kinds, 1)
+    push(sty_modes, mode)
+    push(sty_bodies_i, keep_sty_i(body))
+    push(sty_idxs, sty_bodies_i.len - 1)
+    track.run(eid)
+    return node
+}
+
+fn bind_style_b(node: Node, body: fn() -> BoxStyle) -> Node {
+    arena.ensure()
+    let eid = track.alloc(platform.plat_intern_fn(sty_dispatch), node.id)
+    push(sty_eids, eid)
+    push(sty_nodes, node.id)
+    push(sty_kinds, 2)
+    push(sty_modes, 0)
+    push(sty_bodies_b, keep_sty_b(body))
+    push(sty_idxs, sty_bodies_b.len - 1)
+    track.run(eid)
+    return node
+}
+
+// --- widgets ---
+
+/// Text. `body` is a thunk, so `Text("Count: {{count.get()}}")` re-runs only
+/// this label's effect when `count` changes — no parent rebuild. Style props
+/// are thunks too: `Text("x", color = if sel { accent() } else { muted() })`
+/// re-applies just the colour when `sel` changes.
+fn Text(body: fn() -> string, p: TextProps) -> Node {
+    let n = ui_emit(raw_label(""))
+    if p.color__set {
+        let t = p.color
+        bind_style_s(n, StyleStr.Fg, t)
+    }
+    if p.font__set {
+        let t = p.font
+        bind_style_i(n, StyleInt.Font, t)
+    }
+    if p.width__set {
+        let t = p.width
+        bind_style_i(n, StyleInt.W, t)
+    }
+    if p.grow__set {
+        let t = p.grow
+        bind_style_i(n, StyleInt.Grow, t)
+    }
+    if p.shrink__set {
+        let t = p.shrink
+        bind_style_i(n, StyleInt.Shrink, t)
+    }
+    if p.min_w__set {
+        let t = p.min_w
+        bind_style_i(n, StyleInt.MinW, t)
+    }
+    if p.pad_x__set {
+        let t = p.pad_x
+        bind_style_i(n, StyleInt.PadX, t)
+    }
+    if p.pad_y__set {
+        let t = p.pad_y
+        bind_style_i(n, StyleInt.PadY, t)
+    }
+    if p.pad_left__set {
+        let t = p.pad_left
+        bind_style_i(n, StyleInt.PadLeft, t)
+    }
+    if p.pad_right__set {
+        let t = p.pad_right
+        bind_style_i(n, StyleInt.PadRight, t)
+    }
+    if p.wrap {
+        style.set_flex_wrap(n.id)
+    }
+    if p.hover_fade {
+        hover_fade(n)
+    }
+    return bind_text(n, body)
+}
+
+/// Clickable button. `Button("Save", on_click = fn() => save())`.
+fn Button(body: fn() -> string, p: BtnProps) -> Node {
+    let n = ui_emit(raw_button(""))
+    if p.color__set {
+        let t = p.color
+        bind_style_s(n, StyleStr.Fg, t)
+    }
+    if p.background__set {
+        let t = p.background
+        bind_style_s(n, StyleStr.Bg, t)
+    }
+    if p.font__set {
+        let t = p.font
+        bind_style_i(n, StyleInt.Font, t)
+    }
+    if p.padding__set {
+        let t = p.padding
+        bind_style_i(n, StyleInt.Pad, t)
+    }
+    if p.pad_x__set {
+        let t = p.pad_x
+        bind_style_i(n, StyleInt.PadX, t)
+    }
+    if p.pad_y__set {
+        let t = p.pad_y
+        bind_style_i(n, StyleInt.PadY, t)
+    }
+    if p.radius__set {
+        let t = p.radius
+        bind_style_i(n, StyleInt.Radius, t)
+    }
+    if p.size__set {
+        let t = p.size
+        bind_style_i(n, StyleInt.SizePx, t)
+    }
+    if p.width__set {
+        let t = p.width
+        bind_style_i(n, StyleInt.W, t)
+    }
+    if p.height__set {
+        let t = p.height
+        bind_style_i(n, StyleInt.H, t)
+    }
+    if p.shrink__set {
+        let t = p.shrink
+        bind_style_i(n, StyleInt.Shrink, t)
+    }
+    if p.border__set {
+        let t = p.border
+        bind_style_i(n, StyleInt.Border, t)
+    }
+    if p.border_color__set {
+        let t = p.border_color
+        bind_style_s(n, StyleStr.BorderColor, t)
+    }
+    if p.on_click__set && p.enabled {
+        on_click(n, p.on_click)
+    }
+    if !p.enabled {
+        style.set_opacity(n.id, 50)
+    }
+    return bind_text(n, body)
+}
+
+/// Generic container. Children come from the trailing block. Direction is
+/// `align_direction = DIRECTION.Row` or `DIRECTION.Column` — there is no
+/// separate `Row` / `Column` widget.
+fn Box(p: BoxProps) -> Node {
+    return apply_box(ui_emit(raw_box()), p)
+}
+
+/// 2D grid. `Grid(config = GridConfig(columns = 3, gap = 12))` or the flat
+/// `Grid(columns = 3, gap = 12)`.
+fn Grid(p: GridProps) -> Node {
+    let mut cols = p.config.columns
+    let mut g = p.config.gap
+    let mut pad = p.config.padding
+    if p.columns >= 0 {
+        cols = p.columns
+    }
+    if p.gap >= 0 {
+        g = p.gap
+    }
+    if p.padding >= 0 {
+        pad = p.padding
+    }
+    let id = arena.alloc_node(2)
+    arena.nodes[id].grid_cols = cols
+    arena.nodes[id].gap = g
+    let n = ui_emit(nd(id))
+    if pad > 0 {
+        style.set_pad(n.id, pad)
+    }
+    return n
+}
+
+/// Single-line text input. `Input(bind = sig)` writes each edit back into
+/// `sig`; reading `sig` elsewhere re-runs just that dependent.
+fn Input(p: InputProps) -> Node {
+    let n = ui_emit(raw_input(p.placeholder))
+    if p.width__set {
+        let t = p.width
+        bind_style_i(n, StyleInt.W, t)
+    }
+    if p.grow__set {
+        let t = p.grow
+        bind_style_i(n, StyleInt.Grow, t)
+    }
+    if p.color__set {
+        let t = p.color
+        bind_style_s(n, StyleStr.Fg, t)
+    }
+    if p.pad_x__set {
+        let t = p.pad_x
+        bind_style_i(n, StyleInt.PadX, t)
+    }
+    if p.pad_y__set {
+        let t = p.pad_y
+        bind_style_i(n, StyleInt.PadY, t)
+    }
+    if p.radius__set {
+        let t = p.radius
+        bind_style_i(n, StyleInt.Radius, t)
+    }
+    if p.border__set {
+        let t = p.border
+        bind_style_i(n, StyleInt.Border, t)
+    }
+    if p.border_color__set {
+        let t = p.border_color
+        bind_style_s(n, StyleStr.BorderColor, t)
+    }
+    if p.font__set {
+        let t = p.font
+        bind_style_i(n, StyleInt.Font, t)
+    }
+    if p.background__set {
+        let t = p.background
+        bind_style_s(n, StyleStr.Bg, t)
+    }
+    if p.padding__set {
+        let t = p.padding
+        bind_style_i(n, StyleInt.Pad, t)
+    }
+    if p.bind__set {
+        arena.nodes[n.id].bind_str_sig = p.bind.id
+        // Two-way binding. A buffer with text (a rebuild after typing) is
+        // authoritative: sync it out. Otherwise seed the field with the
+        // signal's value — never the placeholder, which is what `input_shown`
+        // returns for an empty field. Every edit writes back via `after_edit`.
+        if arena.nodes[n.id].edit_slot < 0 {
+            arena.stamp_edits()
+        }
+        let slot = arena.nodes[n.id].edit_slot
+        if slot >= 0 && platform.plat_edit_len(slot) > 0 {
+            set(p.bind, platform.plat_edit_text(slot))
+        } else if slot >= 0 {
+            platform.plat_edit_set(slot, p.bind.get())
+        }
+    }
+    if p.on_key_down__set {
+        arena.nodes[n.id].key_down_fn = add_key_fn(p.on_key_down)
+    }
+    if p.on_key_up__set {
+        arena.nodes[n.id].key_up_fn = add_key_fn(p.on_key_up)
+    }
+    if p.on_key_press__set {
+        arena.nodes[n.id].key_press_fn = add_key_fn(p.on_key_press)
+    }
+    return n
+}
+
+// --- entry point ---
+
+/// Open a window and build the tree declaratively, then run.
+///
+/// ```
+/// fn main() {
+///     App("Counter", 360, 240, fn() { Counter() })
+/// }
+/// ```
+fn App(title: string, width: int, height: int, build: fn()) {
+    init()
+    window(title, width, height)
+    ui_reset()
+    build()
+    run(ui_root())
+}
+
+// --- declarative kit: controls and chrome (ZEUS_SPEC.md examples) ---
+// Struct names are global across modules, so these props structs are named
+// to avoid the UI kit's (`ProgressProps`, `SliderProps`, `ScrollProps`,
+// `DialogProps` all exist there) — the same reason `BtnProps` is not
+// `ButtonProps`. Users never write these names: named arguments build them.
+
+struct BarProps {
+    sig: Signal<int> = Signal { id: 0 },
+    sig__set: bool = false,
+    height: fn() -> int = style_int_default,
+    height__set: bool = false,
+    radius: fn() -> int = style_int_default,
+    radius__set: bool = false,
+    background: fn() -> string = style_str_default,
+    background__set: bool = false,
+    color: fn() -> string = style_str_default,
+    color__set: bool = false,
+}
+
+/// Horizontal bar whose fill tracks `sig` (0–100). Track colour is
+/// `background`, fill colour is `color`.
+fn Progress(p: BarProps) -> Node {
+    let n = ui_emit(raw_progress())
+    style.set_grow(n.id, 1)
+    style.set_h(n.id, 4)
+    style.set_radius(n.id, 2)
+    style.set_bg(n.id, hex("#313244"))
+    style.set_fg(n.id, hex("#89b4fa"))
+    if p.height__set {
+        let t = p.height
+        bind_style_i(n, StyleInt.H, t)
+    }
+    if p.radius__set {
+        let t = p.radius
+        bind_style_i(n, StyleInt.Radius, t)
+    }
+    if p.background__set {
+        let t = p.background
+        bind_style_s(n, StyleStr.Bg, t)
+    }
+    if p.color__set {
+        let t = p.color
+        bind_style_s(n, StyleStr.Fg, t)
+    }
+    if p.sig__set {
+        bind(n, p.sig)
+    }
+    return n
+}
+
+struct ToggleProps {
+    sig: Signal<int> = Signal { id: 0 },
+    sig__set: bool = false,
+    width: fn() -> int = style_int_default,
+    width__set: bool = false,
+    height: fn() -> int = style_int_default,
+    height__set: bool = false,
+    radius: fn() -> int = style_int_default,
+    radius__set: bool = false,
+    background: fn() -> string = style_str_default,
+    background__set: bool = false,
+    color: fn() -> string = style_str_default,
+    color__set: bool = false,
+    border_color: fn() -> string = style_str_default,
+    border_color__set: bool = false,
+}
+
+/// Switch. Clicking or pressing Space/Enter flips `sig` between 0 and 1.
+fn Toggle(p: ToggleProps) -> Node {
+    let n = ui_emit(raw_toggle())
+    style.set_w(n.id, 32)
+    style.set_h(n.id, 18)
+    style.set_radius(n.id, 9)
+    style.set_bg(n.id, hex("#313244"))
+    style.set_fg(n.id, hex("#89b4fa"))
+    style.set_border_color(n.id, hex("#cdd6f4"))
+    if p.width__set {
+        let t = p.width
+        bind_style_i(n, StyleInt.W, t)
+    }
+    if p.height__set {
+        let t = p.height
+        bind_style_i(n, StyleInt.H, t)
+    }
+    if p.radius__set {
+        let t = p.radius
+        bind_style_i(n, StyleInt.Radius, t)
+    }
+    if p.background__set {
+        let t = p.background
+        bind_style_s(n, StyleStr.Bg, t)
+    }
+    if p.color__set {
+        let t = p.color
+        bind_style_s(n, StyleStr.Fg, t)
+    }
+    if p.border_color__set {
+        let t = p.border_color
+        bind_style_s(n, StyleStr.BorderColor, t)
+    }
+
+    if p.sig__set {
+        bind(n, p.sig)
+        on_click_toggle(n, p.sig)
+        key(n, "space", "toggle.press")
+        key(n, "enter", "toggle.press")
+        on_key_toggle(n, "toggle.press", p.sig)
+    }
+    return n
+}
+
+struct CheckProps {
+    sig: Signal<int> = Signal { id: 0 },
+    sig__set: bool = false,
+    width: fn() -> int = style_int_default,
+    width__set: bool = false,
+    height: fn() -> int = style_int_default,
+    height__set: bool = false,
+    radius: fn() -> int = style_int_default,
+    radius__set: bool = false,
+    background: fn() -> string = style_str_default,
+    background__set: bool = false,
+    color: fn() -> string = style_str_default,
+    color__set: bool = false,
+    border_color: fn() -> string = style_str_default,
+    border_color__set: bool = false,
+}
+
+/// Checkbox square. Clicking or pressing Space/Enter flips `sig`.
+fn Check(p: CheckProps) -> Node {
+    let n = ui_emit(raw_check(""))
+    style.set_w(n.id, 16)
+    style.set_h(n.id, 16)
+    style.set_radius(n.id, 4)
+    style.set_bg(n.id, hex("#313244"))
+    style.set_fg(n.id, hex("#89b4fa"))
+    style.set_border_color(n.id, hex("#cdd6f4"))
+    if p.width__set {
+        let t = p.width
+        bind_style_i(n, StyleInt.W, t)
+    }
+    if p.height__set {
+        let t = p.height
+        bind_style_i(n, StyleInt.H, t)
+    }
+    if p.radius__set {
+        let t = p.radius
+        bind_style_i(n, StyleInt.Radius, t)
+    }
+    if p.background__set {
+        let t = p.background
+        bind_style_s(n, StyleStr.Bg, t)
+    }
+    if p.color__set {
+        let t = p.color
+        bind_style_s(n, StyleStr.Fg, t)
+    }
+    if p.border_color__set {
+        let t = p.border_color
+        bind_style_s(n, StyleStr.BorderColor, t)
+    }
+
+    if p.sig__set {
+        bind(n, p.sig)
+        on_click_toggle(n, p.sig)
+        key(n, "space", "check.press")
+        key(n, "enter", "check.press")
+        on_key_toggle(n, "check.press", p.sig)
+    }
+    return n
+}
+
+struct RangeProps {
+    sig: Signal<int> = Signal { id: 0 },
+    sig__set: bool = false,
+    height: fn() -> int = style_int_default,
+    height__set: bool = false,
+    radius: fn() -> int = style_int_default,
+    radius__set: bool = false,
+    background: fn() -> string = style_str_default,
+    background__set: bool = false,
+    color: fn() -> string = style_str_default,
+    color__set: bool = false,
+    border_color: fn() -> string = style_str_default,
+    border_color__set: bool = false,
+}
+
+/// Draggable 0–100 slider writing `sig`. Arrow keys nudge it too.
+fn Slider(p: RangeProps) -> Node {
+    let n = ui_emit(raw_slider())
+    style.set_grow(n.id, 1)
+    style.set_h(n.id, 16)
+    style.set_radius(n.id, 2)
+    style.set_bg(n.id, hex("#313244"))
+    style.set_fg(n.id, hex("#89b4fa"))
+    style.set_border_color(n.id, hex("#89b4fa"))
+    if p.height__set {
+        let t = p.height
+        bind_style_i(n, StyleInt.H, t)
+    }
+    if p.radius__set {
+        let t = p.radius
+        bind_style_i(n, StyleInt.Radius, t)
+    }
+    if p.background__set {
+        let t = p.background
+        bind_style_s(n, StyleStr.Bg, t)
+    }
+    if p.color__set {
+        let t = p.color
+        bind_style_s(n, StyleStr.Fg, t)
+    }
+    if p.border_color__set {
+        let t = p.border_color
+        bind_style_s(n, StyleStr.BorderColor, t)
+    }
+    if p.sig__set {
+        bind(n, p.sig)
+        keys(n, p.sig, 0, 100)
+    }
+    return n
+}
+
+/// Elastic spacer between row/column children.
+fn Spacer() -> Node {
+    return ui_emit(raw_spacer())
+}
+
+/// One-pixel horizontal rule.
+fn Divider() -> Node {
+    let n = ui_emit(raw_box())
+    style.set_h(n.id, 1)
+    style.set_bg(n.id, hex("#313244"))
+    return n
+}
+
+struct ViewProps {
+    background: fn() -> string = style_str_default,
+    background__set: bool = false,
+    padding: fn() -> int = style_int_default,
+    padding__set: bool = false,
+    spacing: fn() -> int = style_int_default,
+    spacing__set: bool = false,
+    height: fn() -> int = style_int_default,
+    height__set: bool = false,
+}
+
+/// Vertical page scroller: the widget every app wraps its content in.
+fn Scroll(p: ViewProps) -> Node {
+    let n = ui_emit(raw_scroll())
+    if p.background__set {
+        let t = p.background
+        bind_style_s(n, StyleStr.Bg, t)
+    }
+    if p.padding__set {
+        let t = p.padding
+        bind_style_i(n, StyleInt.Pad, t)
+    }
+    if p.spacing__set {
+        let t = p.spacing
+        bind_style_i(n, StyleInt.Gap, t)
+    }
+    if p.height__set {
+        let t = p.height
+        bind_style_i(n, StyleInt.H, t)
+    }
+    return n
+}
+
+struct SvgProps {
+    markup: string = "",
+    color: fn() -> string = style_str_default,
+    color__set: bool = false,
+    size: fn() -> int = style_int_default,
+    size__set: bool = false,
+    shrink: fn() -> int = style_int_default,
+    shrink__set: bool = false,
+}
+
+/// Inline SVG glyph painted in `color`. `currentColor` in the markup takes
+/// that colour.
+fn Svg(p: SvgProps) -> Node {
+    let n = ui_emit(raw_svg(p.markup))
+    if p.size__set {
+        let t = p.size
+        bind_style_i(n, StyleInt.SizePx, t)
+    }
+    if p.color__set {
+        let t = p.color
+        bind_style_s(n, StyleStr.Fg, t)
+    }
+    if p.shrink__set {
+        let t = p.shrink
+        bind_style_i(n, StyleInt.Shrink, t)
+    }
+    return n
+}
+
+struct ModalProps {
+    title: string = "",
+    body: string = "",
+    cancel: string = "Cancel",
+    discard: string = "Discard",
+    open: Signal<int> = Signal { id: 0 },
+    open__set: bool = false,
+    // Card. `width` is what lets the body wrap instead of running on one line.
+    background: string = "",
+    border: string = "",
+    radius: int = 0,
+    width: int = 0,
+    padding: int = 0,
+    spacing: int = 0,
+    // Scrim behind the card.
+    scrim: string = "",
+    scrim_opacity: int = 0,
+    // Type. Passed in rather than hardcoded so the theme owns the palette.
+    title_color: string = "",
+    title_font: int = 0,
+    body_color: string = "",
+    body_font: int = 0,
+    // Footer buttons: ghost cancel, filled destructive.
+    cancel_color: string = "",
+    discard_background: string = "",
+    discard_color: string = "",
+    button_pad_x: int = 0,
+    button_pad_y: int = 0,
+    button_radius: int = 0,
+}
+
+/// Scrim + centred card, shown while `open` is non-zero. Clicking the scrim
+/// or either button clears it. Emits nothing when `open` is not passed.
+fn Dialog(p: ModalProps) -> Node {
+    if !p.open__set {
+        return nd(0)
+    }
+    // The overlay node centres the card and stacks it above the page.
+    let dim = ui_emit(raw_overlay())
+    style.set_dir(dim.id, 1)
+    style.set_justify(dim.id, ALIGN.Center)
+    style.set_align(dim.id, ALIGN.Center)
+    style.set_z_index(dim.id, 50)
+    show(dim, p.open)
+    on_click(dim, fn() => p.open.set(0))
+    let scrim_rgb = hex(p.scrim)
+    if scrim_rgb >= 0 {
+        style.set_bg(dim.id, scrim_rgb)
+    }
+    if p.scrim_opacity > 0 {
+        style.set_opacity(dim.id, p.scrim_opacity)
+    }
+    __ui_scope(dim, || {
+        let card = Box(align_direction = DIRECTION.Column, background = p.background, spacing = p.spacing)
+        if p.width > 0 {
+            style.set_w(card.id, p.width)
+        }
+        if p.padding > 0 {
+            style.set_pad(card.id, p.padding)
+        }
+        if p.radius > 0 {
+            style.set_radius(card.id, p.radius)
+        }
+        let edge = hex(p.border)
+        if edge >= 0 {
+            style.set_border(card.id, 1)
+            style.set_border_color(card.id, edge)
+        }
+        // The card sizes to `width`; without this the scrim would stretch it.
+        style.set_shrink(card.id, 0)
+        style.set_align(card.id, ALIGN.Stretch)
+        __ui_scope(card, || {
+            Text(p.title, color = p.title_color, font = p.title_font)
+            Text(p.body, color = p.body_color, font = p.body_font, wrap = true)
+            let foot = Box(align_direction = DIRECTION.Row, justify_content = ALIGN.End, spacing = p.spacing)
+            __ui_scope(foot, || {
+                if p.cancel.len > 0 {
+                    // Ghost: text only, no fill.
+                    let b = Button(p.cancel, color = p.cancel_color, font = p.body_font,
+                                   on_click = fn() => p.open.set(0))
+                    style.set_pad_x(b.id, p.button_pad_x)
+                    style.set_pad_y(b.id, p.button_pad_y)
+                    style.set_radius(b.id, p.button_radius)
+                }
+                if p.discard.len > 0 {
+                    let b = Button(p.discard, color = p.discard_color, background = p.discard_background,
+                                   font = p.body_font, on_click = fn() => p.open.set(0))
+                    style.set_pad_x(b.id, p.button_pad_x)
+                    style.set_pad_y(b.id, p.button_pad_y)
+                    style.set_radius(b.id, p.button_radius)
+                }
+            })
+        })
+    })
+    return dim
+}
+
+/// Current text of a node. Test/debug helper.
+fn node_text(id: int) -> string {
+    return arena.nodes[id].text
+}
+
+// --- key codes (ZEUS_SPEC.md `Key.K`) ---
+/// Key event codes. Printable keys are their ASCII code (letters lowercase,
+/// so `Key.K` is 107, the same value the old `key_k()` returned); `Key`
+/// names the rest. Compare against `KeyEvent.key` in `on_key_down` handlers:
+///
+/// ```
+/// on_key_down = fn(e: KeyEvent) {
+///     if e.ctrl && e.key == Key.K {
+///         print("Shortcut triggered!")
+///     }
+/// }
+/// ```
+enum Key {
+    Enter = 13,
+    Escape = 27,
+    Backspace = 8,
+    Tab = 9,
+    Space = 32,
+    A = 97,
+    B = 98,
+    C = 99,
+    D = 100,
+    E = 101,
+    F = 102,
+    G = 103,
+    H = 104,
+    I = 105,
+    J = 106,
+    K = 107,
+    L = 108,
+    M = 109,
+    N = 110,
+    O = 111,
+    P = 112,
+    Q = 113,
+    R = 114,
+    S = 115,
+    T = 116,
+    U = 117,
+    V = 118,
+    W = 119,
+    X = 120,
+    Y = 121,
+    Z = 122,
+}
+
+/// Legacy names for `Key.*` constants. New code writes `Key.K`.
+fn key_a() -> int {
+    return 97
+}
+fn key_k() -> int {
+    return 107
+}
+fn key_enter() -> int {
+    return 13
+}
+fn key_escape() -> int {
+    return 27
+}
+fn key_backspace() -> int {
+    return 8
+}
+fn key_tab() -> int {
+    return 9
+}
+
+/// Laid-out position of a node. Test/debug helpers.
+fn node_x(id: int) -> int {
+    return arena.nodes[id].x
+}
+fn node_y(id: int) -> int {
+    return arena.nodes[id].y
+}
+fn node_w(id: int) -> int {
+    return arena.nodes[id].w
+}
+fn node_h(id: int) -> int {
+    return arena.nodes[id].h
+}
+fn node_ew(id: int) -> int {
+    return arena.nodes[id].ew
+}
+fn node_eh(id: int) -> int {
+    return arena.nodes[id].eh
+}
+
+/// Current paint alpha (0-255) of a node. Test/debug helper.
+fn node_alpha(id: int) -> int {
+    return arena.paint_alpha(id)
+}
+fn node_fg(id: int) -> int {
+    return arena.nodes[id].fg
+}
+
+/// `i`-th child id of `node`, or 0. Lets a component reach a child it built
+/// inside a trailing block, where the handle is not returned.
+fn node_kid(id: int, i: int) -> int {
+    if id <= 0 || id >= arena.nodes.len {
+        return 0
+    }
+    if i < 0 || i >= arena.nodes[id].kids.len {
+        return 0
+    }
+    return arena.nodes[id].kids[i]
+}
+fn node_pad_l(id: int) -> int {
+    return arena.nodes[id].pad_l
+}
+fn node_pad_t(id: int) -> int {
+    return arena.nodes[id].pad_t
+}
+fn node_radius(id: int) -> int {
+    return arena.nodes[id].radius
+}

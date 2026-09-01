@@ -1,0 +1,21 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Bezel switch: line track, solid knob, `sig` flips on click or Space/Enter.
+
+struct SwitchProps {
+    sig: Signal<int> = Signal { id: 0 },
+    size: int = 1,
+}
+
+fn Switch(p: SwitchProps) -> Node {
+    return Toggle(
+        sig = p.sig,
+        width = toggle_w_of(p.size),
+        height = toggle_h_of(p.size),
+        radius = toggle_h_of(p.size) / 2,
+        background = line(),
+        color = text(),
+        border_color = on_solid()
+    )
+}

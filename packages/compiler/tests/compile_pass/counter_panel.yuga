@@ -1,24 +1,22 @@
 import "std:zeus"
 
 fn Readout(n: int) -> Node {
-    return zeus.text("").bind_n(n)
+    return bind_n(Text(""), n)
 }
 
 fn CounterPanel(initial: int) -> Node {
     let mut count = initial
-    zeus.col()
-        .class("container")
-        .children(
-            zeus.text("Counter").style(zeus.heading()),
-            zeus.row().gap(8).children(
-                zeus.button("+1").on_click(|| { count = count + 1 }),
-                Readout(count),
-            ),
-        )
+    Box(align_direction = DIRECTION.Column, padding = 16, gap = 12) {
+        Text("Counter", font = 22)
+        Box(align_direction = DIRECTION.Row, gap = 8) {
+            Button("+1", on_click = fn() => count = count + 1),
+            Readout(count)
+        }
+    }
 }
 
 fn main() {
-    zeus.app("Counter", 400, 240, || {
+    App("Counter", 400, 240, || {
         CounterPanel(0)
     })
 }

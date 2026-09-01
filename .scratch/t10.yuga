@@ -1,0 +1,14 @@
+import "std:zeus"
+import "../packages/zeus-components/theme.yuga"
+import "../packages/zeus-components/ui/actions/button.yuga"
+
+fn main() {
+    let sig = signal(0)
+    App("Smoke", 600, 900, fn() {
+        Box(align_direction = "column") {
+            Button(label = "Go", on_press = fn() => sig.set(1)),
+            button.Button(label = "Qual", on_press = fn() => sig.set(2)),
+            zeus.Button("std", on_click = fn() => sig.set(3))
+        }
+    })
+}

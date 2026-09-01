@@ -40,6 +40,14 @@ static void consume(Parser *p, TokenKind k, const char *m) {
 
 static void optional_semi(Parser *p) { match(p, TOK_SEMICOLON); }
 
+/** Statement terminator in a trailing UI block: `;` or a comma list
+ * separator. `Column { Text("a"), Text("b") }` — the trailing comma is
+ * optional. Elsewhere a `,` after a statement stays a parse error. */
+static void optional_semi_or_ui_comma(Parser *p) {
+    optional_semi(p);
+    if (p->in_ui_block) match(p, TOK_COMMA);
+}
+
 /** Text after `///` / `//!`, dropping one leading space. */
 static char *doc_line_text(Token t) {
     int skip = 3;
@@ -147,15 +155,19 @@ void parser_init(Parser *p, Lexer *l) {
     p->lex = l;
     p->had_error = 0;
     p->allow_struct_lit = 1;
+    p->zeus_alias = NULL;
+    p->in_ui_block = 0;
     p->current = lexer_next(l);
     p->peek = lexer_next(l);
 }
 
 static AstNode *parse_type(Parser *p);
 static AstNode *parse_expr(Parser *p);
+static AstNode *parse_cond_expr(Parser *p);
 static AstNode *parse_block(Parser *p);
 static AstNode *parse_stmt(Parser *p);
 static Param *parse_params(Parser *p, size_t *out);
+static int is_assign_op(TokenKind k);
 
 /** Parse a type: `&`/`&mut`, `Box<T>`, `[N]T`, `[]T`, `fn(...)`, or a name. */
 static AstNode *parse_type(Parser *p) {
@@ -249,6 +261,7 @@ static Param *parse_closure_params(Parser *p, size_t *out) {
         params[count].name = name;
         params[count].type = type;
         params[count].loc = nloc;
+        params[count].default_val = NULL;
         count++;
     } while (match(p, TOK_COMMA));
     *out = count;
@@ -317,6 +330,7 @@ static AstNode *parse_arrow_closure(Parser *p, SourceLoc loc) {
             params[count].name = name;
             params[count].type = NULL;
             params[count].loc = nloc;
+            params[count].default_val = NULL;
             count++;
         } while (match(p, TOK_COMMA));
     }
@@ -332,10 +346,188 @@ static AstNode *parse_arrow_closure(Parser *p, SourceLoc loc) {
     return n;
 }
 
+/** Anonymous `fn(a: T) => expr`, `fn(a) => { ... }`, or `fn(a) { ... }`.
+ * Same AST as `|a| { ... }`; `fn` already consumed. An `=> expr` body becomes
+ * a one-statement block, so the expression is the closure's value exactly as
+ * in `|| { expr }`. */
+static AstNode *parse_fn_closure(Parser *p, SourceLoc loc) {
+    consume(p, TOK_LPAREN, "expected ( after fn");
+    Param *params = NULL;
+    size_t count = 0;
+    if (!check(p, TOK_RPAREN)) {
+        do {
+            if (!match(p, TOK_IDENT)) {
+                error(p, "expected parameter name in fn closure");
+                break;
+            }
+            char *name = tok_text(p->previous);
+            SourceLoc nloc = p->previous.loc;
+            AstNode *type = NULL;
+            if (match(p, TOK_COLON)) type = parse_type(p);
+            params = (Param *)realloc(params, (count + 1) * sizeof(Param));
+            params[count].name = name;
+            params[count].type = type;
+            params[count].loc = nloc;
+            params[count].default_val = NULL;
+            count++;
+        } while (match(p, TOK_COMMA));
+    }
+    consume(p, TOK_RPAREN, "expected ) after fn closure parameters");
+    AstNode *ret = match(p, TOK_ARROW) ? parse_type(p) : NULL;
+
+    AstNode *body = NULL;
+    if (match(p, TOK_FAT_ARROW)) {
+        if (check(p, TOK_LBRACE)) {
+            body = parse_block(p);
+        } else {
+            SourceLoc bloc = p->current.loc;
+            AstNode *e = parse_expr(p);
+            if (is_assign_op(p->current.kind)) {
+                advance(p);
+                TokenKind op = p->previous.kind;
+                e = ast_assign(op, e, parse_expr(p), bloc);
+            } else {
+                e = ast_expr_stmt(e, bloc);
+            }
+            AstNode **stmts = (AstNode **)malloc(sizeof(AstNode *));
+            if (!stmts) yuga_fatal("out of memory");
+            stmts[0] = e;
+            body = ast_block(stmts, 1, bloc);
+        }
+    } else if (check(p, TOK_LBRACE)) {
+        body = parse_block(p);
+    } else {
+        error(p, "expected => or { after fn(...)");
+        return NULL;
+    }
+    AstNode *n = ast_fn(NULL, params, count, ret, body, loc);
+    n->kind = AST_CLOSURE;
+    return n;
+}
+
+/** Unescape `s[0,n)` (a slice of a string literal's interior) into a heap
+ * string, using the same escapes as `unescape_string`. */
+static char *unescape_range(const char *s, int n) {
+    char *out = (char *)malloc((size_t)n + 1);
+    if (!out) yuga_fatal("out of memory");
+    int j = 0;
+    for (int i = 0; i < n; i++) {
+        if (s[i] == '\\' && i + 1 < n) {
+            char c = s[++i];
+            if (c == 'n') out[j++] = '\n';
+            else if (c == 't') out[j++] = '\t';
+            else if (c == 'r') out[j++] = '\r';
+            else if (c == '"') out[j++] = '"';
+            else if (c == '\\') out[j++] = '\\';
+            else out[j++] = c;
+        } else {
+            out[j++] = s[i];
+        }
+    }
+    out[j] = '\0';
+    return out;
+}
+
+/** A string literal, splitting `{{ expr }}` holes into interpolation parts.
+ * Without a hole this is an ordinary AST_STRING. The token still includes its
+ * quotes, so the interior is `[1, len-1)`. */
+static AstNode *parse_string_literal(Parser *p, SourceLoc loc) {
+    Token t = p->previous;
+    const char *raw = t.start;
+    int len = t.len;
+    int has_hole = 0;
+    for (int i = 1; i + 1 < len - 1; i++) {
+        if (raw[i] == '{' && raw[i + 1] == '{') { has_hole = 1; break; }
+    }
+    if (!has_hole) return ast_string(unescape_string(t), loc);
+
+    AstNode **parts = NULL;
+    size_t np = 0;
+    int i = 1;
+    while (i < len - 1) {
+        int seg = i;
+        while (i < len - 1 && !(raw[i] == '{' && raw[i + 1] == '{')) {
+            i += (raw[i] == '\\' && i + 1 < len - 1) ? 2 : 1;
+        }
+        if (i > seg) {
+            parts = (AstNode **)realloc(parts, (np + 1) * sizeof(AstNode *));
+            parts[np++] = ast_string(unescape_range(raw + seg, i - seg), loc);
+        }
+        if (i >= len - 1) break;
+        i += 2; /* `{{` */
+        int estart = i;
+        while (i < len - 1 && !(raw[i] == '}' && raw[i + 1] == '}')) i++;
+        if (i >= len - 1) {
+            error(p, "unterminated {{ ... }} in string literal");
+            break;
+        }
+        char *src = yuga_dupn(raw + estart, (size_t)(i - estart));
+        i += 2; /* `}}` */
+
+        Lexer sub_lex;
+        lexer_init(&sub_lex, src, loc.file);
+        Parser sub;
+        parser_init(&sub, &sub_lex);
+        sub.zeus_alias = p->zeus_alias;
+        AstNode *e = parse_expr(&sub);
+        if (sub.had_error || !e) {
+            p->had_error = 1;
+            ast_free(e);
+        } else {
+            parts = (AstNode **)realloc(parts, (np + 1) * sizeof(AstNode *));
+            parts[np++] = e;
+        }
+        free(src);
+    }
+    return ast_interp_string(parts, np, loc);
+}
+
+/** Desugar a trailing UI block into `<zeus>.__ui_scope(node, || { ... })`.
+ * `__ui_scope` makes `node` the current parent, runs the block (each widget
+ * in it attaches to that parent), pops, and returns `node` — so the hierarchy
+ * comes from block structure with no explicit parenting. `{` not consumed. */
+static AstNode *parse_ui_trailing_block(Parser *p, AstNode *node, SourceLoc loc) {
+    if (!p->zeus_alias) {
+        error(p, "a trailing UI block needs `import \"std:zeus\"`");
+        return node;
+    }
+    int saved = p->in_ui_block;
+    p->in_ui_block = 1;
+    AstNode *body = parse_block(p);
+    p->in_ui_block = saved;
+    if (!body) return node;
+    AstNode *thunk = ast_fn(NULL, NULL, 0, NULL, body, loc);
+    thunk->kind = AST_CLOSURE;
+
+    AstNode **args = (AstNode **)malloc(2 * sizeof(AstNode *));
+    if (!args) yuga_fatal("out of memory");
+    args[0] = node;
+    args[1] = thunk;
+    AstNode *callee = ast_field(ast_ident(yuga_dupn(p->zeus_alias, strlen(p->zeus_alias)), loc),
+                                yuga_dupn("__ui_scope", 10), 0, loc);
+    return ast_call(callee, args, 2, loc);
+}
+
 /** Literals, ident, parenthesized expr, array lit, or `|x| { }` /
- * `(x) => { }` closure. */
+ * `(x) => { }` / `fn(x) => { }` closure, or `if c { e } else { e }`. */
 static AstNode *parse_primary(Parser *p) {
     SourceLoc loc = p->current.loc;
+    /* If-expression: reachable only in value position (statement-position `if`
+       is parsed by parse_stmt). The branches are blocks; each one's last
+       expression statement is its value. A missing else is an error here — an
+       `if` used as a value must yield a value on both paths. */
+    if (match(p, TOK_IF)) {
+        AstNode *cond = parse_cond_expr(p);
+        AstNode *thenb = parse_block(p);
+        AstNode *elseb = NULL;
+        if (match(p, TOK_ELSE)) {
+            if (check(p, TOK_IF)) elseb = parse_primary(p);
+            else elseb = parse_block(p);
+        } else {
+            error(p, "if used as a value requires an else branch");
+        }
+        return ast_if(cond, thenb, elseb, loc);
+    }
     if (match(p, TOK_IDENT)) {
         char *nm = tok_text(p->previous);
         if (p->allow_struct_lit && match(p, TOK_LBRACE)) {
@@ -352,6 +544,7 @@ static AstNode *parse_primary(Parser *p) {
                 fi = (FieldInit *)realloc(fi, (fc + 1) * sizeof(FieldInit));
                 fi[fc].name = fn;
                 fi[fc].init = v;
+                fi[fc].checked = 0;
                 fc++;
                 if (!match(p, TOK_COMMA)) break;
             }
@@ -368,9 +561,10 @@ static AstNode *parse_primary(Parser *p) {
         int64_t v = tok_int(p->previous);
         return ast_number(v, loc);
     }
-    if (match(p, TOK_STRING)) return ast_string(unescape_string(p->previous), loc);
+    if (match(p, TOK_STRING)) return parse_string_literal(p, loc);
     if (match(p, TOK_TRUE)) return ast_bool(1, loc);
     if (match(p, TOK_FALSE)) return ast_bool(0, loc);
+    if (match(p, TOK_FN)) return parse_fn_closure(p, loc);
     /* `|x| { ... }` / `|| { ... }`. `a || b` stays boolean or (infix). */
     if (match(p, TOK_PIPE_PIPE)) return parse_closure(p, loc, 1);
     if (match(p, TOK_PIPE)) return parse_closure(p, loc, 0);
@@ -437,12 +631,27 @@ static AstNode *parse_postfix(Parser *p, AstNode *left) {
         SourceLoc loc = p->current.loc;
         if (match(p, TOK_LPAREN)) {
             AstNode **args = NULL;
+            const char **names = NULL;
             size_t ac = 0;
+            int any_named = 0;
             if (!check(p, TOK_RPAREN)) {
                 do {
+                    /* `name = value` — a prop, gathered into the callee's
+                       trailing props struct by typecheck. `==` is not an
+                       assignment, so peeking at a single `=` is enough. */
+                    char *nm = NULL;
+                    if (check(p, TOK_IDENT) && p->peek.kind == TOK_EQ) {
+                        advance(p);
+                        nm = tok_text(p->previous);
+                        advance(p); /* '=' */
+                        any_named = 1;
+                    }
                     AstNode *a = parse_expr(p);
                     args = (AstNode **)realloc(args, (ac + 1) * sizeof(AstNode *));
-                    args[ac++] = a;
+                    names = (const char **)realloc(names, (ac + 1) * sizeof(char *));
+                    args[ac] = a;
+                    names[ac] = nm;
+                    ac++;
                 } while (match(p, TOK_COMMA) && !check(p, TOK_RPAREN));
             }
             consume(p, TOK_RPAREN, "expected )");
@@ -453,7 +662,21 @@ static AstNode *parse_postfix(Parser *p, AstNode *left) {
                 loc.col = left->loc.col;
                 loc.file = left->loc.file;
             }
-            left = ast_call(left, args, ac, loc);
+            if (any_named) {
+                left = ast_call_named(left, args, names, ac, loc);
+            } else {
+                for (size_t i = 0; i < ac; i++) free((void *)names[i]);
+                free(names);
+                left = ast_call(left, args, ac, loc);
+            }
+            /* Trailing UI block: `Column(...) { Text("a") }`. Required to open
+               on the same line as `)` so a following standalone block is still
+               its own statement. Off in condition position, where `{` starts
+               the body of an `if` / `for`. */
+            if (p->allow_struct_lit && check(p, TOK_LBRACE) &&
+                p->current.loc.line == p->previous.loc.line) {
+                left = parse_ui_trailing_block(p, left, loc);
+            }
             continue;
         }
         if (match(p, TOK_DOT)) {
@@ -722,10 +945,10 @@ static AstNode *parse_stmt(Parser *p) {
         TokenKind op = p->current.kind;
         advance(p);
         AstNode *r = parse_expr(p);
-        optional_semi(p);
+        optional_semi_or_ui_comma(p);
         return ast_assign(op, e, r, loc);
     }
-    optional_semi(p);
+    optional_semi_or_ui_comma(p);
     return ast_expr_stmt(e, loc);
 }
 
@@ -760,10 +983,12 @@ static Param *parse_params(Parser *p, size_t *out) {
             SourceLoc nloc = p->previous.loc;
             consume(p, TOK_COLON, "expected :");
             AstNode *type = parse_type(p);
+            AstNode *dflt = match(p, TOK_EQ) ? parse_expr(p) : NULL;
             params = (Param *)realloc(params, (count + 1) * sizeof(Param));
             params[count].name = name;
             params[count].type = type;
             params[count].loc = nloc;
+            params[count].default_val = dflt;
             count++;
         } while (match(p, TOK_COMMA));
     }
@@ -843,10 +1068,13 @@ static AstNode *parse_struct(Parser *p) {
         char *fn = tok_text(p->previous);
         consume(p, TOK_COLON, "expected :");
         AstNode *ty = parse_type(p);
+        /* `width: int = -1` — default for omitted fields in a struct literal. */
+        AstNode *fdef = match(p, TOK_EQ) ? parse_expr(p) : NULL;
         fields = (Field *)realloc(fields, (fc + 1) * sizeof(Field));
         fields[fc].name = fn;
         fields[fc].type = ty;
         fields[fc].doc = fdoc;
+        fields[fc].default_val = fdef;
         fc++;
         match(p, TOK_COMMA);
         match(p, TOK_SEMICOLON);
@@ -856,6 +1084,50 @@ static AstNode *parse_struct(Parser *p) {
     st->as.strct.tparams = tparams;
     st->as.strct.tparam_count = nt;
     return st;
+}
+
+/** `enum Name { A, B = 13, C }` — int constants. A variant without a value
+ *  takes the previous value plus one (starting at 0). */
+static AstNode *parse_enum(Parser *p) {
+    SourceLoc loc = p->previous.loc;
+    if (!match(p, TOK_IDENT)) {
+        error(p, "expected enum name");
+        return NULL;
+    }
+    char *name = tok_text(p->previous);
+    loc.end_line = p->previous.loc.end_line;
+    loc.end_col = p->previous.loc.end_col;
+    consume(p, TOK_LBRACE, "expected { after enum name");
+    const char **vs = NULL;
+    int64_t *vals = NULL;
+    size_t vc = 0;
+    int64_t next = 0;
+    while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF)) {
+        if (!match(p, TOK_IDENT)) {
+            error(p, "expected variant name");
+            break;
+        }
+        char *v = tok_text(p->previous);
+        int64_t val = next;
+        if (match(p, TOK_EQ)) {
+            if (!check(p, TOK_NUMBER)) {
+                error(p, "expected integer value for enum variant");
+                free(v);
+                break;
+            }
+            val = tok_int(p->current);
+            advance(p);
+        }
+        vs = (const char **)realloc(vs, (vc + 1) * sizeof(char *));
+        vals = (int64_t *)realloc(vals, (vc + 1) * sizeof(int64_t));
+        vs[vc] = v;
+        vals[vc] = val;
+        vc++;
+        next = val + 1;
+        match(p, TOK_COMMA);
+    }
+    consume(p, TOK_RBRACE, "expected } after enum variants");
+    return ast_enum(name, vs, vals, vc, loc);
 }
 
 /** `import "std:foo"` or `import "rel/path.yuga"` only (quoted). */
@@ -916,6 +1188,8 @@ AstNode *parser_parse(Parser *p) {
             AstNode *im = parse_import(p);
             optional_semi(p);
             if (im) {
+                if (im->as.import.path && strcmp(im->as.import.path, "std:zeus") == 0)
+                    p->zeus_alias = im->as.import.alias;
                 im->doc = doc;
                 imps = (AstNode **)realloc(imps, (ni + 1) * sizeof(AstNode *));
                 imps[ni++] = im;
@@ -972,6 +1246,17 @@ AstNode *parser_parse(Parser *p) {
             }
             continue;
         }
+        if (match(p, TOK_ENUM)) {
+            AstNode *en = parse_enum(p);
+            if (en) {
+                en->doc = doc;
+                decls = (AstNode **)realloc(decls, (nd + 1) * sizeof(AstNode *));
+                decls[nd++] = en;
+            } else {
+                free(doc);
+            }
+            continue;
+        }
         if (is_proto) {
             error(p, "#[proto] can only be applied to a struct");
             free(doc);
@@ -989,7 +1274,7 @@ AstNode *parser_parse(Parser *p) {
             continue;
         }
         free(doc);
-        error(p, "expected fn, struct, or let");
+        error(p, "expected fn, struct, enum, or let");
         break;
     }
 

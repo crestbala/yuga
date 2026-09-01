@@ -1,0 +1,9 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Horizontal cluster; children keep intrinsic width.
+
+fn ButtonGroup() -> Node {
+    let n = Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center)
+    return n
+}

@@ -1,0 +1,32 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Slider: caption above a draggable 0–100 track, live readout below.
+
+struct SliderProps {
+    caption: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+    size: int = 1,
+}
+
+fn Track(sig: Signal<int>, size: int) -> Node {
+    return zeus.Slider(
+        sig = sig,
+        height = slider_h(size),
+        radius = track_h(size) / 2,
+        background = line(),
+        color = accent(),
+        border_color = accent()
+    )
+}
+
+fn Slider(p: SliderProps) {
+    Box(align_direction = DIRECTION.Column, spacing = gap_of(p.size)) {
+        Text(p.caption, color = muted(), font = font_px(p.size)),
+        Track(p.sig, p.size),
+        Box(align_direction = DIRECTION.Row, spacing = SPACE.Xs, align_items = ALIGN.Center) {
+            Text("{{p.sig.get()}}", color = muted(), font = font_px(p.size)),
+            Text("%", color = muted(), font = font_px(p.size))
+        }
+    }
+}

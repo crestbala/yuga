@@ -386,6 +386,23 @@
         exp.zeus_key(key, mods);
         if (e.key === "Tab") e.preventDefault();
       });
+      window.addEventListener("keyup", (e) => {
+        let mods = 0;
+        if (e.shiftKey) mods |= 1;
+        if (e.ctrlKey) mods |= 2;
+        if (e.altKey) mods |= 4;
+        if (e.metaKey) mods |= 8;
+        let key = e.key.length === 1 ? e.key.charCodeAt(0) : 0;
+        if (e.key === "Enter") key = 13;
+        if (e.key === "Tab") key = 9;
+        if (e.key === "Backspace") key = 8;
+        if (e.key === "Escape") key = 27;
+        if (e.key === "ArrowLeft") key = 1000;
+        if (e.key === "ArrowRight") key = 1001;
+        if (e.key === "ArrowUp") key = 1002;
+        if (e.key === "ArrowDown") key = 1003;
+        exp.zeus_key_up(key, mods);
+      });
     })
     .catch((err) => {
       console.error(err);

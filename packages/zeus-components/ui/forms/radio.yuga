@@ -1,0 +1,46 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Radio: a circle that lights while `sig == value`; the group answers arrow
+// keys and shows the live value.
+
+struct RadioProps {
+    label: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+    value: int = 0,
+}
+
+struct RadioGroupProps {
+    label: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+    last: int = 1,
+}
+
+fn Radio(p: RadioProps) -> Node {
+    let d = check_of(1)
+    let n = Box(align_direction = DIRECTION.Row, spacing = gap_of(1), align_items = ALIGN.Center, shrink = 0) {
+        let sel = Box(align_direction = DIRECTION.Row, background = panel(), align_items = ALIGN.Center, justify_content = ALIGN.Center, size = d, radius = pill_radius(), border = 1, border_color = text()) {
+            Box(background = text(), width = dot(), height = dot(), radius = dot() / 2)
+        }
+        show_eq(sel, p.sig, p.value)
+        let unsel = Box(background = panel(), width = d, height = d, radius = pill_radius(), border = 1, border_color = line())
+        show_ne(unsel, p.sig, p.value)
+        Text(p.label, color = text(), font = font_px(1))
+    }
+    on_click_set(n, p.sig, p.value)
+    return n
+}
+
+fn RadioGroup(p: RadioGroupProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Column, spacing = gap_of(1)) {
+        Text(p.label, color = label(), font = caption_px(1)),
+        Text("{{p.sig.get()}}", color = muted(), font = font_px(1) + 1)
+    }
+    key(n, "down", "radio.next")
+    key(n, "right", "radio.next")
+    key(n, "up", "radio.prev")
+    key(n, "left", "radio.prev")
+    on_range(n, "radio.next", p.sig, 1, 0, p.last)
+    on_range(n, "radio.prev", p.sig, -1, 0, p.last)
+    return n
+}

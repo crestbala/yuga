@@ -9,7 +9,7 @@ semantics.
 import "std:fmt"
 
 fn main() {
-    fmt.println("hello, yuga")
+    println("hello, yuga")
 }
 ```
 
@@ -62,12 +62,15 @@ check / codegen / cc timings.
 ## Libraries
 
 Quoted imports only. `import "std:foo"` loads `packages/compiler/std/foo.yuga`.
-Call imported items as `foo.bar(...)`.
+Imported names are used unqualified — `import "std:fmt"` makes `println` a plain call —
+and the old `fmt.println(...)` form still works as the disambiguation escape hatch.
+Resolution walks imports by depth (a barrel re-exports by importing), and a local
+definition shadows an imported name.
 
 | Import | What it is |
 |---|---|
-| `std:fmt` | Stdout. `fmt.println` is compile-time lowering to length-based writes, not `printf`. |
-| `std:zeus` | UI toolkit. One `Node` tree, signals, chain API. Same source on every host. |
+| `std:fmt` | Stdout. `println` is compile-time lowering to length-based writes, not `printf`. |
+| `std:zeus` | UI toolkit. One `Node` tree, signals, declarative widgets. Same source on every host. |
 | `std:http` | Unary RPC over gRPC-Web (HTTP/1.1) and h2c. `#[proto]` structs, no REST routes. |
 | `std:maya` | Tiny 3D/2D engine. Scene and tracer in Yuga; C is the event loop and present. |
 | `std:net` | TCP connect / listen / read / write. Used by `http`; not an app-level import. |
@@ -86,20 +89,27 @@ struct and returns a `Node` — no `View` trait, no `impl`. Backend is a
 import "std:zeus"
 
 fn main() {
-    let n = zeus.signal(0)
-    zeus.col().pad(16).gap(8).children(
-        zeus.text("Count").font(22),
-        zeus.label("").bind(n).font(28),
-        zeus.row().gap(8).children(
-            zeus.button("-").on_click(|| { n.set(n.get() - 1) }),
-            zeus.button("+").on_click(|| { n.set(n.get() + 1) }),
-        ),
-    ).run()
+    let n = signal(0)
+    Box(align_direction = DIRECTION.Column, padding = 16, gap = 8) {
+        Text("Count: {{n.get()}}", font = 28)
+        Box(align_direction = DIRECTION.Row, gap = 8) {
+            Button("-", on_click = fn() => n.set(n.get() - 1)),
+            Button("+", on_click = fn() => n.set(n.get() + 1)),
+        }
+    }
 }
 ```
 
-Kit widgets, theme tokens, and the public barrel live in `packages/zeus/lib/`
-(`import "lib/ui.yuga"` from an app). Zeus paints its own theme on every host;
+Widgets take named props (`align_direction = DIRECTION.Row | "column"` — there is no
+separate `Row`/`Column`), containers take children in a trailing block, and
+events ride in as props with inline `fn(e)` closures (`on_click`,
+`on_key_down`, …). Key codes are enum constants: `e.key == Key.K`. No
+chaining — `n.pad(8).gap(4)` does not exist.
+
+Kit widgets, theme tokens, and the public barrel live in `packages/zeus-components/`
+(`import "../packages/zeus-components/ui.yuga"` from an app); the barrel re-exports
+`Button`, `Chip`, `Tabs`, `muted()`, … unqualified and shadows the raw std widgets.
+Zeus paints its own theme on every host;
 Cocoa / UIKit / Android widgets are not used. Full map and recipes:
 [packages/zeus/README.md](packages/zeus/README.md). Architecture:
 [docs/zeus.md](docs/zeus.md), [packages/zeus/docs/spec.md](packages/zeus/docs/spec.md).

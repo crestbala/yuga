@@ -1,0 +1,19 @@
+import "std:zeus"
+
+fn main() {
+    let sig = signal(0)
+    let last = 3
+    App("t", 400, 300, fn() {
+        Box(align_direction = "row", spacing = 4, align_items = align_center()) {
+            Text("a"),
+            Box(align_direction = "row") {
+                Text("b")
+            }
+        },
+        Box(align_direction = "row") {
+            for i in 1..(last + 1) {
+                Text("{{i}}")
+            }
+        }
+    })
+}

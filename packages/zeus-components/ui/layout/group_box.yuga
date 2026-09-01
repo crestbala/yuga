@@ -1,0 +1,40 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "divider.yuga"
+
+// Group box: bordered panel with rows and a split rule between them.
+
+struct GroupRowProps {
+    label: string = "",
+    icon: int = 0,
+}
+
+fn GroupBox() -> Node {
+    // Column: rows stack. `Box` is row-direction, which laid the rows out
+    // side by side so their labels collided.
+    return Box(
+        align_direction = DIRECTION.Column,
+        spacing = 0,
+        border = 1,
+        border_color = line(),
+        radius = surface_radius(),
+        overflow = overflow_hidden()
+    )
+}
+
+fn GroupRow(p: GroupRowProps) -> Node {
+    Box(align_direction = DIRECTION.Row, spacing = row_gap(), align_items = ALIGN.Center) {
+        Box(background = ink(), width = tile(), height = tile(), radius = panel_radius(), shrink = 0) {
+            if p.icon == 0 {
+                Box(width = icon_sm(), height = SPACE.Cozy, radius = SPACE.Xs2, border = 1, border_color = text())
+            } else {
+                Box(background = text(), width = SPACE.Lg, height = SPACE.Md, radius = SPACE.Xs2)
+            }
+        },
+        Text(p.label, color = text(), font = font_px(1))
+    }
+}
+
+fn GroupSplit() {
+    Divider()
+}

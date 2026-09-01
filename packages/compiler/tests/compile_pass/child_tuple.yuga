@@ -1,11 +1,14 @@
 import "std:zeus"
 
 fn main() {
-    zeus.app("Tuple", 320, 200, || {
-        zeus.col().pad(8).children(
-            zeus.text("a"),
-            zeus.text("b"),
-            zeus.row().gap(4).child(zeus.text("c")).child(zeus.text("d")),
-        )
+    App("Tuple", 320, 200, || {
+        Box(align_direction = DIRECTION.Column, padding = 8) {
+            Text("a"),
+            Text("b"),
+            Box(align_direction = DIRECTION.Row, gap = 4) {
+                Text("c"),
+                Text("d")
+            }
+        }
     })
 }

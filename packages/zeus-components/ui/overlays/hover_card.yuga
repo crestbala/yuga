@@ -1,0 +1,41 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "../display/avatar.yuga"
+import "../display/icons.yuga"
+
+// Hover card: a trigger that opens a card the pointer can travel into.
+
+struct HoverCardProps {
+    handle: string = "",
+    name: string = "",
+    bio: string = "",
+    meta: string = "",
+    color: string = "",
+}
+
+fn HoverCard(p: HoverCardProps) -> Node {
+    let open = signal(0)
+    let n = Box(align_direction = DIRECTION.Column, spacing = 0, align_items = ALIGN.Start) {
+        let trigger = Box(align_direction = DIRECTION.Row, background = panel(), spacing = SPACE.Snug, align_items = ALIGN.Center, padding = SPACE.Snug, radius = button_radius(), shrink = 0, hover_fade = true) {
+            Text(p.handle, color = text(), font = type_caption()),
+            Icon(markup = close(), color = muted(), size = icon_sm())
+        }
+        hover(trigger, open)
+        hover_delay(trigger, 0)
+        hover_leave(trigger, 200)
+        let card = Box(align_direction = DIRECTION.Column, background = panel(), spacing = SPACE.Sm, border = 1, border_color = line(), radius = surface_radius(), padding = SPACE.Md, width = popover_w()) {
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+                Avatar(initials = "TC", color = p.color),
+                Text(p.name, color = text(), font = 14)
+            },
+            Text(p.bio, color = muted(), font = type_caption()),
+            Text(p.meta, color = label(), font = 11)
+        }
+        show(card, open)
+        enter_fade(card)
+        hover(card, open)
+        hover_delay(card, 0)
+        hover_leave(card, 200)
+    }
+    return n
+}

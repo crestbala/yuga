@@ -1,0 +1,26 @@
+import "std:zeus"
+import "../../../../packages/zeus-components/ui.yuga"
+import "std:fmt"
+
+fn main() {
+    // The exact pattern from the roadmap: constant tokens, no fn calls.
+    let n = Box(align_direction = DIRECTION.Row, spacing = SPACE.Md, align_items = ALIGN.Center) {
+        Text("a", color = muted()),
+        Text("b", color = muted())
+    }
+    window("t", 200, 120)
+    ui_reset()
+    root(n)
+    engine_layout(200, 120)
+    let a = node_kid(n.id, 0)
+    let b = node_kid(n.id, 1)
+    if node_x(b) <= node_x(a) {
+        fmt.println("FAIL row")
+        let z = 1 / 0
+    }
+    if node_x(b) - node_x(a) - node_w(a) != SPACE.Md {
+        fmt.println("FAIL gap")
+        let z = 1 / 0
+    }
+    fmt.println("constants ok")
+}

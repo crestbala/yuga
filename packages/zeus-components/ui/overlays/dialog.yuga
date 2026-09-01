@@ -1,0 +1,44 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Bezel dialog: centred card over a dim scrim. Title, wrapping body, then
+// ghost Cancel and destructive Discard, right-aligned. `open` shows it.
+
+struct DialogProps {
+    title: string = "",
+    body: string = "",
+    cancel: string = "",
+    discard: string = "",
+    open: Signal<int> = Signal { id: 0 },
+}
+
+fn Dialog(p: DialogProps) {
+    zeus.Dialog(
+        title = p.title,
+        body = p.body,
+        cancel = p.cancel,
+        discard = p.discard,
+        open = p.open,
+        // Card: panel fill on a hairline edge, above a dimmed page.
+        background = panel(),
+        border = line(),
+        radius = surface_radius(),
+        width = dialog_w(),
+        padding = pad_x(2),
+        spacing = gap_of(2),
+        scrim = scrim(),
+        scrim_opacity = overlay_dim(),
+        // Title reads as a heading; body is muted and wraps at the card width.
+        title_color = text(),
+        title_font = title_px(1),
+        body_color = muted(),
+        body_font = font_px(1),
+        // Ghost cancel, solid destructive discard.
+        cancel_color = muted(),
+        discard_background = danger(),
+        discard_color = on_solid(),
+        button_pad_x = button_pad_x(),
+        button_pad_y = button_pad_y(),
+        button_radius = button_radius()
+    )
+}

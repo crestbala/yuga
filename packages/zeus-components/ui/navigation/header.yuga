@@ -1,0 +1,25 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "../forms/switch.yuga"
+import "../actions/button.yuga"
+
+// App bar: brand strip + title, then live count and a primary action on the
+// right. `sig` ticks with the button.
+
+struct HeaderProps {
+    title: string = "",
+    live_label: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+    btn: string = "",
+}
+
+fn Header(p: HeaderProps) {
+    Box(align_direction = DIRECTION.Row, spacing = SPACE.Md, align_items = ALIGN.Center) {
+        Box(background = accent(), width = SPACE.Sm, height = 3, radius = SPACE.Xs, shrink = 0),
+        Text(p.title, color = text(), font = 22, shrink = 0),
+        Spacer(),
+        Text(p.live_label, color = label(), font = font_px(1)),
+        Text("{{p.sig.get()}}", color = success(), font = title_px(1)),
+        Prominent(label = p.btn, on_press = fn() => p.sig.set(p.sig.get() + 1))
+    }
+}

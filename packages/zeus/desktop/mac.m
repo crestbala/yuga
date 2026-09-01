@@ -577,6 +577,57 @@ static void mac_redraw(void) {
     [g_view setNeedsDisplay:YES];
 }
 
+/* Map an NSEvent to the zeus key code + modifier bitmask (1 shift, 2 ctrl,
+   4 alt, 8 cmd). Shared by keyDown and keyUp. */
+static void zeus_event_key(NSEvent *event, int *key_out, int *mods_out) {
+    int key = 0;
+    unsigned short code = [event keyCode];
+    if (code == 53)
+        key = 27;
+    else if (code == 51)
+        key = 8;
+    else if (code == 36)
+        key = 13;
+    else if (code == 123)
+        key = 1000;
+    else if (code == 124)
+        key = 1001;
+    else if (code == 126)
+        key = 1002;
+    else if (code == 125)
+        key = 1003;
+    else if (code == 116)
+        key = 1004;
+    else if (code == 121)
+        key = 1005;
+    else {
+        NSString *chars = [event characters];
+        if ([chars length] > 0) {
+            unichar c = [chars characterAtIndex:0];
+            if (c >= 32 && c < 127) key = (int)c;
+        }
+    }
+    NSEventModifierFlags f = [event modifierFlags];
+    int mods = 0;
+    if (f & NSEventModifierFlagShift) mods |= ZEUS_MOD_SHIFT;
+    if (f & NSEventModifierFlagControl) mods |= ZEUS_MOD_CTRL;
+    if (f & NSEventModifierFlagOption) mods |= ZEUS_MOD_ALT;
+    if (f & NSEventModifierFlagCommand) mods |= ZEUS_MOD_CMD;
+    if (code == 48) key = ZEUS_K_TAB;
+    /* A shortcut is defined by the unmodified key, so Cmd+Shift+S and
+       Cmd+S cannot resolve to two different chords. */
+    if (!key || (mods & ~ZEUS_MOD_SHIFT)) {
+        NSString *raw = [event charactersIgnoringModifiers];
+        if ([raw length] > 0) {
+            unichar c = [raw characterAtIndex:0];
+            if (c >= 'A' && c <= 'Z') c = c + 32;
+            if (c >= 32 && c < 127) key = (int)c;
+        }
+    }
+    *key_out = key;
+    *mods_out = mods;
+}
+
 @interface ZeusView : NSView {
     NSTrackingArea *track;
 }
@@ -688,54 +739,19 @@ static void mac_redraw(void) {
 }
 
 - (void)keyDown:(NSEvent *)event {
-    int key = 0;
-    unsigned short code = [event keyCode];
-    if (code == 53)
-        key = 27;
-    else if (code == 51)
-        key = 8;
-    else if (code == 36)
-        key = 13;
-    else if (code == 123)
-        key = 1000;
-    else if (code == 124)
-        key = 1001;
-    else if (code == 126)
-        key = 1002;
-    else if (code == 125)
-        key = 1003;
-    else if (code == 116)
-        key = 1004;
-    else if (code == 121)
-        key = 1005;
-    else {
-        NSString *chars = [event characters];
-        if ([chars length] > 0) {
-            unichar c = [chars characterAtIndex:0];
-            if (c >= 32 && c < 127) key = (int)c;
-        }
-    }
-    NSEventModifierFlags f = [event modifierFlags];
-    int mods = 0;
-    if (f & NSEventModifierFlagShift) mods |= ZEUS_MOD_SHIFT;
-    if (f & NSEventModifierFlagControl) mods |= ZEUS_MOD_CTRL;
-    if (f & NSEventModifierFlagOption) mods |= ZEUS_MOD_ALT;
-    if (f & NSEventModifierFlagCommand) mods |= ZEUS_MOD_CMD;
-    if (code == 48) key = ZEUS_K_TAB;
-    /* A shortcut is defined by the unmodified key, so Cmd+Shift+S and
-       Cmd+S cannot resolve to two different chords. */
-    if (!key || (mods & ~ZEUS_MOD_SHIFT)) {
-        NSString *raw = [event charactersIgnoringModifiers];
-        if ([raw length] > 0) {
-            unichar c = [raw characterAtIndex:0];
-            if (c >= 'A' && c <= 'Z') c = c + 32;
-            if (c >= 32 && c < 127) key = (int)c;
-        }
-    }
+    int key = 0, mods = 0;
+    zeus_event_key(event, &key, &mods);
     if (key && zeus_handle_key_ev(key, mods))
         [self setNeedsDisplay:YES];
     else
         [super keyDown:event];
+}
+
+- (void)keyUp:(NSEvent *)event {
+    int key = 0, mods = 0;
+    zeus_event_key(event, &key, &mods);
+    if (key && zeus_handle_key_up_ev(key, mods))
+        [self setNeedsDisplay:YES];
 }
 @end
 

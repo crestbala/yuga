@@ -1,0 +1,19 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Progress bar: line track, accent fill, sized by `size`.
+
+struct ProgressProps {
+    sig: Signal<int> = Signal { id: 0 },
+    size: int = 1,
+}
+
+fn Progress(p: ProgressProps) -> Node {
+    return zeus.Progress(
+        sig = p.sig,
+        height = track_h(p.size),
+        radius = track_h(p.size) / 2,
+        background = line(),
+        color = accent()
+    )
+}

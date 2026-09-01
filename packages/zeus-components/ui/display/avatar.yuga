@@ -1,0 +1,25 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Circular initials plate. The tint fills the circle; initials sit on solid.
+
+struct AvatarProps {
+    initials: string = "",
+    color: string = "",
+    size: int = 1,
+}
+
+fn Avatar(p: AvatarProps) -> Node {
+    let d = avatar_of(p.size)
+    return Box(
+        align_direction = DIRECTION.Row,
+        background = p.color,
+        align_items = ALIGN.Center,
+        justify_content = ALIGN.Center,
+        size = d,
+        radius = d / 2,
+        shrink = 0
+    ) {
+        Text(p.initials, color = on_solid(), font = caption_px(p.size))
+    }
+}

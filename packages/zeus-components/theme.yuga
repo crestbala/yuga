@@ -1,0 +1,317 @@
+//! Bezel theme tokens for the declarative kit. Colors are hex strings
+//! (`theme.accent()`); numbers drive layout. 4px grid with 2px half-steps,
+//! mirroring bezel's crates/theme/src/theme/layout.rs.
+
+import "theme/colors.yuga"
+import "theme/spacing.yuga"
+import "theme/scale.yuga"
+import "theme/font.yuga"
+import "theme/motion.yuga"
+
+// --- palette (declarative: hex strings) ---
+
+fn canvas() -> string {
+    return colors.canvas()
+}
+fn panel() -> string {
+    return colors.panel()
+}
+fn line() -> string {
+    return colors.line()
+}
+fn line_strong() -> string {
+    return colors.line_strong()
+}
+fn text() -> string {
+    return colors.text()
+}
+fn muted() -> string {
+    return colors.muted()
+}
+fn label() -> string {
+    return colors.label()
+}
+fn ink() -> string {
+    return colors.ink()
+}
+fn on_solid() -> string {
+    return colors.on_solid()
+}
+fn accent() -> string {
+    return colors.accent()
+}
+fn purple() -> string {
+    return colors.purple()
+}
+fn danger() -> string {
+    return colors.danger()
+}
+fn success() -> string {
+    return colors.success()
+}
+fn warning() -> string {
+    return colors.warning()
+}
+fn scrim() -> string {
+    return colors.scrim()
+}
+
+// --- spacing ---
+// The `SPACE.*` enum lives in theme/spacing.yuga; apps reach it through
+// this barrel's import of that module (`SPACE.Sm`, `SPACE.Md`, …).
+
+// --- radii ---
+
+fn kbd_radius() -> int {
+    return spacing.kbd_radius()
+}
+fn hit_radius() -> int {
+    return spacing.hit_radius()
+}
+fn control_radius() -> int {
+    return spacing.control_radius()
+}
+fn button_radius() -> int {
+    return spacing.button_radius()
+}
+fn panel_radius() -> int {
+    return spacing.panel_radius()
+}
+fn surface_radius() -> int {
+    return spacing.surface_radius()
+}
+fn bubble_radius() -> int {
+    return spacing.bubble_radius()
+}
+fn pill_radius() -> int {
+    return spacing.pill_radius()
+}
+
+// --- fixed elements ---
+
+fn titlebar_height() -> int {
+    return spacing.titlebar_height()
+}
+fn status_strip_height() -> int {
+    return spacing.status_strip_height()
+}
+fn button_pad_x() -> int {
+    return spacing.button_pad_x()
+}
+fn button_pad_y() -> int {
+    return spacing.button_pad_y()
+}
+fn input_height() -> int {
+    return spacing.input_height()
+}
+fn input_pad_x() -> int {
+    return spacing.input_pad_x()
+}
+fn input_pad_y() -> int {
+    return spacing.input_pad_y()
+}
+fn toggle_w() -> int {
+    return spacing.toggle_w()
+}
+fn toggle_h() -> int {
+    return spacing.toggle_h()
+}
+fn check() -> int {
+    return spacing.check()
+}
+fn hairline() -> int {
+    return spacing.hairline()
+}
+fn row_pad_x() -> int {
+    return spacing.row_pad_x()
+}
+fn row_pad_y() -> int {
+    return spacing.row_pad_y()
+}
+fn row_gap() -> int {
+    return spacing.row_gap()
+}
+fn step_pad_x() -> int {
+    return spacing.step_pad_x()
+}
+fn step_pad_y() -> int {
+    return spacing.step_pad_y()
+}
+fn menu_pad() -> int {
+    return spacing.menu_pad()
+}
+fn menu_row_pad_x() -> int {
+    return spacing.menu_row_pad_x()
+}
+fn menu_row_pad_y() -> int {
+    return spacing.menu_row_pad_y()
+}
+fn menu_row_gap() -> int {
+    return spacing.menu_row_gap()
+}
+fn tile() -> int {
+    return spacing.tile()
+}
+fn dot() -> int {
+    return spacing.dot()
+}
+fn avatar() -> int {
+    return spacing.avatar()
+}
+fn hit() -> int {
+    return spacing.hit()
+}
+fn icon_sm() -> int {
+    return spacing.icon_sm()
+}
+fn icon_xs() -> int {
+    return spacing.icon_xs()
+}
+fn underline() -> int {
+    return spacing.underline()
+}
+fn table_cell_x() -> int {
+    return spacing.table_cell_x()
+}
+fn table_head_pad_y() -> int {
+    return spacing.table_head_pad_y()
+}
+fn table_row_pad_y() -> int {
+    return spacing.table_row_pad_y()
+}
+fn table_col_w() -> int {
+    return spacing.table_col_w()
+}
+fn dialog_w() -> int {
+    return spacing.dialog_w()
+}
+fn popover_w() -> int {
+    return spacing.popover_w()
+}
+fn toast_w() -> int {
+    return spacing.toast_w()
+}
+fn inset_radius(outer: int, inset: int) -> int {
+    return spacing.inset_radius(outer, inset)
+}
+
+// --- scale ---
+
+fn sm() -> int {
+    return 0
+}
+fn md() -> int {
+    return 1
+}
+fn lg() -> int {
+    return 2
+}
+fn pad_x(size: int) -> int {
+    return scale.pad_x(size)
+}
+fn pad_y(size: int) -> int {
+    return scale.pad_y(size)
+}
+fn font_px(size: int) -> int {
+    return scale.font_px(size)
+}
+fn caption_px(size: int) -> int {
+    return scale.caption_px(size)
+}
+fn title_px(size: int) -> int {
+    return scale.title_px(size)
+}
+fn display_px(size: int) -> int {
+    return scale.display_px(size)
+}
+fn radius_of(size: int) -> int {
+    return scale.radius_of(size)
+}
+fn gap_of(size: int) -> int {
+    return scale.gap_of(size)
+}
+fn surface_x(size: int) -> int {
+    return scale.surface_x(size)
+}
+fn surface_y(size: int) -> int {
+    return scale.surface_y(size)
+}
+fn check_of(size: int) -> int {
+    return scale.check_of(size)
+}
+fn toggle_w_of(size: int) -> int {
+    return scale.toggle_w(size)
+}
+fn toggle_h_of(size: int) -> int {
+    return scale.toggle_h(size)
+}
+fn track_h(size: int) -> int {
+    return scale.track_h(size)
+}
+fn slider_h(size: int) -> int {
+    return scale.slider_h(size)
+}
+fn chip_h(size: int) -> int {
+    return scale.chip_h(size)
+}
+fn kbd_h(size: int) -> int {
+    return scale.kbd_h(size)
+}
+fn avatar_of(size: int) -> int {
+    return scale.avatar_of(size)
+}
+fn icon_of(size: int) -> int {
+    return scale.icon_of(size)
+}
+/// Overall box size for a loader glyph.
+fn loader_of(size: int) -> int {
+    return scale.loader_of(size)
+}
+fn hit_of(size: int) -> int {
+    return scale.hit_of(size)
+}
+fn input_h(size: int) -> int {
+    return scale.input_h(size)
+}
+fn input_px(size: int) -> int {
+    return scale.input_px(size)
+}
+fn input_py(size: int) -> int {
+    return scale.input_py(size)
+}
+fn tab_px(size: int) -> int {
+    return scale.tab_px(size)
+}
+fn tab_py(size: int) -> int {
+    return scale.tab_py(size)
+}
+
+// --- type scale ---
+
+fn type_display() -> int {
+    return font.display()
+}
+fn type_title() -> int {
+    return font.title()
+}
+fn type_heading() -> int {
+    return font.heading()
+}
+fn type_body() -> int {
+    return font.body()
+}
+fn type_control() -> int {
+    return font.control()
+}
+fn type_caption() -> int {
+    return font.caption()
+}
+fn type_overline() -> int {
+    return font.overline()
+}
+
+// --- motion ---
+
+fn overlay_dim() -> int {
+    return motion.overlay_dim()
+}

@@ -1,79 +1,105 @@
 //! Shared playground UI. Wasm and macOS pass the RPC address and a host chip.
+//! Declarative ZEUS_SPEC.md syntax; the source buffer and the output log are
+//! signals, so the output label re-renders when Run completes.
 
 import "std:zeus"
 import "std:http"
-import "../../../packages/zeus/lib/ui.yuga"
-import "../../../packages/zeus/lib/theme.yuga"
 import "backend/api.yuga"
 
-let mut last_log: string = "Click the source, edit Yuga, press Run. Playground.Run is protobuf."
-let mut last_ok: int = -1
-let mut seeded: int = 0
+let bg      = "#1e1e2e"
+let surface = "#313244"
+let text    = "#cdd6f4"
+let muted   = "#a6adc8"
+let blue    = "#89b4fa"
+let green   = "#a6e3a1"
 
 fn hello_src() -> string {
-    return "import \"std:fmt\"\n\nfn main() {\n    fmt.println(\"hello, yuga\")\n}\n"
+    return "import \"std:fmt\"\n\nfn main() {\n    println(\"hello, yuga\")\n}\n"
 }
 
 fn fib_src() -> string {
-    return "import \"std:fmt\"\n\nfn fib(n: int) -> int {\n    if n < 2 {\n        return n\n    }\n    return fib(n - 1) + fib(n - 2)\n}\n\nfn main() {\n    fmt.println(\"fib(10) =\", fib(10))\n}\n"
+    return "import \"std:fmt\"\n\nfn fib(n: int) -> int {\n    if n < 2 {\n        return n\n    }\n    return fib(n - 1) + fib(n - 2)\n}\n\nfn main() {\n    println(\"fib(10) =\", fib(10))\n}\n"
 }
 
 fn fizz_src() -> string {
-    return "import \"std:fmt\"\n\nfn main() {\n    for i in 1..31 {\n        if i % 15 == 0 {\n            fmt.println(\"fizzbuzz\")\n        } else if i % 3 == 0 {\n            fmt.println(\"fizz\")\n        } else if i % 5 == 0 {\n            fmt.println(\"buzz\")\n        } else {\n            fmt.println(i)\n        }\n    }\n}\n"
+    return "import \"std:fmt\"\n\nfn main() {\n    for i in 1..31 {\n        if i % 15 == 0 {\n            println(\"fizzbuzz\")\n        } else if i % 3 == 0 {\n            println(\"fizz\")\n        } else if i % 5 == 0 {\n            println(\"buzz\")\n        } else {\n            println(i)\n        }\n    }\n}\n"
 }
 
 fn struct_src() -> string {
-    return "import \"std:fmt\"\n\nstruct Counter {\n    name: string,\n    count: int,\n}\n\nfn increment(c: &mut Counter) {\n    c.count += 1\n}\n\nfn main() {\n    let mut c = Counter { name: \"tick\", count: 0 }\n    increment(&mut c)\n    increment(c)\n    fmt.println(c.name, c.count)\n}\n"
+    return "import \"std:fmt\"\n\nstruct Counter {\n    name: string,\n    count: int,\n}\n\nfn increment(c: &mut Counter) {\n    c.count += 1\n}\n\nfn main() {\n    let mut c = Counter { name: \"tick\", count: 0 }\n    increment(&mut c)\n    increment(c)\n    println(c.name, c.count)\n}\n"
 }
 
 fn ui_src() -> string {
-    return "import \"std:zeus\"\nimport \"../../../../../packages/zeus/lib/ui.yuga\"\nimport \"../../../../../packages/zeus/lib/theme.yuga\"\n\nfn main() {\n    let count = zeus.signal(5)\n    let load = zeus.signal(42)\n    theme.Page(\"Zeus\", 560, 520).children(\n        zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).children(\n            zeus.text(\"Counter\").style(zeus.heading()),\n            ui.Chip(ChipProps { label: \"Canvas2D\", color: theme.accent() }),\n            ui.Badge(BadgeProps { label: \"live\", color: theme.success() }),\n        ),\n        ui.Alert(AlertProps {\n            title: \"Zeus\",\n            body: \"Buttons write a signal. This is the same tree on web, macOS, iOS, and Android.\",\n            color: theme.accent(),\n        }),\n        ui.Card().children(\n            ui.CardHeader(CardHeaderProps { title: \"Count\", subtitle: \"Ghost and Prominent buttons; the bar is Progress.\" }),\n            zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).children(\n                ui.Ghost(ButtonProps { label: \"-1\", on_press: || { count.set(count.get() - 1) } }),\n                zeus.label(\"\").bind(count).font(16),\n                ui.Prominent(ButtonProps { label: \"+1\", on_press: || { count.set(count.get() + 1) } }),\n            ),\n            ui.Progress(ProgressProps { sig: count }),\n            ui.Divider(),\n            zeus.row().gap(theme.space_md()).txt(\"Load\", theme.label(), 13).child(\n                ui.Progress(ProgressProps { sig: load }),\n            ).bound(load, theme.muted(), 13),\n        ),\n    ).run()\n}\n"
+    return "import \"std:zeus\"\n\nfn main() {\n    let count = signal(5)\n    App(\"Zeus\", 560, 520, fn() {\n        Box(align_direction = \"column\", background = \"#1e1e2e\", padding = 16, spacing = 12) {\n            Text(\"Counter\", color = \"#cdd6f4\", font = 24)\n            Box(align_direction = \"row\", spacing = 8) {\n                Button(\"-1\", on_click = fn() => count.set(count.get() - 1)),\n                Text(\"\{{count.get()}}\", color = \"#cdd6f4\", font = 16),\n                Button(\"+1\", on_click = fn() => count.set(count.get() + 1))\n            },\n            Progress(sig = count)\n        }\n    })\n}\n"
 }
 
-fn log_color() -> int {
-    if last_ok == 1 {
-        return theme.success()
-    }
-    if last_ok == 0 {
-        return theme.danger()
-    }
-    return theme.muted()
+struct ChipProps {
+    label: string = "",
+    color: string = blue,
 }
 
-/// Page rebuilt each frame (`zeus.app`). `chip` is Canvas2D / macOS.
-fn Screen(addr: string, chip: string) -> Node {
+fn Chip(p: ChipProps) {
+    Box(background = p.color, padding = 6, radius = 8) {
+        Text(p.label, color = bg, font = 11)
+    }
+}
+
+struct AlertProps {
+    title: string = "",
+    body: string = "",
+    color: string = blue,
+}
+
+fn Alert(p: AlertProps) {
+    Box(background = surface, padding = 12, radius = 8, gap = 4) {
+        Text(p.title, color = p.color, font = 13),
+        Text(p.body, color = muted, font = 12)
+    }
+}
+
+struct CardProps {
+    title: string = "",
+    subtitle: string = "",
+}
+
+fn Card(p: CardProps) -> Node {
+    return Box(background = surface, padding = 16, radius = 8, spacing = 10) {
+        Text(p.title, color = text, font = 15),
+        Text(p.subtitle, color = muted, font = 12)
+    }
+}
+
+/// Page built once. `chip` is Canvas2D / macOS.
+fn Screen(addr: string, chip: string) {
     let c = http.client(addr)
-    let editor = zeus.input("").font(13).h(260).pad(12).bg(theme.card()).radius(theme.button_radius())
-    if seeded == 0 {
-        seeded = 1
-        editor.set_input(hello_src())
-    }
-    return theme.Page("Playground", 760, 720).children(
-        zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).children(
-            zeus.text("Playground").style(zeus.heading()),
-            ui.Chip(ChipProps { label: chip, color: theme.accent() }),
-            ui.Badge(BadgeProps { label: "gRPC", color: theme.success() }),
-        ),
-        ui.Alert(AlertProps { title: "RPC", body: "Edit the source, then Run. The client POSTs Playground.Run (protobuf) and yugac compiles it.", color: theme.accent() }),
-        zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).flex_wrap().children(
-            ui.Ghost(ButtonProps { label: "hello", on_press: || { editor.set_input(hello_src()) } }),
-            ui.Ghost(ButtonProps { label: "fib", on_press: || { editor.set_input(fib_src()) } }),
-            ui.Ghost(ButtonProps { label: "fizz", on_press: || { editor.set_input(fizz_src()) } }),
-            ui.Ghost(ButtonProps { label: "struct", on_press: || { editor.set_input(struct_src()) } }),
-            ui.Ghost(ButtonProps { label: "ui", on_press: || { editor.set_input(ui_src()) } }),
-            ui.Primary(ButtonProps { label: "Run", on_press: || {
-                let req = RunReq { source: editor.input_value() }
+    let src = signal(hello_src())
+    let last_log = signal("Click the source, edit Yuga, press Run. Playground.Run is protobuf.")
+
+    Box(align_direction = DIRECTION.Column, background = bg, padding = 16, spacing = 14) {
+        Box(align_direction = DIRECTION.Row, spacing = 8) {
+            Text("Playground", color = text, font = 24),
+            Chip(label = chip, color = blue),
+            Chip(label = "gRPC", color = green)
+        },
+        Alert(title = "RPC", body = "Edit the source, then Run. The client POSTs Playground.Run (protobuf) and yugac compiles it.", color = blue),
+        Box(align_direction = DIRECTION.Row, spacing = 8) {
+            Button("hello", on_click = fn() => src.set(hello_src())),
+            Button("fib", on_click = fn() => src.set(fib_src())),
+            Button("fizz", on_click = fn() => src.set(fizz_src())),
+            Button("struct", on_click = fn() => src.set(struct_src())),
+            Button("ui", on_click = fn() => src.set(ui_src())),
+            Spacer(),
+            Button("Run", background = blue, color = bg, on_click = fn() {
+                let req = RunReq { source: src.get() }
                 let resp = api.decode_RunResp(c.call(api.run_rpc(), api.encode_RunReq(req)))
-                last_log = resp.log
-                last_ok = resp.ok
-            } }),
-        ),
-        ui.Card().children(
-            ui.CardHeader(CardHeaderProps { title: "Source", subtitle: "Click here and type Yuga. Samples replace the buffer." }),
-            editor,
-        ),
-        ui.Card().children(
-            ui.CardHeader(CardHeaderProps { title: "Output", subtitle: "Playground.Run" }),
-            zeus.label(last_log).fg(log_color()).font(13).flex_wrap(),
-        ),
-   )))))
+                last_log.set(resp.log)
+            })
+        },
+        Card(title = "Source", subtitle = "Click here and type Yuga. Samples replace the buffer.") {
+            Input(bind = src, font = 13, background = bg, padding = 12)
+        },
+        Card(title = "Output", subtitle = "Playground.Run") {
+            Text("{{last_log.get()}}", color = muted, font = 13)
+        }
+    }
+}

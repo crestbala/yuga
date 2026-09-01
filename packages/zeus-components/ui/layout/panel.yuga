@@ -1,0 +1,25 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Panel: titled section surface. Children come from the caller's block.
+
+struct PanelProps {
+    title: string = "",
+    width: int = 0,
+}
+
+fn Panel(p: PanelProps) -> Node {
+    // Column: the title sits above the caller's children.
+    return Box(
+        align_direction = DIRECTION.Column,
+        background = panel(),
+        spacing = SPACE.Md,
+        pad_x = row_pad_x(),
+        pad_y = row_pad_y(),
+        radius = surface_radius(),
+        overflow = overflow_hidden(),
+        width = p.width
+    ) {
+        Text(p.title, color = label(), font = type_overline())
+    }
+}

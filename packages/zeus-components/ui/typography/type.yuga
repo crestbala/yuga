@@ -1,0 +1,28 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Tailwind-like type scale. Block labels: full width, wrap.
+
+struct TypeProps {
+    text: string = "",
+}
+
+fn Overline(p: TypeProps) {
+    Text(p.text, color = label(), font = type_overline())
+}
+
+fn Display(p: TypeProps) {
+    Text(p.text, color = text(), font = type_display())
+}
+
+fn Title(p: TypeProps) {
+    Text(p.text, color = text(), font = type_title())
+}
+
+fn Heading(p: TypeProps) {
+    Text(p.text, color = text(), font = type_heading())
+}
+
+fn Body(p: TypeProps) {
+    Text(p.text, color = muted(), font = type_body())
+}

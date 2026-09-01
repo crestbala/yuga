@@ -152,6 +152,14 @@ fn hit_node(id: int, px: int, py: int) -> int {
     if arena.nodes[id].click_fn > 0 {
         return id
     }
+    // A container whose only interactivity is a pointer handler. Children are
+    // tried first above, so this doubles as the bubble step.
+    if arena.nodes[id].mouse_down_fn > 0 {
+        return id
+    }
+    if arena.nodes[id].mouse_up_fn > 0 {
+        return id
+    }
     if arena.nodes[id].kind == 4 {
         return id
     }
@@ -196,6 +204,7 @@ fn click(px: int, py: int) -> int {
     if id <= 0 {
         return 0
     }
+    arena.last_hit = id
     arena.claim_focus(id)
     if arena.nodes[id].kind == 11 {
         if hit_h_scrollbar(id, px, py) != 0 {
@@ -588,24 +597,38 @@ fn key(k: int) -> int {
         return 0
     }
     if k == 8 {
-        return platform.plat_edit_back(slot)
+        return after_edit(id, slot, platform.plat_edit_back(slot))
     }
     if k == 127 {
-        return platform.plat_edit_back(slot)
+        return after_edit(id, slot, platform.plat_edit_back(slot))
     }
     if k == 9 {
-        return platform.plat_edit_append(slot, 9)
+        return after_edit(id, slot, platform.plat_edit_append(slot, 9))
     }
     if k == 10 {
-        return platform.plat_edit_append(slot, 10)
+        return after_edit(id, slot, platform.plat_edit_append(slot, 10))
     }
     if k == 13 {
-        return platform.plat_edit_append(slot, 10)
+        return after_edit(id, slot, platform.plat_edit_append(slot, 10))
     }
     if k >= 32 {
         if k < 127 {
-            return platform.plat_edit_append(slot, k)
+            return after_edit(id, slot, platform.plat_edit_append(slot, k))
         }
     }
     return 0
+}
+
+/// Push an edited input's text into its bound `Signal<string>`. The store
+/// notifies dependents only when the text actually changed, so effects that
+/// read the signal re-run once per real edit. Returns `r` unchanged.
+fn after_edit(id: int, slot: int, r: int) -> int {
+    if r == 0 {
+        return 0
+    }
+    let sid = arena.nodes[id].bind_str_sig
+    if sid > 0 {
+        __sig_store(sid, platform.plat_edit_text(slot))
+    }
+    return r
 }

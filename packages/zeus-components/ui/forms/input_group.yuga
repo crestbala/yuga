@@ -1,0 +1,18 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "text_field.yuga"
+
+// Input group: prefix label and a growing text face in one plate.
+
+struct InputGroupProps {
+    prefix: string = "",
+    placeholder: string = "",
+}
+
+fn InputGroup(p: InputGroupProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Row, background = panel(), align_items = ALIGN.Center, pad_x = input_px(1), pad_y = input_py(1), gap = gap_of(1), radius = radius_of(1)) {
+        Text(p.prefix, color = muted(), font = font_px(1)),
+        TextField(placeholder = p.placeholder, grow = 1)
+    }
+    return n
+}

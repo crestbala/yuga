@@ -12,8 +12,9 @@ struct HelloResp {
 }
 
 fn Panel(initial: int) -> Node {
-    zeus.col()
-        .child(zeus.label("count").bind_n(initial).font(18))
+    Box(align_direction = DIRECTION.Column) {
+        bind_n(Text("count", font = 18), initial)
+    }
 }
 
 fn fail() {
@@ -36,9 +37,12 @@ fn main() {
     if 7 < initial {
         fail()
     }
-    Panel(initial).mount("Zeus", 480, 320).run()
-    zeus.engine_paint()
-    if zeus.draw_count() < 1 {
+    let n = Panel(initial)
+    window("Zeus", 480, 320)
+    root(n)
+    run(n)
+    engine_paint()
+    if draw_count() < 1 {
         fail()
     }
 }

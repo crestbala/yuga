@@ -1,0 +1,5 @@
+{
+  "name": "zeus-components",
+  "private": true,
+  "description": "Bezel-style declarative UI kit for Zeus: buttons, chips, cards, forms, tables, loaders, overlays, and theme tokens, built on std:zeus."
+}

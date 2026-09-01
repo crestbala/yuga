@@ -1,0 +1,34 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Menu list: a padded column of tappable rows. `Item` writes `value` into
+// `sig` when clicked.
+
+struct ListItemProps {
+    title: string = "",
+    meta: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+    value: int = 0,
+}
+
+fn List() -> Node {
+    return Box(align_direction = DIRECTION.Column, spacing = SPACE.Xs2, padding = menu_pad())
+}
+
+fn ListItem(p: ListItemProps) -> Node {
+    let n = Box(
+        align_direction = DIRECTION.Row,
+        spacing = menu_row_gap(),
+        align_items = ALIGN.Center,
+        background = canvas(),
+        pad_x = menu_row_pad_x(),
+        pad_y = menu_row_pad_y(),
+        radius = inset_radius(surface_radius(), menu_pad())
+    ) {
+        Text(p.title, color = text(), font = font_px(1)),
+        Spacer(),
+        Text(p.meta, color = muted(), font = type_caption())
+    }
+    on_click_set(n, p.sig, p.value)
+    return n
+}

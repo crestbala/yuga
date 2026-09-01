@@ -21,7 +21,7 @@ fn increment(c: &mut Counter) {
 }
 
 fn greet(c: &Counter) {
-    fmt.println("hello,", c.name)
+    println("hello,", c.name)
 }
 
 fn main() {
@@ -31,10 +31,10 @@ fn main() {
     increment(c)          // auto-borrow: &mut Counter
     greet(c)              // auto-borrow: &Counter
 
-    fmt.println("count:", c.count)
+    println("count:", c.count)
 
     let b = Box::new(42)
-    fmt.println("boxed:", *b)
+    println("boxed:", *b)
 }
 ```
 
@@ -50,7 +50,9 @@ fn main() {
 | References | `&T` shared, `&mut T` exclusive. `&x` / `&mut x`. Deref: `*x`. |
 | Auto-borrow | If a param is `&T` / `&mut T` and the caller passes an owned place, insert `&` / `&mut`. Checked like explicit borrows. |
 | Heap | `Box::new(expr)` → owning `Box<T>`. `[]T` → owning growable array (`push` / `pop` / `.len`). Capturing closures → heap env. All freed at scope exit unless moved. |
-| Imports | Quoted only: `import "std:fmt"` or `import "path/file.yuga"`. Symbols used as `name.symbol`. No glob imports. |
+| Imports | Quoted only: `import "std:fmt"` or `import "path/file.yuga"`. Names are used **unqualified**: `println(...)` after importing fmt. The old `name.symbol` form still works and is the disambiguation escape hatch. Resolution is transitive by import depth: a module's own declarations win, then its imports' declarations (last import wins), then theirs — so a barrel file re-exports by importing. A local definition shadows an imported name. |
+| Enums | `enum Key { Enter = 13, K = 107 }` — int constants, auto-incremented from the previous value (or 0). `Key.K` is an `int` literal at the use site. Variant names are the only enum members; enums are not types. |
+| Duplicate names | A name defined twice in the same module (fn / struct / enum / let) or in the same scope (two `let x`, a param and a `let`) is an error at the second definition. Moving a non-Copy field out of a struct records the path: the drop skips it and a later read of it errors. |
 | Backend | Transpile to C99, then `cc -O2` (no unwind tables, dead-strip). |
 | Strings | Fat pointer `{ptr, len}`, UTF-8. Copy. `s[i]` is the unsigned byte at `i` (traps out of range). Heap strings: `string_from_bytes([]int)`. |
 | Integers | `int` is `int64_t`. `+ - *` trap on overflow. `/ %` trap on div-by-zero. Builtins: `wrapping_add`, `saturating_add`, `wrapping_shr` / `wrapping_shl` / `wrapping_or` / `wrapping_and`. Literals: decimal (`42`), or `0x`/`0X` hex (`0xff`, `0x505050` — e.g. a packed `zeus` RGB color, same layout as `rgb(r, g, b)`). No octal — a leading `0` before another digit is still decimal, not C-style octal. |
@@ -74,16 +76,25 @@ import_item = "import" STRING ;
 
 `import "rel/path.yuga"` is relative to the importing file. The module name is the file stem (`header`, `math`).
 
-Imported functions are called as `mod.fn(...)`. Imported module-level `let` bindings
-are `mod.name` (a place: `counter.n += 1` is valid when `n` is `let mut`).
+Imported names are used **unqualified**: after `import "std:fmt"`, call `println(...)`, not
+`fmt.println(...)`. The qualified form (`fmt.println`) still works and is the escape hatch
+when two imports export the same name. Module-level `let` bindings stay qualified
+(`mod.name` — a place: `counter.n += 1` is valid when `n` is `let mut`).
 
-`fmt.write` / `fmt.write_int` / `fmt.write_bool` / `fmt.write_float` / `fmt.writeln` write to stdout with `write(2)`: length-based, no heap, no `printf`. `fmt.println(...)` is compile-time lowering to those writes (variadic mixed types are not a Yuga fn yet).
+Unqualified resolution walks imports by depth — a module's own declarations first, then
+its imports' declarations (last import wins), then theirs — with no depth limit. That is
+how a barrel file re-exports its widgets: `ui.yuga` imports every component file, and an
+app that imports the barrel gets `Button`, `Chip`, `muted()`, … directly. A local
+definition shadows an imported name; between two imports, the later one wins.
+
+`println(...)` / `print(...)` are compile-time lowering to `write(2)` calls: length-based, no heap, no `printf`.
+`write` / `write_int` / `write_bool` / `write_float` / `writeln` write to stdout the same way.
 
 ## Doc comments
 
 ```
 //! Module documentation. Several `//!` lines join with newlines.
-//! Shown when hovering the module name (`fmt` in `fmt.println`).
+//! Shown when hovering the module name (`fmt` in `import "std:fmt"`).
 
 /// Item documentation. Several `///` lines join with newlines.
 /// Put this immediately above `fn`, `struct`, `let`, `import`, or a struct field.
@@ -102,12 +113,14 @@ fn add(a: int, b: int) -> int {
 program      = { inner_doc } { import_item } { item } ;
 inner_doc    = "//!" { char } ;
 outer_doc    = "///" { char } ;
-item         = { outer_doc } ( fn_item | struct_item | let_stmt ) ;
+item         = { outer_doc } ( fn_item | struct_item | enum_item | let_stmt ) ;
 import_item  = { outer_doc } "import" STRING ;
 fn_item      = "fn" IDENT [ type_params ] "(" [ param { "," param } ] ")" [ "->" type ] block ;
 type_params  = "<" IDENT { "," IDENT } ">" ;
 param        = IDENT ":" type ;
 struct_item  = "struct" IDENT [ type_params ] "{" [ field { "," field } [ "," ] ] "}" ;
+enum_item    = "enum" IDENT "{" [ variant { "," variant } [ "," ] ] "}" ;
+variant      = IDENT [ "=" NUMBER ] ;
 field        = { outer_doc } IDENT ":" type ;
 type         = "&" [ "mut" ] type | "Box" "<" type ">" | "[" NUMBER "]" type | "[" "]" type
              | "fn" "(" [ type { "," type } ] ")" [ "->" type ]
@@ -126,7 +139,8 @@ match_pat    = NUMBER | FLOAT | STRING | "true" | "false" ;
 return_stmt  = "return" [ expr ] ;
 break_stmt   = "break" ;
 continue_stmt = "continue" ;
-expr         = binary ;
+expr         = binary | if_expr ;
+if_expr      = "if" expr block "else" ( if_expr | block ) ;
 unary        = ( "&" [ "mut" ] | "*" | "!" | "-" ) unary | postfix ;
 postfix      = primary { "(" args ")" | "." IDENT | "::" IDENT | "[" expr "]" | "as" type } ;
 primary      = IDENT [ "{" field_inits "}" ]
@@ -165,4 +179,4 @@ return &local --> Error
 - Bounds: `a[i]` traps unless the index is a proven in-range constant.
 - Overflow: checked ops, never silent wrap (unless `wrapping_add` / wrapping bit ops).
 - Generated C is compiled `-O2` with unused-section stripping. `fmt.println` is one `writev`.
-- Capturing closures: env is `malloc`'d, owned by the `fn` value, `free`'d on drop. No lifetime syntax. Non-Copy captures are still rejected. The `yuga_fn` ABI is `{fn, env, env_size}`. `plat_intern_fn` copies `env_size` bytes so Zeus `.on` / `.styled` still run after the interned value is dropped.
+- Capturing closures: env is `malloc`'d, owned by the `fn` value, `free`'d on drop. No lifetime syntax. Non-Copy captures are still rejected. The `yuga_fn` ABI is `{fn, env, env_size}`. `plat_intern_fn` copies `env_size` bytes so Zeus `.on` / text / style thunks still run after the interned value is dropped.

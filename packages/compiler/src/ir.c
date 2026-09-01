@@ -43,10 +43,15 @@ static const char *fn_cname_in(YugaModule *m, const char *name) {
 }
 
 /** Linkage symbol for a call target. Typecheck already assigned every function
-    a unique cname; the IR records which one rather than re-deriving mangling. */
+    a unique cname and recorded which decl an ident resolved to; prefer that
+    (a struct field default like `on_click: fn() = noop` may resolve to a
+    different module's `noop` than the name search below would find). */
 static const char *resolve_callee(AstNode *cal) {
     if (!cal) return NULL;
     if (cal->kind == AST_IDENT) {
+        if (cal->as.ident.resolved && cal->as.ident.resolved->kind == AST_FN_DECL &&
+            cal->as.ident.resolved->as.fn.cname)
+            return cal->as.ident.resolved->as.fn.cname;
         const char *c = fn_cname_in(&Gmods[Gcur], cal->as.ident.name);
         if (c) return c;
         for (int i = 0; i < Gnmods; i++) {
@@ -210,6 +215,8 @@ static int scope_find(const char *name) {
 
 static int lower_expr(AstNode *n);
 static void lower_stmt(AstNode *n);
+static void move_into(int v, int d, Type *ty, SourceLoc loc);
+static void lower_block_value(AstNode *block, int d, Type *ty);
 
 static IrPlace *place_local(int id, Type *ty) {
     IrPlace *p = (IrPlace *)calloc(1, sizeof(IrPlace));
@@ -399,7 +406,7 @@ static int lower_println(AstNode *n) {
         else
             emit_named_call("yuga_fmt_write_int", a, 1, ty_void(), n->loc);
     }
-    emit_named_call("yuga_fmt_writeln", NULL, 0, ty_void(), n->loc);
+    if (!n->as.call.is_print) emit_named_call("yuga_fmt_writeln", NULL, 0, ty_void(), n->loc);
     return -1;
 }
 
@@ -536,6 +543,11 @@ static int lower_call(AstNode *n) {
 }
 
 /** Lower an expression, returning the local holding its value. */
+static int lower_expr(AstNode *n);
+
+static void record_moved_path(IrFn *F, IrPlace *p);
+
+/** Lower an expression, returning the local holding its value. */
 static int lower_expr(AstNode *n) {
     if (!n) return -1;
     switch (n->kind) {
@@ -619,6 +631,10 @@ static int lower_expr(AstNode *n) {
                 mv->dst = d;
                 mv->a = src;
                 mv->ty = ir_subst(n->ty);
+                /* A field moved out of a local struct is recorded on the
+                   local; the drop at scope exit skips it. No runtime zeroing:
+                   ownership is a static fact. */
+                if (p->kind != IR_PL_LOCAL) record_moved_path(F, p);
                 return d;
             }
             return src;
@@ -772,10 +788,69 @@ static int lower_expr(AstNode *n) {
             }
             return d;
         }
+        case AST_IF: {
+            /* If-expression: each branch block's statements run in its own
+               block, and its last expression's value is moved into a shared
+               result local at the join. A branch that closed early (return /
+               break) never writes it — that path does not reach the join. */
+            if (!n->ty || n->ty->kind == TY_VOID || !n->as.if_stmt.else_block) {
+                F->lowered = 0;
+                return -1;
+            }
+            int c = lower_expr(n->as.if_stmt.cond);
+            int d = new_local(n->ty, NULL, 0);
+            int bt = new_block();
+            int be = new_block();
+            int join = new_block();
+            term_br(c, bt, be);
+            CUR = bt;
+            lower_block_value(n->as.if_stmt.then_block, d, n->ty);
+            term_jmp(join);
+            CUR = be;
+            if (n->as.if_stmt.else_block->kind == AST_IF) {
+                int v = lower_expr(n->as.if_stmt.else_block);
+                move_into(v, d, n->ty, n->as.if_stmt.else_block->loc);
+            } else {
+                lower_block_value(n->as.if_stmt.else_block, d, n->ty);
+            }
+            term_jmp(join);
+            CUR = join;
+            return d;
+        }
         default:
             F->lowered = 0;
             return -1;
     }
+}
+
+/** `m->dst = a` when both ends are valid. */
+static void move_into(int v, int d, Type *ty, SourceLoc loc) {
+    if (v < 0 || d < 0) return;
+    IrInst *m = emit(IR_MOVE, loc);
+    m->dst = d;
+    m->a = v;
+    m->ty = ir_subst(ty);
+}
+
+/** Lower a branch block of an if-expression: its statements, then its last
+ * expression's value into `d`. A block that does not end with an expression
+ * (or closed early) leaves `d` unwritten — the branch never reaches the
+ * join. Scope handling mirrors `lower_stmt`'s AST_BLOCK case. */
+static void lower_block_value(AstNode *block, int d, Type *ty) {
+    sdepth++;
+    size_t n = block->as.block.stmt_count;
+    size_t tail = n && block->as.block.stmts[n - 1]->kind == AST_EXPR_STMT ? n - 1 : n;
+    for (size_t i = 0; i < tail; i++) {
+        lower_stmt(block->as.block.stmts[i]);
+        if (block_closed()) break;
+    }
+    if (!block_closed() && tail < n) {
+        AstNode *last = block->as.block.stmts[tail];
+        int v = lower_expr(last->as.expr_stmt.expr);
+        move_into(v, d, ty, last->loc);
+    }
+    scope_pop_to(sdepth - 1);
+    sdepth--;
 }
 
 /**
@@ -792,6 +867,65 @@ static void transfer_moved(void) {
             if (in->op == IR_MOVE && in->a >= 0 && in->a < F->nlocals)
                 F->locals[in->a].needs_drop = 0;
         }
+}
+
+/** Record a field path moved out of a local struct, so the drop skips it.
+ *  The path is relative to the root local ("a", "a.b"); only pure field
+ *  chains are tracked — index and deref roots cannot be proven at drop time
+ *  and keep the old copy semantics. Static ownership: no zeroing. */
+static void record_moved_path(IrFn *F, IrPlace *p) {
+    int n = 0;
+    for (IrPlace *q = p; q; q = q->base) {
+        if (q->kind == IR_PL_LOCAL) break;
+        if (q->kind != IR_PL_FIELD) return;
+        n++;
+    }
+    if (!n || !p) return;
+    int root = -1;
+    for (IrPlace *q = p; q; q = q->base) {
+        if (q->kind == IR_PL_LOCAL) {
+            root = q->local;
+            break;
+        }
+        if (q->kind != IR_PL_FIELD) return;
+    }
+    if (root < 0 || root >= F->nlocals) return;
+    size_t len = 0;
+    for (IrPlace *q = p; q->kind != IR_PL_LOCAL; q = q->base)
+        len += (q->field ? strlen(q->field) : 0) + 1;
+    char *path = (char *)malloc(len + 1);
+    if (!path) return;
+    char *w = path;
+    /* innermost field first: collect then reverse */
+    char **segs = (char **)calloc((size_t)n, sizeof(char *));
+    if (!segs) {
+        free(path);
+        return;
+    }
+    int k = 0;
+    for (IrPlace *q = p; q->kind != IR_PL_LOCAL; q = q->base) {
+        segs[k++] = (char *)(q->field ? q->field : "");
+    }
+    for (int i = n - 1; i >= 0; i--) {
+        if (i != n - 1) *w++ = '.';
+        size_t sl = strlen(segs[i]);
+        memcpy(w, segs[i], sl);
+        w += sl;
+    }
+    *w = 0;
+    free(segs);
+    IrLocal *L = &F->locals[root];
+    for (int i = 0; i < L->nmoved; i++)
+        if (strcmp(L->moved[i], path) == 0) {
+            free(path);
+            return;
+        }
+    L->moved = (const char **)realloc(L->moved, (size_t)(L->nmoved + 1) * sizeof(char *));
+    if (!L->moved) {
+        free(path);
+        return;
+    }
+    L->moved[L->nmoved++] = path;
 }
 
 /**
@@ -1074,99 +1208,122 @@ static void lower_stmt(AstNode *n) {
 
 /* --- driver ------------------------------------------------------------- */
 
-static AstNode *clos_nodes[256];
-static int nclos_nodes;
+static AstNode **clos_nodes;
+static int *clos_mods;
+static int nclos_nodes, clos_cap;
 
-static void collect_clos(AstNode *n) {
+static void collect_clos(AstNode *n, int mod) {
     if (!n) return;
     if (n->kind == AST_CLOSURE) {
-        if (nclos_nodes < 256) clos_nodes[nclos_nodes++] = n;
-        collect_clos(n->as.fn.body);
+        if (nclos_nodes == clos_cap) {
+            clos_cap = clos_cap ? clos_cap * 2 : 256;
+            clos_nodes = (AstNode **)realloc(clos_nodes, (size_t)clos_cap * sizeof(AstNode *));
+            clos_mods = (int *)realloc(clos_mods, (size_t)clos_cap * sizeof(int));
+            if (!clos_nodes || !clos_mods) yuga_fatal("out of memory");
+        }
+        clos_nodes[nclos_nodes] = n;
+        clos_mods[nclos_nodes] = mod;
+        nclos_nodes++;
+        collect_clos(n->as.fn.body, mod);
         return;
     }
     switch (n->kind) {
         case AST_PROGRAM:
             for (size_t i = 0; i < n->as.program.decl_count; i++)
-                collect_clos(n->as.program.decls[i]);
+                collect_clos(n->as.program.decls[i], mod);
             break;
         case AST_FN_DECL:
-            collect_clos(n->as.fn.body);
+            collect_clos(n->as.fn.body, mod);
             break;
         case AST_BLOCK:
             for (size_t i = 0; i < n->as.block.stmt_count; i++)
-                collect_clos(n->as.block.stmts[i]);
+                collect_clos(n->as.block.stmts[i], mod);
             break;
         case AST_IF:
-            collect_clos(n->as.if_stmt.cond);
-            collect_clos(n->as.if_stmt.then_block);
-            collect_clos(n->as.if_stmt.else_block);
+            collect_clos(n->as.if_stmt.cond, mod);
+            collect_clos(n->as.if_stmt.then_block, mod);
+            collect_clos(n->as.if_stmt.else_block, mod);
             break;
         case AST_FOR:
-            collect_clos(n->as.for_stmt.iter);
-            collect_clos(n->as.for_stmt.body);
+            collect_clos(n->as.for_stmt.iter, mod);
+            collect_clos(n->as.for_stmt.body, mod);
             break;
         case AST_WHILE:
-            collect_clos(n->as.if_stmt.cond);
-            collect_clos(n->as.if_stmt.then_block);
+            collect_clos(n->as.if_stmt.cond, mod);
+            collect_clos(n->as.if_stmt.then_block, mod);
             break;
         case AST_MATCH:
-            collect_clos(n->as.match_stmt.scrut);
+            collect_clos(n->as.match_stmt.scrut, mod);
             for (size_t i = 0; i < n->as.match_stmt.arm_count; i++)
-                collect_clos(n->as.match_stmt.arms[i]);
+                collect_clos(n->as.match_stmt.arms[i], mod);
             break;
         case AST_MATCH_ARM:
             for (size_t i = 0; i < n->as.match_arm.pat_count; i++)
-                collect_clos(n->as.match_arm.pats[i]);
-            collect_clos(n->as.match_arm.body);
+                collect_clos(n->as.match_arm.pats[i], mod);
+            collect_clos(n->as.match_arm.body, mod);
             break;
         case AST_RETURN:
-            collect_clos(n->as.ret.expr);
+            collect_clos(n->as.ret.expr, mod);
             break;
         case AST_EXPR_STMT:
-            collect_clos(n->as.expr_stmt.expr);
+            collect_clos(n->as.expr_stmt.expr, mod);
             break;
         case AST_VAR_DECL:
-            collect_clos(n->as.var.init);
+            collect_clos(n->as.var.init, mod);
             break;
         case AST_ASSIGN:
-            collect_clos(n->as.assign.left);
-            collect_clos(n->as.assign.right);
+            collect_clos(n->as.assign.left, mod);
+            collect_clos(n->as.assign.right, mod);
             break;
         case AST_BINARY:
-            collect_clos(n->as.binary.left);
-            collect_clos(n->as.binary.right);
+            collect_clos(n->as.binary.left, mod);
+            collect_clos(n->as.binary.right, mod);
             break;
         case AST_UNARY:
-            collect_clos(n->as.unary.operand);
+            collect_clos(n->as.unary.operand, mod);
             break;
         case AST_CAST:
-            collect_clos(n->as.cast.expr);
+            collect_clos(n->as.cast.expr, mod);
             break;
         case AST_CALL:
-            collect_clos(n->as.call.callee);
+            collect_clos(n->as.call.callee, mod);
             for (size_t i = 0; i < n->as.call.arg_count; i++)
-                collect_clos(n->as.call.args[i]);
+                collect_clos(n->as.call.args[i], mod);
+            break;
+        case AST_FIELD:
+            collect_clos(n->as.access.target, mod);
+            collect_clos(n->as.access.index, mod);
             break;
         case AST_INDEX:
-        case AST_FIELD:
+            collect_clos(n->as.access.target, mod);
+            collect_clos(n->as.access.index, mod);
+            break;
         case AST_DEREF:
+            collect_clos(n->as.access.target, mod);
+            collect_clos(n->as.access.index, mod);
+            break;
         case AST_ADDR:
-            collect_clos(n->as.access.target);
-            collect_clos(n->as.access.index);
+            collect_clos(n->as.access.target, mod);
+            collect_clos(n->as.access.index, mod);
             break;
         case AST_STRUCT_LIT:
             for (size_t i = 0; i < n->as.struct_lit.field_count; i++)
-                collect_clos(n->as.struct_lit.fields[i].init);
+                collect_clos(n->as.struct_lit.fields[i].init, mod);
             break;
         case AST_ARRAY_LIT:
         case AST_TUPLE:
             for (size_t i = 0; i < n->as.array_lit.count; i++)
-                collect_clos(n->as.array_lit.elems[i]);
+                collect_clos(n->as.array_lit.elems[i], mod);
             break;
         default:
             break;
     }
 }
+
+/** Collect every closure in `mods[i].ast`, recording its module index so
+ * `lower_closure` can bind that module's globals (closures are lowered before
+ * the module loop sets `Gcur`). */
+static void collect_clos(AstNode *n, int mod);
 
 static void bind_module_globals(void) {
     for (int g = 0; g < typecheck_global_count(); g++) {
@@ -1229,9 +1386,21 @@ static void lower_closure(IrModule *m, AstNode *d) {
     sdepth = 0;
     nloop = 0;
     CUR = new_block();
+    // The env must be local 0: `emit_ir_place` recognises env-field loads by
+    // `base->local == 0`. Allocate it before the module globals, which would
+    // otherwise shift it up and produce an uncast `(_env)->f` on a void*.
+    int env = new_local(type_ptr(ty_void(), 1), "_env", 1);
+    // Closures are lowered before the module loop sets `Gcur`, so bind the
+    // globals of the module the closure was collected from (looked up by
+    // node, since `clos_id` order need not match collection order).
+    for (int ci = 0; ci < nclos_nodes; ci++) {
+        if (clos_nodes[ci] == d) {
+            Gcur = clos_mods[ci];
+            break;
+        }
+    }
     bind_module_globals();
 
-    int env = new_local(type_ptr(ty_void(), 1), "_env", 1);
     Type *ft = d->ty;
     for (size_t k = 0; k < d->as.fn.param_count; k++) {
         Type *pt = (ft && k < ft->param_count) ? ft->params[k] : NULL;
@@ -1300,7 +1469,7 @@ IrModule *ir_lower(YugaModule *mods, int nmods) {
     Gmods = mods;
     Gnmods = nmods;
     nclos_nodes = 0;
-    for (int i = 0; i < nmods; i++) collect_clos(mods[i].ast);
+    for (int i = 0; i < nmods; i++) collect_clos(mods[i].ast, i);
     for (int i = 0; i < nclos_nodes; i++) lower_closure(m, clos_nodes[i]);
     for (int i = 0; i < nmods; i++) {
         AstNode *p = mods[i].ast;
@@ -1589,6 +1758,10 @@ void ir_free(IrModule *m) {
             free(fn->blocks[b].insts);
         }
         free(fn->blocks);
+        for (int i = 0; i < fn->nlocals; i++) {
+            for (int k = 0; k < fn->locals[i].nmoved; k++) free((void *)fn->locals[i].moved[k]);
+            free(fn->locals[i].moved);
+        }
         free(fn->locals);
     }
     free(m->fns);

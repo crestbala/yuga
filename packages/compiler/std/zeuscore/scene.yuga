@@ -37,15 +37,15 @@ fn fill_a(x: int, y: int, w: int, h: int, rgb: int, radius: int, alpha: int) {
     emit(1, x, y, w, h, rgb, radius, alpha, 0, "", 0)
 }
 
-fn text(x: int, y: int, s: string, rgb: int, font: int) {
+fn draw_text(x: int, y: int, s: string, rgb: int, font: int) {
     emit(2, x, y, 0, 0, rgb, 0, 255, font, s, 0)
 }
 
-fn text_int(x: int, y: int, v: int, rgb: int, font: int) {
+fn draw_text_int(x: int, y: int, v: int, rgb: int, font: int) {
     emit(3, x, y, 0, 0, rgb, 0, 255, font, "", v)
 }
 
-fn text_wrap(x: int, y: int, s: string, rgb: int, font: int, max_w: int) {
+fn draw_text_wrap(x: int, y: int, s: string, rgb: int, font: int, max_w: int) {
     emit(4, x, y, max_w, 0, rgb, 0, 255, font, s, 0)
 }
 
@@ -152,9 +152,9 @@ fn paint_input(id: int) {
     save()
     clip(x, y, w, h)
     if inner > 0 {
-        text_wrap(tx, ty, shown, fg, arena.nodes[id].font, inner)
+        draw_text_wrap(tx, ty, shown, fg, arena.nodes[id].font, inner)
     } else {
-        text(tx, ty, shown, fg, arena.nodes[id].font)
+        draw_text(tx, ty, shown, fg, arena.nodes[id].font)
     }
     restore()
 }
@@ -164,20 +164,20 @@ fn paint_label(id: int) {
     let fg = arena.fg_of(id)
     if arena.has_bound_num(id) != 0 {
         let y = arena.draw_y(id) + arena.nodes[id].pad_t + geometry.max2(arena.nodes[id].h - arena.nodes[id].pad_t - arena.nodes[id].pad_b - arena.nodes[id].th, 0) / 2
-        text_int(x, y, arena.bound_num(id), fg, arena.nodes[id].font)
+        draw_text_int(x, y, arena.bound_num(id), fg, arena.nodes[id].font)
         return
     }
     let inner = arena.inner_w(id)
     if arena.nodes[id].wrap != 0 {
         if inner > 0 {
             if inner < arena.nodes[id].tw {
-                text_wrap(x, arena.draw_y(id) + arena.nodes[id].pad_t + arena.nodes[id].border_w, arena.nodes[id].text, fg, arena.nodes[id].font, inner)
+                draw_text_wrap(x, arena.draw_y(id) + arena.nodes[id].pad_t + arena.nodes[id].border_w, arena.nodes[id].text, fg, arena.nodes[id].font, inner)
                 return
             }
         }
     }
     let y = arena.draw_y(id) + arena.nodes[id].pad_t + geometry.max2(arena.nodes[id].h - arena.nodes[id].pad_t - arena.nodes[id].pad_b - arena.nodes[id].th, 0) / 2
-    text(x, y, arena.nodes[id].text, fg, arena.nodes[id].font)
+    draw_text(x, y, arena.nodes[id].text, fg, arena.nodes[id].font)
 }
 
 fn paint_button(id: int) {
@@ -189,9 +189,9 @@ fn paint_button(id: int) {
     let tx = arena.draw_x(id) + geometry.max2(arena.nodes[id].w - tw, 0) / 2
     let ty = arena.draw_y(id) + geometry.max2(arena.nodes[id].h - th, 0) / 2
     if arena.has_bound_num(id) != 0 {
-        text_int(tx, ty, arena.bound_num(id), arena.fg_of(id), arena.nodes[id].font)
+        draw_text_int(tx, ty, arena.bound_num(id), arena.fg_of(id), arena.nodes[id].font)
     } else {
-        text(tx, ty, arena.nodes[id].text, arena.fg_of(id), arena.nodes[id].font)
+        draw_text(tx, ty, arena.nodes[id].text, arena.fg_of(id), arena.nodes[id].font)
     }
     paint_hover_wash(id)
 }

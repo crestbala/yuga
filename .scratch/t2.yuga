@@ -1,0 +1,7 @@
+import "std:zeus"
+
+fn Button() {}
+
+fn main() {
+    zeus.Button("hi")
+}

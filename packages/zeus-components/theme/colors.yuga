@@ -1,0 +1,54 @@
+import "std:zeus"
+
+// Bezel dark palette (hex strings — declarative widgets take string colors).
+// Mirrors crates/theme/src/theme/dark.rs. The declarative kit has no
+// appearance switch; apps restyle by swapping these strings.
+
+/// Page/app background colour. Named `canvas`, not `app`: std:http also
+/// exports an `app` (the RPC server factory), and the unqualified name would
+/// collide in any app that uses both. `Box(background = canvas())`.
+fn canvas() -> string {
+    return "#0a0a0a"
+}
+fn panel() -> string {
+    return "#121212"
+}
+fn line() -> string {
+    return "#232323"
+}
+fn line_strong() -> string {
+    return "#363636"
+}
+fn text() -> string {
+    return "#ededed"
+}
+fn muted() -> string {
+    return "#a1a1a1"
+}
+fn label() -> string {
+    return "#6f6f6f"
+}
+fn ink() -> string {
+    return "#1c1c1c"
+}
+fn on_solid() -> string {
+    return "#0a0a0a"
+}
+fn accent() -> string {
+    return "#ededed"
+}
+fn purple() -> string {
+    return "#a1a1a1"
+}
+fn danger() -> string {
+    return "#b84e48"
+}
+fn success() -> string {
+    return "#6ec896"
+}
+fn warning() -> string {
+    return "#e8c478"
+}
+fn scrim() -> string {
+    return "#000000"
+}

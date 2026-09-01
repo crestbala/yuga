@@ -1,0 +1,20 @@
+import "std:zeus"
+
+fn Toolbar() -> Node {
+    let n = Box(align_direction = "row", spacing = 8, align_items = align_center())
+    return n
+}
+
+fn main() {
+    let sig = signal(0)
+    App("t", 400, 300, fn() {
+        Box(align_direction = "row", spacing = 4, align_items = align_center()) {
+            Toolbar() {
+                Button("hi", on_click = fn() => sig.set(1))
+            },
+            Toolbar() {
+                Button("yo", on_click = fn() => sig.set(2))
+            }
+        }
+    })
+}

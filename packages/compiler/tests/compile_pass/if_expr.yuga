@@ -1,0 +1,86 @@
+import "std:fmt"
+
+fn expect(got: int, want: int) {
+    if got != want {
+        fmt.println("FAIL got", got, "want", want)
+        let z = 1 / 0
+    }
+}
+
+fn pick(n: int) -> string {
+    if n > 0 {
+        "pos"
+    } else {
+        "non-pos"
+    }
+}
+
+fn branch_ret(n: int) -> string {
+    if n > 0 {
+        return "ret"
+    } else {
+        return "neg"
+    }
+}
+
+fn chain(n: int) -> string {
+    if n > 5 {
+        "big"
+    } else if n > 0 {
+        "small"
+    } else {
+        "neg"
+    }
+}
+
+fn main() {
+    let a = 1
+    let b = 2
+    let x = if a < b { "less" } else { "more" }
+    expect(1, 1)
+    if x != "less" {
+        fmt.println("FAIL x", x)
+        let z = 1 / 0
+    }
+
+    // if-expression as a call argument
+    fmt.println("value:", if a < b { 10 } else { 20 })
+    // else-if chain in expression position
+    let n = 5
+    let label = if n == 1 { "one" } else if n == 5 { "five" } else { "other" }
+    if label != "five" {
+        fmt.println("FAIL label", label)
+        let z = 1 / 0
+    }
+    // statement if still works
+    if a < b {
+        fmt.println("branch ok")
+    } else {
+        fmt.println("FAIL")
+        let z = 1 / 0
+    }
+    // if-expression with statements in branches
+    let mut acc = 0
+    let v = if a < b {
+        acc = acc + 1
+        acc + 10
+    } else {
+        acc + 99
+    }
+    expect(v, 11)
+    expect(acc, 1)
+    // trailing if in a `-> T` body is an if-expression
+    if pick(5) != "pos" || pick(-1) != "non-pos" {
+        fmt.println("FAIL pick")
+        let z = 1 / 0
+    }
+    if branch_ret(1) != "ret" || branch_ret(-1) != "neg" {
+        fmt.println("FAIL branch_ret")
+        let z = 1 / 0
+    }
+    if chain(9) != "big" || chain(3) != "small" || chain(-3) != "neg" {
+        fmt.println("FAIL chain")
+        let z = 1 / 0
+    }
+    fmt.println("all ok")
+}

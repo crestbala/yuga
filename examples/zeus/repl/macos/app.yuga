@@ -1,4 +1,5 @@
-//! macOS desktop playground UI. Same Zeus tree as wasm; HTTP is gRPC-Web.
+//! macOS desktop playground UI. Same declarative Zeus tree as wasm; HTTP is
+//! gRPC-Web.
 //!
 //! `main` POSTs `Playground.Run` to the native backend on `127.0.0.1:8081`.
 //! Start the backend first: `../backend/run.sh`, or use `./run.sh`.
@@ -8,7 +9,7 @@ import "../backend/api.yuga"
 import "../screen.yuga"
 
 fn main() {
-    zeus.app("Playground", 760, 720, || {
-        screen.Screen(api.native_addr(), "macOS")
+    App("Playground", 760, 720, fn() {
+        Screen(api.native_addr(), "macOS")
     })
 }

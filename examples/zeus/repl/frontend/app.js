@@ -5,37 +5,36 @@ const KW = new Set([
 ]);
 const SAMPLES = {
   ui: `import "std:zeus"
-import "../../../../../packages/zeus/lib/ui.yuga"
-import "../../../../../packages/zeus/lib/theme.yuga"
+import "../../../../../packages/zeus-components/ui.yuga"
+import "../../../../../packages/zeus-components/theme.yuga"
 
 fn main() {
     let count = zeus.signal(5)
     let load = zeus.signal(42)
-    theme.Page("Zeus", 560, 520).child(
-        zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).child(
-            zeus.text("Counter").style(zeus.heading()),
-            ui.Chip(ChipProps { label: "Canvas2D", color: theme.accent() }),
-            ui.Badge(BadgeProps { label: "live", color: theme.success() }),
-        ),
-        ui.Alert(AlertProps {
-            title: "Zeus",
-            body: "Buttons write a signal. This is the same tree on web, macOS, iOS, and Android.",
-            color: theme.accent(),
-        }),
-        ui.Card().child(
-            ui.CardHeader(CardHeaderProps { title: "Count", subtitle: "Ghost and Prominent buttons; the bar is Progress." }),
-            zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).child(
-                ui.Ghost("-1", || { count.set(count.get() - 1) }),
-                zeus.label("").bind(count).font(16),
-                ui.Prominent("+1", || { count.set(count.get() + 1) }),
-            ),
-            ui.Progress(ProgressProps { sig: count }),
-            ui.Divider(),
-            zeus.row().gap(theme.space_md()).txt("Load", theme.label(), 13).child(
-                ui.Progress(ProgressProps { sig: load }),
-            ).bound(load, theme.muted(), 13),
-        ),
-    ).run()
+    zeus.App("Zeus", 560, 520, fn() {
+        zeus.Column(background = theme.app(), padding = theme.page(), spacing = theme.section()) {
+            zeus.Row(spacing = theme.space_sm(), align_items = zeus.align_center()) {
+                zeus.Text("Counter", color = theme.text(), font = theme.type_heading()),
+                ui.Chip(label = "Canvas2D", color = theme.accent()),
+                ui.Badge(label = "live", color = theme.success())
+            },
+            ui.Alert(title = "Zeus", body = "Buttons write a signal. This is the same tree on web, macOS, iOS, and Android.", color = theme.accent()),
+            ui.Card() {
+                ui.CardHeader(title = "Count", subtitle = "Ghost and Prominent buttons; the bar is Progress."),
+                zeus.Row(spacing = theme.space_sm(), align_items = zeus.align_center()) {
+                    ui.Ghost(label = "-1", on_press = fn() => count.set(count.get() - 1)),
+                    zeus.Text("{{count.get()}}", color = theme.text(), font = 16),
+                    ui.Prominent(label = "+1", on_press = fn() => count.set(count.get() + 1))
+                },
+                ui.Progress(sig = count),
+                ui.Divider(),
+                zeus.Row(spacing = theme.space_md(), align_items = zeus.align_center()) {
+                    zeus.Text("Load", color = theme.label(), font = 13),
+                    ui.Progress(sig = load)
+                }
+            }
+        }
+    })
 }
 `,
   hello: `import "std:fmt"

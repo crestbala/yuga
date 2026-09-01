@@ -1,0 +1,37 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Scroll pane with a fixed height; rows inside use the step-row padding.
+// Also accepts the page-level props of the std:zeus Scroll (background,
+// padding, spacing), which it forwards.
+
+struct ScrollProps {
+    background: string = "",
+    padding: int = 0,
+    spacing: int = 0,
+    height: int = 0,
+}
+
+struct ScrollRowProps {
+    title: string = "",
+    meta: string = "",
+}
+
+fn Scroll(p: ScrollProps) -> Node {
+    // Qualified call: this module's own `Scroll` shadows the std:zeus widget
+    // it wraps, so the unqualified name would recurse into itself.
+    return zeus.Scroll(
+        background = p.background,
+        padding = p.padding,
+        spacing = p.spacing,
+        height = p.height
+    )
+}
+
+fn ScrollRow(p: ScrollRowProps) -> Node {
+    Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+        Text(p.title, color = text(), font = font_px(1)),
+        Spacer(),
+        Text(p.meta, color = muted(), font = type_caption())
+    }
+}

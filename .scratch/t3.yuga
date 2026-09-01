@@ -1,0 +1,60 @@
+import "std:zeus"
+
+struct P {
+    label: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+    value: int = 0,
+}
+
+fn Tab(p: P) -> Node {
+    let n = Box(align_direction = "column", spacing = 0, align_items = align_start(), shrink = 0) {
+        let a = Button(p.label, on_click = fn() => p.sig.set(p.value), background = text(), color = app(), pad_x = 8, pad_y = 4, radius = 4, font = 13, shrink = 0)
+        show_eq(a, p.sig, p.value)
+        let b = Button(p.label, on_click = fn() => p.sig.set(p.value), color = muted(), pad_x = 8, pad_y = 4, radius = 4, font = 13, shrink = 0)
+        show_ne(b, p.sig, p.value)
+    }
+    return n
+}
+
+fn Toolbar() -> Node {
+    let n = Box(align_direction = "row", spacing = 8, align_items = align_center())
+    return n
+}
+
+fn Seq(lo: int, hi: int) -> []int {
+    let mut xs = []int {}
+    for i in lo..hi {
+        push(xs, i)
+    }
+    return xs
+}
+
+fn main() {
+    let sig = signal(0)
+    let last = 3
+    App("t", 400, 300, fn() {
+        Box(align_direction = "row", spacing = 4, align_items = align_center()) {
+            Tab(label = "x", sig = sig, value = 0),
+            Toolbar() {
+                Button("hi", on_click = fn() => sig.set(1))
+            }
+        },
+        Box(align_direction = "row") {
+            for i in 1..(last + 1) {
+                Text("{{i}}")
+            }
+        },
+        Box(align_direction = "row") {
+            let g = raw_svg("<circle/>")
+            w(g, 16)
+            h(g, 16)
+            fg(g, hex(text()))
+            shrink(g, 0)
+        },
+        let row = Box(align_direction = "row")
+        key(row, "right", "tab.next")
+        key(row, "left", "tab.prev")
+        on_range(row, "tab.next", sig, 1, 0, 2)
+        on_range(row, "tab.prev", sig, -1, 0, 2)
+    })
+}

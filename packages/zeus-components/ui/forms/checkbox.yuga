@@ -1,0 +1,26 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Checkbox: square plate that fills when `sig` is on, plus a label.
+
+struct CheckboxProps {
+    label: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+    size: int = 1,
+}
+
+fn Checkbox(p: CheckboxProps) {
+    let d = check_of(p.size)
+    Box(align_direction = DIRECTION.Row, spacing = gap_of(p.size), align_items = ALIGN.Center) {
+        Check(
+            sig = p.sig,
+            width = d,
+            height = d,
+            radius = radius_of(p.size) / 2,
+            background = line(),
+            color = text(),
+            border_color = on_solid()
+        ),
+        Text(p.label, color = text(), font = font_px(p.size))
+    }
+}

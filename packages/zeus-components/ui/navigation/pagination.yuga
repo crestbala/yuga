@@ -1,0 +1,59 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "../display/icons.yuga"
+
+// Pagination: prev/next hits, numbered page buttons, and a caption.
+
+struct PaginationProps {
+    page: Signal<int> = Signal { id: 0 },
+    last: int = 1,
+}
+
+fn seq(lo: int, hi: int) -> []int {
+    let mut xs = []int {}
+    for i in lo..hi {
+        push(xs, i)
+    }
+    return xs
+}
+
+fn PageAt(page: Signal<int>, n: int) -> Node {
+    let row = Box(align_direction = DIRECTION.Row, spacing = 0, align_items = ALIGN.Center) {
+        let a = Button("{{n}}", on_click = fn() => page.set(n), background = text(), color = canvas(), size = hit_of(1), radius = radius_of(1), font = font_px(1), shrink = 0)
+        show_eq(a, page, n)
+        let b = Button("{{n}}", on_click = fn() => page.set(n), color = muted(), size = hit_of(1), radius = radius_of(1), font = font_px(1), shrink = 0)
+        show_ne(b, page, n)
+    }
+    return row
+}
+
+fn Pagination(p: PaginationProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Column, spacing = gap_of(1), align_items = ALIGN.Start) {
+        Box(align_direction = DIRECTION.Row, spacing = SPACE.Xs, align_items = ALIGN.Center) {
+            let a = icons.IconHit(markup = icons.alt_arrow_left(), color = muted(), hit = hit_of(1), size = icon_of(1), radius = radius_of(1))
+            show_eq(a, p.page, 1)
+            let b = icons.IconHit(markup = icons.alt_arrow_left(), color = text(), hit = hit_of(1), size = icon_of(1), radius = radius_of(1))
+            show_ne(b, p.page, 1)
+            on_click_add(b, p.page, -1)
+            for i in 1..(p.last + 1) {
+                PageAt(p.page, i)
+            }
+            let c = icons.IconHit(markup = icons.alt_arrow_right(), color = muted(), hit = hit_of(1), size = icon_of(1), radius = radius_of(1))
+            show_eq(c, p.page, p.last)
+            let d = icons.IconHit(markup = icons.alt_arrow_right(), color = text(), hit = hit_of(1), size = icon_of(1), radius = radius_of(1))
+            show_ne(d, p.page, p.last)
+            on_click_add(d, p.page, 1)
+        },
+        Box(align_direction = DIRECTION.Row, spacing = SPACE.Snug, align_items = ALIGN.Center) {
+            Text("page", color = muted(), font = caption_px(1)),
+            Text("{{p.page.get()}}", color = muted(), font = caption_px(1)),
+            Text("of", color = muted(), font = caption_px(1)),
+            Text("{{p.last}}", color = muted(), font = caption_px(1))
+        }
+    }
+    key(n, "right", "page.next")
+    key(n, "left", "page.prev")
+    on_range(n, "page.next", p.page, 1, 1, p.last)
+    on_range(n, "page.prev", p.page, -1, 1, p.last)
+    return n
+}

@@ -1,0 +1,16 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "loader.yuga"
+
+// Inline spinner: three dots and a message.
+
+struct SpinnerProps {
+    msg: string = "",
+}
+
+fn Spinner(p: SpinnerProps) -> Node {
+    Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+        LoaderMini(),
+        Text(p.msg, color = muted(), font = type_caption())
+    }
+}

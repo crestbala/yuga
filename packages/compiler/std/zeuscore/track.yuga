@@ -1,8 +1,8 @@
 //! Fine-grained reactivity: a tracking-scope stack and a signal → effect map.
 //!
-//! `styled` / any future tracked closure pushes an effect id. `get(sig)`
-//! records that signal as a dependency. `set(sig)` re-runs only those
-//! closures. Closures never rebuild the tree.
+//! `bind_text` / `bind_style_*` push an effect id. `get(sig)` records that
+//! signal as a dependency. `set(sig)` re-runs only those effects. Effects
+//! never rebuild the tree.
 
 import "platform.yuga"
 

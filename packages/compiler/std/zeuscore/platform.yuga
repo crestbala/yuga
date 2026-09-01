@@ -29,6 +29,9 @@ fn plat_edit_text(slot: int) -> string {}
 fn plat_edit_set(slot: int, text: string) -> int {}
 fn plat_intern_fn(handler: fn()) -> int {}
 fn plat_invoke_fn(id: int) {}
+/// True when `a` and `b` are the same function (ignoring captured env). Lets
+/// an optional handler prop default to a known no-op and be detected as unset.
+fn plat_fn_eq(a: fn(), b: fn()) -> bool {}
 fn plat_sig_bind_int(id: int, value: int) {}
 fn plat_overlay_scroll() -> int {}
 fn plat_inset_top() -> int {}

@@ -1,0 +1,81 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "../display/icons.yuga"
+import "../layout/divider.yuga"
+
+// Table: bordered frame, head row with a hairline under it, body rows.
+// Column widths are shared by the head and every row (A fixed, B flexible,
+// C fixed), so cells line up in a vertical grid — the same sizing the bezel
+// kit uses. Header cells sort by the `sort` signal (click toggles the column).
+
+struct TableHeadProps {
+    a: string = "",
+    b: string = "",
+    c: string = "",
+    sort: Signal<int> = Signal { id: 0 },
+}
+
+struct TableRowProps {
+    a: string = "",
+    b: string = "",
+    c: string = "",
+}
+
+struct TableBodyProps {
+    title: string = "",
+    meta: string = "",
+}
+
+fn Table() -> Node {
+    // Column: the head sits above the body. A plain `Box` is row-direction,
+    // which would put the head's cells alongside the rows instead of over them.
+    return Box(
+        align_direction = DIRECTION.Column,
+        spacing = 0,
+        border = 1,
+        border_color = line(),
+        radius = surface_radius(),
+        overflow = overflow_hidden()
+    )
+}
+
+fn TableHead(p: TableHeadProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Column, spacing = 0) {
+        Box(align_direction = DIRECTION.Row, spacing = 0, align_items = ALIGN.Center) {
+            let ca = Box(align_direction = DIRECTION.Row, spacing = SPACE.Xs, align_items = ALIGN.Center, width = table_col_w(), shrink = 0, pad_x = table_cell_x(), pad_y = table_head_pad_y()) {
+                Text(p.a, color = muted(), font = caption_px(1), shrink = 0),
+                let a = Icon(markup = arrow_up(), color = muted(), size = 11)
+                show_eq(a, p.sort, 0)
+            }
+            on_click_set(ca, p.sort, 0)
+            let cb = Box(align_direction = DIRECTION.Row, spacing = SPACE.Xs, align_items = ALIGN.Center, grow = 1, min_w = 80, pad_x = table_cell_x(), pad_y = table_head_pad_y()) {
+                Text(p.b, color = muted(), font = caption_px(1), shrink = 0),
+                let b = Icon(markup = arrow_up(), color = muted(), size = 11)
+                show_eq(b, p.sort, 1)
+            }
+            on_click_set(cb, p.sort, 1)
+            let cc = Box(align_direction = DIRECTION.Row, spacing = SPACE.Xs, align_items = ALIGN.Center, width = 72, shrink = 0, pad_x = table_cell_x(), pad_y = table_head_pad_y()) {
+                Text(p.c, color = muted(), font = caption_px(1), shrink = 0),
+                let c = Icon(markup = arrow_up(), color = muted(), size = 11)
+                show_eq(c, p.sort, 2)
+            }
+            on_click_set(cc, p.sort, 2)
+        },
+        Divider()
+    }
+    return n
+}
+
+fn TableRow(p: TableRowProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Row, spacing = 0, align_items = ALIGN.Center) {
+        Text(p.a, color = text(), font = font_px(1), width = table_col_w(), shrink = 0, pad_x = table_cell_x(), pad_y = table_row_pad_y()),
+        Text(p.b, color = muted(), font = font_px(1), grow = 1, min_w = 80, pad_x = table_cell_x(), pad_y = table_row_pad_y()),
+        Text(p.c, color = muted(), font = font_px(1), width = 72, shrink = 0, pad_x = table_cell_x(), pad_y = table_row_pad_y())
+    }
+    return n
+}
+
+fn TableBody() -> Node {
+    let n = Box(align_direction = DIRECTION.Column, spacing = 0)
+    return n
+}

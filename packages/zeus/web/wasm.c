@@ -147,3 +147,8 @@ __attribute__((export_name("zeus_key")))
 void zeus_key(int32_t key, int32_t mods) {
     zeus_handle_key_ev((int)key, (int)mods);
 }
+
+__attribute__((export_name("zeus_key_up")))
+void zeus_key_up(int32_t key, int32_t mods) {
+    zeus_handle_key_up_ev((int)key, (int)mods);
+}

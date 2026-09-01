@@ -106,7 +106,7 @@ make
 import "std:fmt"
 
 fn main() {
-    fmt.println("hello, yuga")
+    println("hello, yuga")
 }
 ```
 
@@ -115,7 +115,7 @@ fn main() {
 ./hello
 ```
 
-`fmt.println` is compile-time lowering to length-based writes. It is not
+`println` is compile-time lowering to length-based writes. It is not
 `printf`.
 
 Useful flags:
@@ -177,7 +177,7 @@ fn increment(c: &mut Counter) {
 }
 
 fn greet(c: &Counter) {
-    fmt.println("hello,", c.name)
+    println("hello,", c.name)
 }
 
 fn main() {
@@ -186,7 +186,7 @@ fn main() {
     increment(c)          // auto-borrow as &mut
     greet(c)              // auto-borrow as &
     let b = Box::new(42)
-    fmt.println("boxed:", *b)
+    println("boxed:", *b)
 }
 ```
 
@@ -211,7 +211,7 @@ fn main() {
     let mut v = []int {}
     push(v, 10)
     v.push(20)
-    fmt.println(sum(v))
+    println(sum(v))
 }
 ```
 
@@ -229,14 +229,18 @@ Quoted imports only. No glob, no `use`.
 
 | Spec | Loads | Call as |
 |---|---|---|
-| `import "std:fmt"` | `std/fmt.yuga` | `fmt.println(...)` |
-| `import "math.yuga"` | `math.yuga` next to this file | `math.add(2, 40)` |
-| `import "../mod/math.yuga"` | relative to the importer | `math.add(...)` |
+| `import "std:fmt"` | `std/fmt.yuga` | `println(...)` |
+| `import "math.yuga"` | `math.yuga` next to this file | `add(2, 40)` — unqualified |
+| `import "../mod/math.yuga"` | relative to the importer | `add(...)` — unqualified |
 
 The module name is the file stem (`math`), or `bar` from `std:bar`.
 
-Functions: `mod.fn(...)`. Module-level `let` bindings are places:
-`counter.n += 1`.
+Imported names are used **unqualified**: a call that is not a local or a
+definition of the current module is looked up in the imports, by depth —
+own declarations first, then imports' declarations (last import wins), then
+theirs. A local definition shadows an imported name; the qualified form
+(`mod.fn(...)`) still works and is the escape hatch for collisions.
+Module-level `let` bindings stay qualified: `counter.n += 1`.
 
 `lib.yuga`:
 
@@ -257,13 +261,15 @@ import "lib.yuga"
 fn main() {
     lib.bump()
     lib.bump()
-    fmt.println(lib.n)
+    println(lib.n)
 }
 ```
 
 Method call `node.w(32)` looks up `w` in the current file, then in imported
-modules, and rewrites to `zeus.w(node, 32)` when `w` lives in `zeus`. That is why
-`import "std:zeus"` is enough for chaining.
+modules (same depth order), and rewrites to `w(node, 32)` when `w` takes the
+node first. That is why `sig.get()` / `v.push(x)` work — and why the zeus
+libraries ship plain functions instead of chains: `n.pad(8).gap(4)` was
+possible, so the API is written to not need it.
 
 ### 5. Closures
 
@@ -276,8 +282,8 @@ fn main() {
 
 Captures must be Copy. The `fn` value owns a heap env and drops like `Box<T>`.
 It may be returned or stored. Zeus intern (`plat_intern_fn`) memcpy's that
-env using `env_size`, so a click or `.styled` handler still sees captured
-`Signal`s after the `fn` field that was interned is dropped.
+env using `env_size`, so a click / text / style-prop thunk still sees
+captured `Signal`s after the `fn` field that was interned is dropped.
 
 ### Use cases
 

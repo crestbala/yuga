@@ -1,7 +1,0 @@
-fn make() -> fn(int) -> int {
-    let n = 1
-    return fn(x: int) -> int { return x + n }
-}
-
-fn main() {
-}

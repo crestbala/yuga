@@ -95,6 +95,21 @@ struct UiNode {
     capture_text: int,
     edit_slot: int,
     click_fn: int,
+    /// Interned `fn()` adapters for pointer/key events carrying a payload.
+    /// The dispatcher stashes the event in `zeus` globals, then invokes these.
+    /// Defaulted, so the UiNode literal in `blank()` need not list them.
+    mouse_down_fn: int = 0,
+    mouse_up_fn: int = 0,
+    key_down_fn: int = 0,
+    key_up_fn: int = 0,
+    key_press_fn: int = 0,
+    /// `Signal<string>` an input's typed text is written back to (two-way
+    /// `Input(bind = sig)`). 0 when unbound.
+    bind_str_sig: int = 0,
+    /// Fixed pulse phase (0..143), or -1 to derive one from `nid`. Spreading
+    /// phases evenly around a ring of dots makes the alpha wave read as
+    /// rotation, which is how a spinner is drawn from circles alone.
+    pulse_phase: int = -1,
     ui_size: int,
     ui_look: int,
     restyle_fn: int,
@@ -123,6 +138,10 @@ let mut chain_ctxs: []int = []int {}
 let mut focus_ring: []int = []int {}
 let mut paint_sy: int = 0
 let mut paint_sx: int = 0
+/// Node the last press landed on. `zeus` reads it to deliver `MouseEvent`
+/// handlers, which the low-level input path cannot call (it is imported by
+/// `zeus`, not the other way round).
+let mut last_hit: int = 0
 let mut drag_id: int = 0
 let mut drag_ay: int = 0
 let mut drag_as: int = 0
@@ -684,7 +703,11 @@ fn ptr_in(id: int) -> int {
 fn paint_alpha(id: int) -> int {
     let mut a = nodes[id].opacity
     if nodes[id].pulse != 0 {
-        let mut p = (pulse_t + nodes[id].nid * 5) % 144
+        let mut ph = nodes[id].nid * 5
+        if nodes[id].pulse_phase >= 0 {
+            ph = nodes[id].pulse_phase
+        }
+        let mut p = (pulse_t + ph) % 144
         if p > 72 {
             p = 144 - p
         }

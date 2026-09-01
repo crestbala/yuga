@@ -1,0 +1,52 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "icons.yuga"
+
+// Pill with a tinted dot and label, plus an optional close glyph. The dot
+// and label take the tint; the pill itself sits on the panel colour.
+
+fn noop() {
+    return
+}
+
+struct ChipProps {
+    label: string = "",
+    color: string = "",
+    size: int = 1,
+    on_close: fn() = noop,
+    on_close__set: bool = false,
+}
+
+fn Chip(p: ChipProps) -> Node {
+    let color = p.color
+    let label = p.label
+    let size = p.size
+    let has_close = p.on_close__set
+    let n = Box(
+        align_direction = DIRECTION.Row,
+        background = panel(),
+        align_items = ALIGN.Center,
+        height = chip_h(size),
+        pad_left = pad_x(size),
+        pad_right = gap_of(size),
+        pad_y = pad_y(size) / 2,
+        gap = gap_of(size),
+        radius = radius_of(size),
+        shrink = 0,
+        overflow = overflow_hidden(),
+        hover_fade = true
+    ) {
+        Box(background = color, width = dot(), height = dot(), radius = dot() / 2),
+        Text(label, color = color, font = caption_px(size))
+    }
+    with_size(n, size)
+    if has_close {
+        // Attached explicitly rather than emitted: the handler lives on
+        // `p`, and a props struct holding a `fn` is not Copy, so it cannot be
+        // captured by a trailing-block closure.
+        let g = Icon(markup = icons.close(), color = label, size = icon_of(size) - 2)
+        on_click(g, p.on_close)
+        add(n, g)
+    }
+    return n
+}

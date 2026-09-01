@@ -1,0 +1,15 @@
+import "std:fmt"
+
+struct S {
+    a: fn(),
+    b: int,
+}
+
+fn take(f: fn()) {}
+
+fn main() {
+    let mut s = S { a: || { println("hi") }, b: 3 }
+    take(s.a)
+    take(s.a)
+    println(s.b)
+}

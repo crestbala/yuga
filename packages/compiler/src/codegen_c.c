@@ -32,8 +32,8 @@ static const char **subst_names;
 static Type **subst_args;
 static size_t subst_n;
 static const char *cname_override;
-static AstNode *clos_nodes[256];
-static int nclos_nodes;
+static AstNode **clos_nodes;
+static int nclos_nodes, clos_cap;
 static AstNode *clos_hoist_node[64];
 static int clos_hoist_tid[64];
 static int clos_hoist_n;
@@ -450,8 +450,10 @@ static void emit_println(FILE *o, AstNode *n, int ind) {
                     i, i);
         }
     }
-    indent(o, ind + 1);
-    fprintf(o, "_iov[_ni].iov_base = (void *)\"\\n\"; _iov[_ni].iov_len = 1; _ni++;\n");
+    if (!n->as.call.is_print) {
+        indent(o, ind + 1);
+        fprintf(o, "_iov[_ni].iov_base = (void *)\"\\n\"; _iov[_ni].iov_len = 1; _ni++;\n");
+    }
     indent(o, ind + 1);
     fprintf(o, "yuga_writev_all(_iov, _ni);\n");
     indent(o, ind);
@@ -779,6 +781,25 @@ static void emit_expr(FILE *o, AstNode *n) {
             }
             fprintf(o, "(yuga_fn){(void *)yuga_clos_%d, _ce%d, sizeof(struct yuga_env_%d)}; })",
                     id, tid, id);
+            break;
+        }
+        case AST_IF: {
+            /* Fallback for a value-typed if when IR lowering was skipped: a C
+               ternary over the two branch tail expressions. */
+            AstNode *t = ast_block_tail(n->as.if_stmt.then_block);
+            AstNode *e = n->as.if_stmt.else_block;
+            if (e && e->kind == AST_BLOCK) e = ast_block_tail(e);
+            if (!t || !e || !n->ty || n->ty->kind == TY_VOID) {
+                fprintf(o, "0");
+                break;
+            }
+            fprintf(o, "(");
+            emit_expr(o, n->as.if_stmt.cond);
+            fprintf(o, " ? ");
+            emit_expr(o, t);
+            fprintf(o, " : ");
+            emit_expr(o, e);
+            fprintf(o, ")");
             break;
         }
         default:
@@ -1277,7 +1298,26 @@ static void emit_steal(FILE *o, const char *place, Type *t, int ind) {
     }
 }
 
-static void emit_drop_place(FILE *o, const char *place, Type *t, int ind) {
+/** 1 if `rel` was moved out (exact match). */
+static int moved_path_exact(const char *rel, const char **moved, int nmoved) {
+    for (int i = 0; i < nmoved; i++)
+        if (strcmp(rel, moved[i]) == 0) return 1;
+    return 0;
+}
+
+/** 1 if a moved path sits under `rel`, so the drop must descend to skip it. */
+static int moved_path_below(const char *rel, const char **moved, int nmoved) {
+    size_t n = strlen(rel);
+    for (int i = 0; i < nmoved; i++)
+        if (strncmp(rel, moved[i], n) == 0 && moved[i][n] == '.') return 1;
+    return 0;
+}
+
+/** Drop `place` (type `t`). `moved`/`nmoved` are field paths moved out of the
+ *  owning local (relative to it); those fields are never dropped — ownership
+ *  is a static fact, nothing is zeroed. NULL moves mean no skips. */
+static void emit_drop_place(FILE *o, const char *place, Type *t, int ind,
+                            const char **moved, int nmoved, const char *prefix) {
     if (!type_needs_drop(t) || !place) return;
     if (t->kind == TY_BOX) {
         indent(o, ind);
@@ -1296,7 +1336,7 @@ static void emit_drop_place(FILE *o, const char *place, Type *t, int ind) {
             indent(o, ind);
             fprintf(o, "{ int64_t _di; for (_di = 0; _di < %s.len; _di++) {\n", place);
             snprintf(ebuf, sizeof ebuf, "((%s *)%s.ptr)[_di]", cn, place);
-            emit_drop_place(o, ebuf, t->elem, ind + 1);
+            emit_drop_place(o, ebuf, t->elem, ind + 1, NULL, 0, NULL);
             indent(o, ind);
             fprintf(o, "} }\n");
         }
@@ -1311,7 +1351,7 @@ static void emit_drop_place(FILE *o, const char *place, Type *t, int ind) {
                     (long long)t->array_len);
             char ebuf[256];
             snprintf(ebuf, sizeof ebuf, "%s[_di]", place);
-            emit_drop_place(o, ebuf, t->elem, ind + 1);
+            emit_drop_place(o, ebuf, t->elem, ind + 1, NULL, 0, NULL);
             indent(o, ind);
             fprintf(o, "} }\n");
         }
@@ -1320,9 +1360,20 @@ static void emit_drop_place(FILE *o, const char *place, Type *t, int ind) {
     if (t->kind == TY_STRUCT) {
         for (size_t i = 0; i < t->field_count; i++) {
             if (!type_needs_drop(t->field_types[i])) continue;
-            char buf[256];
+            char buf[256], rel[256];
             snprintf(buf, sizeof buf, "%s.%s", place, t->field_names[i]);
-            emit_drop_place(o, buf, t->field_types[i], ind);
+            if (moved) {
+                if (prefix && prefix[0])
+                    snprintf(rel, sizeof rel, "%s.%s", prefix, t->field_names[i]);
+                else
+                    snprintf(rel, sizeof rel, "%s", t->field_names[i]);
+                if (moved_path_exact(rel, moved, nmoved)) continue;
+                if (moved_path_below(rel, moved, nmoved)) {
+                    emit_drop_place(o, buf, t->field_types[i], ind, moved, nmoved, rel);
+                    continue;
+                }
+            }
+            emit_drop_place(o, buf, t->field_types[i], ind, NULL, 0, NULL);
         }
     }
 }
@@ -1388,7 +1439,7 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
                 emit_ir_place(o, in->place);
                 fprintf(o, " = %s;\n", lv(in->a));
                 emit_steal(o, lv(in->a), in->ty, 1);
-                emit_drop_place(o, "_repl", in->ty, 1);
+                emit_drop_place(o, "_repl", in->ty, 1, NULL, 0, NULL);
                 fprintf(o, "    }\n");
             } else {
                 emit_ir_place(o, in->place);
@@ -1576,10 +1627,17 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
             Type *ty = (in->a >= 0 && in->a < CF->nlocals) ? CF->locals[in->a].ty : NULL;
             char buf[64];
             snprintf(buf, sizeof buf, "%s", lv(in->a));
-            if (ty && type_needs_drop(ty))
-                emit_drop_place(o, buf, ty, 0);
-            else
+            if (ty && type_needs_drop(ty)) {
+                const char **moved = NULL;
+                int nmoved = 0;
+                if (in->a >= 0 && in->a < CF->nlocals) {
+                    moved = CF->locals[in->a].moved;
+                    nmoved = CF->locals[in->a].nmoved;
+                }
+                emit_drop_place(o, buf, ty, 0, moved, nmoved, NULL);
+            } else {
                 fprintf(o, "yuga_drop((void **)&%s);\n", buf);
+            }
             break;
         }
         case IR_BOUND:
@@ -1812,7 +1870,12 @@ static int mods_use(YugaModule *mods, int nmods, const char *name) {
 static void collect_clos(AstNode *n) {
     if (!n) return;
     if (n->kind == AST_CLOSURE) {
-        if (nclos_nodes < 256) clos_nodes[nclos_nodes++] = n;
+        if (nclos_nodes == clos_cap) {
+            clos_cap = clos_cap ? clos_cap * 2 : 256;
+            clos_nodes = (AstNode **)realloc(clos_nodes, (size_t)clos_cap * sizeof(AstNode *));
+            if (!clos_nodes) yuga_fatal("out of memory");
+        }
+        clos_nodes[nclos_nodes++] = n;
         collect_clos(n->as.fn.body);
         return;
     }

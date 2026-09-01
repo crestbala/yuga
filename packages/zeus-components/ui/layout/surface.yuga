@@ -1,0 +1,14 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Surface: a panel plate for controls. Children come from the caller's block.
+
+fn Surface() -> Node {
+    return Box(
+        align_direction = DIRECTION.Column,
+        background = panel(),
+        spacing = SPACE.Sm,
+        padding = SPACE.Md,
+        radius = surface_radius()
+    )
+}

@@ -1,0 +1,85 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "../display/icons.yuga"
+
+// Select: a field-like trigger showing the current value, and an options
+// card that opens under it while `open` is set. Three options ship.
+
+struct SelectProps {
+    a: string = "",
+    b: string = "",
+    c: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+}
+
+struct SelectOptionProps {
+    label: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+    value: int = 0,
+    open: Signal<int> = Signal { id: 0 },
+}
+
+fn last() -> int {
+    return 2
+}
+
+fn Option(p: SelectOptionProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Column, spacing = 0) {
+        let sel = Box(align_direction = DIRECTION.Row, spacing = menu_row_gap(), align_items = ALIGN.Center, background = ink(), pad_x = menu_row_pad_x(), pad_y = menu_row_pad_y(), radius = inset_radius(surface_radius(), menu_pad())) {
+            Text(p.label, color = text(), font = font_px(1))
+        }
+        show_eq(sel, p.sig, p.value)
+        let unsel = Box(align_direction = DIRECTION.Row, spacing = menu_row_gap(), align_items = ALIGN.Center, pad_x = menu_row_pad_x(), pad_y = menu_row_pad_y(), radius = inset_radius(surface_radius(), menu_pad())) {
+            Text(p.label, color = muted(), font = font_px(1))
+        }
+        show_ne(unsel, p.sig, p.value)
+    }
+    on_click_set(n, p.sig, p.value)
+    on_click_also_set(n, p.open, 0)
+    return n
+}
+
+fn Value(p: SelectProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Row, background = panel(), align_items = ALIGN.Center, justify_content = ALIGN.Between, width = popover_w(), height = input_height(), pad_x = input_pad_x(), pad_y = input_pad_y(), radius = button_radius(), border = 1, border_color = line(), shrink = 0) {
+        let a = Text(p.a, color = text(), font = font_px(1))
+        show_eq(a, p.sig, 0)
+        let b = Text(p.b, color = text(), font = font_px(1))
+        show_eq(b, p.sig, 1)
+        let c = Text(p.c, color = text(), font = font_px(1))
+        show_eq(c, p.sig, 2)
+        Icon(markup = alt_arrow_down(), color = muted(), size = icon_sm())
+    }
+    return n
+}
+
+fn Select(p: SelectProps) -> Node {
+    let open = signal(0)
+    let n = Box(align_direction = DIRECTION.Column, spacing = SPACE.Snug, align_items = ALIGN.Start) {
+        let trigger = Box(align_direction = DIRECTION.Row, background = panel(), align_items = ALIGN.Center, justify_content = ALIGN.Between, width = popover_w(), height = input_height(), pad_x = input_pad_x(), pad_y = input_pad_y(), radius = button_radius(), border = 1, border_color = line(), shrink = 0) {
+            let a = Text(p.a, color = text(), font = font_px(1))
+            show_eq(a, p.sig, 0)
+            let b = Text(p.b, color = text(), font = font_px(1))
+            show_eq(b, p.sig, 1)
+            let c = Text(p.c, color = text(), font = font_px(1))
+            show_eq(c, p.sig, 2)
+            Icon(markup = alt_arrow_down(), color = muted(), size = icon_sm())
+        }
+        on_click_toggle(trigger, open)
+        let card = Box(align_direction = DIRECTION.Column, background = panel(), spacing = SPACE.Xs2, width = popover_w(), border = 1, border_color = line(), radius = surface_radius(), padding = menu_pad()) {
+            Option(label = p.a, sig = p.sig, value = 0, open = open),
+            Option(label = p.b, sig = p.sig, value = 1, open = open),
+            Option(label = p.c, sig = p.sig, value = 2, open = open)
+        }
+        show(card, open)
+        enter_fade(card)
+    }
+    key(n, "down", "select.next")
+    key(n, "up", "select.prev")
+    key(n, "enter", "select.toggle")
+    key(n, "escape", "select.close")
+    on_range(n, "select.next", p.sig, 1, 0, last())
+    on_range(n, "select.prev", p.sig, -1, 0, last())
+    on_key_toggle(n, "select.toggle", open)
+    on_key_set(n, "select.close", open, 0)
+    return n
+}

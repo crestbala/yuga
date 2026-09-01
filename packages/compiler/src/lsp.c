@@ -467,6 +467,8 @@ static void hover_text(Pick *pk, char *buf, size_t cap) {
         snprintf(buf, cap, "%s: %s", n->as.var.name, ty ? ty : "?");
     else if (n->kind == AST_STRUCT_DECL && n->as.strct.name)
         snprintf(buf, cap, "struct %s", n->as.strct.name);
+    else if (n->kind == AST_ENUM_DECL && n->as.enum_decl.name)
+        snprintf(buf, cap, "enum %s", n->as.enum_decl.name);
     else if (n->kind == AST_TYPE && n->as.type.name)
         snprintf(buf, cap, "%s", n->as.type.name);
     else if (ty)
@@ -581,7 +583,7 @@ static int def_loc_of(Pick *pk, SourceLoc *out) {
         return 1;
     }
     if (n->kind == AST_FN_DECL || n->kind == AST_VAR_DECL || n->kind == AST_STRUCT_DECL ||
-        n->kind == AST_CLOSURE) {
+        n->kind == AST_ENUM_DECL || n->kind == AST_CLOSURE) {
         *out = n->loc;
         return 1;
     }
@@ -812,6 +814,8 @@ static void add_mod_members(Completions *c, YugaModule *m, const char *prefix, T
             add_comp_d(c, d->as.var.name, d->ty ? type_name(d->ty) : "", 6, prefix, d->doc);
         } else if (!recv && d->kind == AST_STRUCT_DECL && d->as.strct.name) {
             add_comp_d(c, d->as.strct.name, "struct", 7, prefix, d->doc);
+        } else if (!recv && d->kind == AST_ENUM_DECL && d->as.enum_decl.name) {
+            add_comp_d(c, d->as.enum_decl.name, "enum", 7, prefix, d->doc);
         }
     }
 }

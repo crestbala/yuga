@@ -1,3 +1,5 @@
+// `each` / `when` as plain functions (no chaining), `bind_n` for int paint,
+// and explicit `child` attachment.
 import "std:zeus"
 
 struct Row {
@@ -9,20 +11,22 @@ fn main() {
     let mut rows = []Row {}
     push(rows, Row { a: "bezel.toml", b: "Config" })
     push(rows, Row { a: "kit.yuga", b: "Source" })
-    let open = zeus.signal(1)
+    let open = signal(1)
     let mut nums = []int {}
     for i in 1..4 {
         push(nums, i)
     }
-    let col = zeus.col()
-    col.each(nums, (i, n) => {
-        zeus.label("n").bind_n(n).font(11)
+    let col = Box(align_direction = DIRECTION.Column)
+    each(col, nums, (i, n) => {
+        bind_n(Text("n", font = 11), n)
     })
-    col.each(rows, (i, r) => {
-        zeus.label(r.a).bind_n(i).font(12)
+    each(col, rows, (i, r) => {
+        bind_n(Text(r.a, font = 12), i)
     })
-    col.child(zeus.when(open, || {
-        zeus.label("shown").font(12)
+    child(col, when(open, || {
+        Text("shown", font = 12)
     }))
-    zeus.window_root("each", 240, 160).child(col).run()
+    window("each", 240, 160)
+    root(col)
+    run(col)
 }

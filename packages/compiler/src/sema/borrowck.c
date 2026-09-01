@@ -25,6 +25,10 @@ typedef struct Binding {
     int depth;
     char *borrow_of;
     int borrow_mut;
+    /* Field paths moved out of this binding ("on_press", "a.b"). The struct
+       keeps owning the rest, so the drop at scope exit skips these. */
+    char **moved;
+    int nmoved;
     struct Binding *next;
 } Binding;
 
@@ -118,9 +122,31 @@ static void pop_to_depth(int d) {
         Binding *b = binds;
         binds = b->next;
         free(b->name);
+        for (int i = 0; i < b->nmoved; i++) free(b->moved[i]);
+        free(b->moved);
         free(b->borrow_of);
         free(b);
     }
+}
+
+/** 1 if `path` was moved out of its binding (equal to, under, or above a
+ *  moved field path). Reading the moved field, something inside it, or the
+ *  whole struct around it are all uses of moved state. */
+static int path_moved(const char *path, Binding *v) {
+    if (!v || !path) return 0;
+    for (int i = 0; i < v->nmoved; i++)
+        if (paths_conflict(path, v->moved[i])) return 1;
+    return 0;
+}
+
+/** Move `path` out of `v`: record it so later reads error and the struct's
+ *  drop skips it. */
+static void record_move(Binding *v, const char *path) {
+    for (int i = 0; i < v->nmoved; i++)
+        if (strcmp(v->moved[i], path) == 0) return;
+    v->moved = (char **)realloc(v->moved, (size_t)(v->nmoved + 1) * sizeof(char *));
+    if (!v->moved) return;
+    v->moved[v->nmoved++] = yuga_dup(path);
 }
 
 /** Root variable of a place, for the move/ownership checks. */
@@ -273,6 +299,11 @@ static int check_expr(AstNode *n, int as_move) {
                 errn = 1;
                 return 1;
             }
+            if (v->nmoved > 0) {
+                yuga_error(n->loc, "use of partially moved value '%s'", n->as.ident.name);
+                errn = 1;
+                return 1;
+            }
             if (check_use_path(n->as.ident.name, n->loc)) return 1;
             if (as_move && !v->is_copy) {
                 if (borrow_covers(n->as.ident.name)) {
@@ -304,12 +335,21 @@ static int check_expr(AstNode *n, int as_move) {
             char rbuf[256];
             Binding *v = find_b(root_of_path(p, rbuf, sizeof rbuf));
             int rc = 0;
-            if (v && v->own == ST_MOVED) {
+            if (v && (v->own == ST_MOVED || path_moved(p, v))) {
                 yuga_error(n->loc, "use of moved value '%s'", rbuf);
                 errn = 1;
                 rc = 1;
             } else {
                 rc = check_use_path(p, n->loc);
+            }
+            /* A consuming use of a non-Copy field transfers ownership. The
+               path is recorded so the struct's drop skips it and later reads
+               of it error — static ownership, no runtime zeroing. Index and
+               deref chains are not trackable this way and keep copy reads. */
+            if (!rc && as_move && v && !v->is_copy && n->ty && !type_is_copy(n->ty) &&
+                n->ty->kind != TY_PTR && !strchr(p, '[') && !strchr(p, '*')) {
+                n->flags |= ASTF_MOVED;
+                record_move(v, p);
             }
             free(p);
             return rc;
@@ -380,6 +420,24 @@ static int check_expr(AstNode *n, int as_move) {
             for (size_t i = 0; i < n->as.array_lit.count; i++)
                 if (check_expr(n->as.array_lit.elems[i], 0)) return 1;
             return 0;
+        case AST_IF: {
+            /* Value-position if: same branch discipline as the statement form —
+               each arm starts from the pre-branch state. */
+            if (check_expr(n->as.if_stmt.cond, 0)) return 1;
+            release_temps();
+            BSnap *pre = NULL, *post_then = NULL;
+            int npre = snapshot(&pre), nthen = 0;
+            int rc = check_stmt(n->as.if_stmt.then_block);
+            if (!rc) {
+                nthen = snapshot(&post_then);
+                restore(pre, npre);
+                if (n->as.if_stmt.else_block) rc = check_stmt(n->as.if_stmt.else_block);
+                if (!rc) join_moved(post_then, nthen);
+            }
+            free(pre);
+            free(post_then);
+            return rc;
+        }
         default:
             return 0;
     }

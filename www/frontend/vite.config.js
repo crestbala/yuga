@@ -65,7 +65,7 @@ export default defineConfig({
           here,
           resolve(here, ".."),
           resolve(here, "../backend"),
-          resolve(repo, "packages/zeus/lib"),
+          resolve(repo, "packages/zeus-components"),
           resolve(repo, "packages/compiler/std"),
           resolve(repo, "packages/compiler/runtime"),
           resolve(repo, "packages/zeus/web"),

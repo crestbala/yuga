@@ -1,0 +1,271 @@
+// Numbers drive layout, colors are paint. Nothing here reads the theme.
+// 4px grid with 2px half-steps, mirroring bezel's crates/theme/src/theme/layout.rs.
+
+// ---- base scale (px) ----
+
+/// Spacing scale for `padding` / `gap` / `spacing` props: `SPACE.Xs` …
+/// `SPACE.Xl2`. Plain int constants, not functions.
+enum SPACE {
+    Xs2 = 2,
+    Xs = 4,
+    Tight = 5,
+    Snug = 6,
+    Sm = 8,
+    Cozy = 10,
+    Md = 12,
+    Comfy = 14,
+    Lg = 16,
+    Xl = 20,
+    Xl2 = 24,
+    Page = 28,
+    Section = 20,
+}
+
+// ---- reserved chrome. Fixed height, never conditionally rendered. ----
+
+fn header_height() -> int {
+    return 44
+}
+
+fn titlebar_height() -> int {
+    return 38
+}
+
+fn status_strip_height() -> int {
+    return 24
+}
+
+fn bar_height() -> int {
+    return 56
+}
+
+// ---- radii. One base; every other corner is a ratio of it, so moving
+// base_radius moves the whole set together. ----
+
+fn base_radius() -> int {
+    return 8
+}
+
+fn radius(num: int, den: int) -> int {
+    return base_radius() * num / den
+}
+
+fn kbd_radius() -> int {
+    return radius(5, 8)
+}
+
+fn hit_radius() -> int {
+    return radius(7, 8)
+}
+
+fn control_radius() -> int {
+    return radius(3, 4)
+}
+
+fn button_radius() -> int {
+    return radius(1, 1)
+}
+
+fn toggle_group_radius() -> int {
+    return radius(9, 8)
+}
+
+fn panel_radius() -> int {
+    return radius(5, 4)
+}
+
+fn surface_radius() -> int {
+    return radius(3, 2)
+}
+
+fn bubble_radius() -> int {
+    return radius(2, 1)
+}
+
+fn pill_radius() -> int {
+    return 999
+}
+
+// A child inset by `inset` inside a container of radius `outer` keeps its
+// corners parallel to the container's. Stated as arithmetic where the child is
+// defined, so a container that changes its padding carries its rows with it.
+fn inset_radius(outer: int, inset: int) -> int {
+    if outer > inset {
+        return outer - inset
+    }
+    return 0
+}
+
+// ---- control frame ----
+
+fn button_pad_x() -> int {
+    return 12
+}
+
+fn button_pad_y() -> int {
+    return 6
+}
+
+fn input_pad_x() -> int {
+    return 10
+}
+
+fn input_pad_y() -> int {
+    return 7
+}
+
+fn input_height() -> int {
+    return 36
+}
+
+fn input_min_width() -> int {
+    return 120
+}
+
+fn toggle_w() -> int {
+    return 32
+}
+
+fn toggle_h() -> int {
+    return 18
+}
+
+fn check() -> int {
+    return 16
+}
+
+fn hairline() -> int {
+    return 2
+}
+
+// ---- row rhythm. A card row and a step row have to agree with the surface
+// they sit in, so the numbers are named once and read from both ends. ----
+
+fn row_pad_x() -> int {
+    return 20
+}
+
+fn row_pad_y() -> int {
+    return 14
+}
+
+fn row_gap() -> int {
+    return 14
+}
+
+fn step_pad_x() -> int {
+    return 10
+}
+
+fn step_pad_y() -> int {
+    return 6
+}
+
+fn menu_pad() -> int {
+    return 4
+}
+
+fn menu_row_pad_x() -> int {
+    return 8
+}
+
+fn menu_row_pad_y() -> int {
+    return 6
+}
+
+fn menu_row_gap() -> int {
+    return 10
+}
+
+// ---- fixed elements ----
+
+fn tile() -> int {
+    return 36
+}
+
+fn dot() -> int {
+    return 6
+}
+
+fn avatar() -> int {
+    return 28
+}
+
+fn hit() -> int {
+    return 28
+}
+
+fn cell() -> int {
+    return 30
+}
+
+fn svg() -> int {
+    return 16
+}
+
+fn icon_sm() -> int {
+    return 14
+}
+
+fn icon_xs() -> int {
+    return 12
+}
+
+fn icon_2xs() -> int {
+    return 10
+}
+
+// ---- table. Cell padding is the one number a header and a body row must
+// share, or the columns drift apart. ----
+
+fn table_cell_x() -> int {
+    return 12
+}
+
+fn table_head_pad_y() -> int {
+    return 8
+}
+
+fn table_row_pad_y() -> int {
+    return 9
+}
+
+fn table_col_w() -> int {
+    return 140
+}
+
+// ---- tabs ----
+
+fn tab_pad_x() -> int {
+    return 10
+}
+
+fn tab_pad_top() -> int {
+    return 6
+}
+
+fn tab_pad_bottom() -> int {
+    return 7
+}
+
+fn underline() -> int {
+    return 2
+}
+
+// ---- surfaces ----
+
+fn dialog_w() -> int {
+    return 360
+}
+
+fn popover_w() -> int {
+    return 280
+}
+
+fn toast_w() -> int {
+    return 320
+}
+
+fn empty_pad_y() -> int {
+    return 40
+}

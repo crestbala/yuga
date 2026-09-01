@@ -1,0 +1,37 @@
+import "std:zeus"
+import "std:fmt"
+
+fn fail(msg: string) {
+    fmt.println("FAIL", msg)
+    let z = 1 / 0
+}
+
+fn main() {
+    let align = signal(DIRECTION.Row)
+    // The conditional-prop pattern: direction follows a signal.
+    let n = Box(align_direction = if align.get() == DIRECTION.Row { DIRECTION.Row } else { DIRECTION.Column }) {
+        Text("a"),
+        Text("b")
+    }
+    window("t", 200, 120)
+    ui_reset()
+    root(n)
+    engine_layout(200, 120)
+    // Row lays the labels side by side, column stacks them.
+    let a = node_kid(n.id, 0)
+    let b = node_kid(n.id, 1)
+    if node_x(b) <= node_x(a) {
+        fail("initial row")
+    }
+    align.set(DIRECTION.Column)
+    engine_layout(200, 120)
+    if node_y(b) <= node_y(a) {
+        fail("column after set")
+    }
+    align.set(DIRECTION.Row)
+    engine_layout(200, 120)
+    if node_x(b) <= node_x(a) {
+        fail("row after clear")
+    }
+    fmt.println("conditional direction ok")
+}

@@ -1,7 +1,7 @@
 //! Canvas2D docs UI. Same Zeus tree as macOS; HTTP is gRPC-Web.
 //!
 //! `main` POSTs `Docs.Page` for every id through `http.client("").call`,
-//! then `screen.Screen` paints. Vite serves this wasm and proxies `/Docs` to `:8082`.
+//! then `Screen` paints. Vite serves this wasm and proxies `/Docs` to `:8082`.
 
 import "std:zeus"
 import "std:http"
@@ -12,6 +12,6 @@ import "../screen.yuga"
 fn main() {
     let c = http.client("")
     cache.load(c)
-    let page = zeus.signal(0)
-    screen.Screen("Canvas2D", page).run()
+    let page = signal(0)
+    Screen("Canvas2D", page).run()
 }

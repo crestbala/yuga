@@ -1,0 +1,26 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Keyboard keycap: ink plate, hairline border, muted caption.
+
+struct KbdProps {
+    key: string = "",
+    size: int = 1,
+}
+
+fn Kbd(p: KbdProps) -> Node {
+    return Box(
+        align_direction = DIRECTION.Row,
+        background = ink(),
+        align_items = ALIGN.Center,
+        justify_content = ALIGN.Center,
+        pad_x = SPACE.Sm,
+        height = kbd_h(p.size),
+        radius = kbd_radius(),
+        border = 1,
+        border_color = line_strong(),
+        shrink = 0
+    ) {
+        Text(p.key, color = muted(), font = caption_px(p.size))
+    }
+}

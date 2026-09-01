@@ -1,0 +1,8 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// One-pixel hairline rule in the line colour.
+
+fn Divider() -> Node {
+    return Box(height = 1, background = line())
+}

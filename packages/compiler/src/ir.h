@@ -102,6 +102,11 @@ typedef struct {
     int is_global;
     const char *cname;  /* C symbol when is_global */
     int needs_drop;     /* owns a box: dropped on every exit path */
+    /* Field paths moved out of this local ("a", "a.b"). The struct keeps
+       owning the rest; the drop skips these. Static ownership — the fields
+       are never zeroed. */
+    const char **moved;
+    int nmoved;
 } IrLocal;
 
 typedef struct {

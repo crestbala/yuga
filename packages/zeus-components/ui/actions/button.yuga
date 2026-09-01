@@ -1,0 +1,121 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Bezel buttons. The named variants pick the plate: `Ghost` / `Prominent` /
+// `Soft` / `Outline` / `Destructive` / …; plain `Button` follows the `look`
+// prop (0 solid / 1 soft / 2 outline / 3 ghost / 4 danger, default soft).
+// `size` is 0 sm / 1 md / 2 lg (default md). Handlers ride in as `on_press`,
+// wired through `n.on_click` — the same flow the chain kit used, safe with
+// the declarative widgets.
+
+fn noop() {
+    return
+}
+
+struct ButtonProps {
+    label: string = "",
+    look: int = 1,
+    size: int = 1,
+    on_press: fn() = noop,
+    on_press__set: bool = false,
+}
+
+fn tint(look: int) -> string {
+    if look == 4 {
+        return danger()
+    }
+    if look == 3 {
+        return muted()
+    }
+    return text()
+}
+
+fn build(p: ButtonProps, look: int) -> Node {
+    let lab = p.label
+    let s = p.size
+    let t = tint(look)
+    // Resolve the plate first, then hand the whole look to `Button` as props.
+    let mut fill = ""
+    let mut ink = t
+    let mut edge_w = 0
+    let mut edge_c = ""
+    if look == 0 {
+        fill = t
+        ink = on_solid()
+    } else if look == 1 {
+        fill = panel()
+        edge_w = 1
+        edge_c = line()
+    } else if look == 2 {
+        fill = panel()
+        edge_w = 1
+        edge_c = t
+    } else if look == 4 {
+        fill = t
+        ink = on_solid()
+    }
+    // Field reads are bound to Copy locals first: the props struct holds a
+    // `fn` (on_press), so it is not Copy and cannot be captured by the thunks
+    // the style props wrap their values in.
+    let n = zeus.Button(
+        lab,
+        font = font_px(s),
+        color = ink,
+        background = fill,
+        pad_x = pad_x(s),
+        pad_y = pad_y(s),
+        radius = radius_of(s),
+        border = edge_w,
+        border_color = edge_c,
+        shrink = 0
+    )
+    with_size(n, s)
+    if p.on_press__set {
+        on_click(n, p.on_press)
+    }
+    return n
+}
+
+fn Button(p: ButtonProps) -> Node {
+    let lk = p.look
+    return build(p, lk)
+}
+fn Press(p: ButtonProps) -> Node {
+    return build(p, 0)
+}
+fn Ghost(p: ButtonProps) -> Node {
+    return build(p, 3)
+}
+fn Prominent(p: ButtonProps) -> Node {
+    return build(p, 0)
+}
+fn Destructive(p: ButtonProps) -> Node {
+    return build(p, 4)
+}
+fn Soft(p: ButtonProps) -> Node {
+    return build(p, 1)
+}
+fn Outline(p: ButtonProps) -> Node {
+    return build(p, 2)
+}
+fn Primary(p: ButtonProps) -> Node {
+    return build(p, 0)
+}
+fn Secondary(p: ButtonProps) -> Node {
+    return build(p, 3)
+}
+fn Danger(p: ButtonProps) -> Node {
+    return build(p, 4)
+}
+fn Close(p: ButtonProps) -> Node {
+    return build(p, 3)
+}
+fn Discard(p: ButtonProps) -> Node {
+    return build(p, 4)
+}
+fn Open(p: ButtonProps) -> Node {
+    return build(p, 0)
+}
+fn GhostOpen(p: ButtonProps) -> Node {
+    return build(p, 3)
+}

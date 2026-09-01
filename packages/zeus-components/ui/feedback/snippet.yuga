@@ -1,0 +1,20 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Code snippet: monospace-ish caption on a panel plate.
+
+struct SnippetProps {
+    text: string = "",
+}
+
+fn Snippet(p: SnippetProps) -> Node {
+    return Box(
+        align_direction = DIRECTION.Column,
+        background = panel(),
+        spacing = SPACE.Xs,
+        padding = SPACE.Md,
+        radius = button_radius()
+    ) {
+        Text(p.text, color = muted(), font = 12)
+    }
+}

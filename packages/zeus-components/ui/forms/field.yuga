@@ -1,0 +1,20 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "text_field.yuga"
+
+// Field: caption label above a text face, hint below.
+
+struct FieldProps {
+    label: string = "",
+    placeholder: string = "",
+    hint: string = "",
+}
+
+fn Field(p: FieldProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Column, spacing = gap_of(1)) {
+        Text(p.label, color = label(), font = caption_px(1)),
+        TextField(placeholder = p.placeholder),
+        Text(p.hint, color = muted(), font = caption_px(1))
+    }
+    return n
+}

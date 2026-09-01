@@ -1,6 +1,7 @@
+// Kit widgets arrive unqualified through the barrel import — no `ui.` or
+// `zeus.` prefix, no chaining. `size_of` reads the size token back.
 import "std:fmt"
-import "std:zeus"
-import "../../../../packages/zeus/lib/ui.yuga"
+import "../../../../packages/zeus-components/ui.yuga"
 
 fn fail() {
     let z = 0
@@ -17,8 +18,8 @@ fn expect(got: int, want: int) {
 }
 
 fn main() {
-    let sm = ui.Button(ButtonProps { label: "Go", on_press: || {} }).size(ui.sm())
-    expect(sm.size_of(), ui.sm())
-    let lg = ui.Chip(ChipProps { label: "Hi", color: 1 }).size(ui.lg())
-    expect(lg.size_of(), ui.lg())
+    let sm_btn = Button(label = "Go", size = sm())
+    expect(size_of(sm_btn), sm())
+    let lg_chip = Chip(label = "Hi", color = "#ededed", size = lg())
+    expect(size_of(lg_chip), lg())
 }

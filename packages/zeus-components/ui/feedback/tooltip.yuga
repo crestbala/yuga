@@ -1,0 +1,38 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "../display/kbd.yuga"
+
+// Tooltip: a trigger that opens a tip card after a hover delay, with the
+// shortcut shown as a keycap.
+
+struct TooltipProps {
+    label: string = "",
+    message: string = "",
+    shortcut: string = "",
+}
+
+fn Tooltip(p: TooltipProps) -> Node {
+    let open = signal(0)
+    return Box(align_direction = DIRECTION.Column, spacing = 0, align_items = ALIGN.Start) {
+        // `hover`/`show` are reactive wiring, not style, so they stay chained.
+        let a = Text(p.label, color = text(), font = font_px(1), hover_fade = true)
+        hover(a, open)
+        hover_delay(a, 500)
+        let tip = Box(
+            align_direction = DIRECTION.Row,
+            background = panel(),
+            spacing = SPACE.Sm,
+            align_items = ALIGN.Center,
+            border = 1,
+            border_color = line(),
+            radius = surface_radius(),
+            pad_x = SPACE.Sm,
+            pad_y = SPACE.Tight
+        ) {
+            Text(p.message, color = text(), font = type_caption()),
+            Kbd(key = p.shortcut)
+        }
+        show(tip, open)
+        enter_fade(tip)
+    }
+}

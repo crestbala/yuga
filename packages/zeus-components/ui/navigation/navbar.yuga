@@ -1,0 +1,25 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// App bar: brand strip, title, links, hairline below.
+
+struct NavbarProps {
+    brand: string = "",
+    a: string = "",
+    b: string = "",
+    c: string = "",
+}
+
+fn Navbar(p: NavbarProps) {
+    Box(align_direction = DIRECTION.Column, spacing = 0) {
+        Box(align_direction = DIRECTION.Row, spacing = SPACE.Lg, align_items = ALIGN.Center) {
+            Box(background = text(), width = SPACE.Sm, height = status_strip_height() - SPACE.Xs, radius = SPACE.Xs, shrink = 0),
+            Text(p.brand, color = text(), font = 16, shrink = 0),
+            Text(p.a, color = muted(), font = font_px(1)),
+            Text(p.b, color = text(), font = font_px(1)),
+            Text(p.c, color = muted(), font = font_px(1)),
+            Spacer()
+        },
+        Divider()
+    }
+}

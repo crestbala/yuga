@@ -44,9 +44,13 @@ fn writeln() {}
 ///
 /// Example:
 /// ```
-/// fmt.println("count:", 3, true)
+/// println("count:", 3, true)
 /// ```
 fn println() {}
+
+/// Print the arguments without a trailing newline. Same argument rules as
+/// `println`.
+fn print() {}
 
 /// Length-based string equality. Yuga strings are not C `strcmp` / NUL-terminated.
 ///

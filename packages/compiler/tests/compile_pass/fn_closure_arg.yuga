@@ -1,0 +1,12 @@
+// A `fn(...)` closure passed as a first-class function argument.
+import "std:fmt"
+
+fn id(f: fn(int) -> int) -> fn(int) -> int {
+    return f
+}
+
+fn main() {
+    let n = 1
+    let g = id(fn(x: int) -> int { return x + n })
+    fmt.println(g(4))
+}

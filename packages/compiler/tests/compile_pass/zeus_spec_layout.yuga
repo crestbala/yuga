@@ -1,0 +1,50 @@
+// ZEUS_SPEC.md section 3D — flexbox and grid layout, driven by struct configs.
+// `Row` / `Column` are gone: `Box(align_direction = DIRECTION.Row | "column")` is the
+// one container widget.
+import "std:zeus"
+import "std:fmt"
+
+fn DashboardLayout() {
+    // 1D flex row: one flexible panel, one fixed-width panel.
+    Box(align_direction = DIRECTION.Row, spacing = 16, align_items = ALIGN.Center) {
+        Box(flex = 1, background = "#313244", padding = 12) {
+            Text("Flexible Left Panel")
+        }
+        Box(width = 150, background = "#45475a", padding = 12) {
+            Text("Fixed Right Panel (150px)")
+        }
+    }
+
+    // 2D grid configured with a struct instance.
+    Grid(config = GridConfig(columns = 3, gap = 12, padding = 16)) {
+        Box(background = "#89b4fa", height = 100) { Text("Card 1") }
+        Box(background = "#a6e3a1", height = 100) { Text("Card 2") }
+        Box(background = "#f9e2af", height = 100) { Text("Card 3") }
+    }
+}
+
+fn main() {
+    window("Dashboard", 600, 400)
+    ui_reset()
+    DashboardLayout()
+    root(ui_root())
+    engine_layout(600, 400)
+
+    // Row children: node 3 is the flexible box, node 5 the fixed one.
+    let flexible = 3
+    let fixed = 5
+    if node_w(fixed) != 150 {
+        println("FAIL fixed panel width:", node_w(fixed))
+    }
+    if node_w(flexible) <= node_w(fixed) {
+        println("FAIL flexible panel did not grow:", node_w(flexible))
+    }
+    // "#313244" parses to the packed RGB the box was filled with.
+    if hex("#313244") != rgb(49, 50, 68) {
+        println("FAIL hex parse:", hex("#313244"))
+    }
+    if hex("#fff") != rgb(255, 255, 255) {
+        println("FAIL short hex:", hex("#fff"))
+    }
+    println("layout ok:", node_w(flexible), node_w(fixed))
+}

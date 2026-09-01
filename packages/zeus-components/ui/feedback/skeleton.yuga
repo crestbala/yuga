@@ -1,0 +1,18 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Skeleton placeholder block. `-1` leaves an axis to the layout.
+
+struct SkeletonProps {
+    width: int = -1,
+    height: int = -1,
+}
+
+fn Skeleton(p: SkeletonProps) -> Node {
+    return Box(
+        background = panel(),
+        width = p.width,
+        height = p.height,
+        radius = control_radius()
+    )
+}

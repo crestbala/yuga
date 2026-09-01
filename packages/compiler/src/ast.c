@@ -42,6 +42,7 @@ void ast_free(AstNode *node) {
             for (size_t i = 0; i < node->as.fn.param_count; i++) {
                 free((void *)node->as.fn.params[i].name);
                 ast_free(node->as.fn.params[i].type);
+                ast_free(node->as.fn.params[i].default_val);
             }
             free(node->as.fn.params);
             ast_free(node->as.fn.ret_type);
@@ -60,11 +61,19 @@ void ast_free(AstNode *node) {
                 free((void *)node->as.strct.fields[i].name);
                 free((void *)node->as.strct.fields[i].doc);
                 ast_free(node->as.strct.fields[i].type);
+                ast_free(node->as.strct.fields[i].default_val);
             }
             free(node->as.strct.fields);
             for (size_t i = 0; i < node->as.strct.tparam_count; i++)
                 free((void *)node->as.strct.tparams[i]);
             free(node->as.strct.tparams);
+            break;
+        case AST_ENUM_DECL:
+            free((void *)node->as.enum_decl.name);
+            for (size_t i = 0; i < node->as.enum_decl.variant_count; i++)
+                free((void *)node->as.enum_decl.variants[i]);
+            free(node->as.enum_decl.variants);
+            free(node->as.enum_decl.values);
             break;
         case AST_VAR_DECL:
             free((void *)node->as.var.name);
@@ -131,6 +140,16 @@ void ast_free(AstNode *node) {
             for (size_t i = 0; i < node->as.call.arg_count; i++)
                 ast_free(node->as.call.args[i]);
             free(node->as.call.args);
+            if (node->as.call.arg_names) {
+                for (size_t i = 0; i < node->as.call.arg_count; i++)
+                    free((void *)node->as.call.arg_names[i]);
+                free((void *)node->as.call.arg_names);
+            }
+            break;
+        case AST_INTERP_STRING:
+            for (size_t i = 0; i < node->as.interp.count; i++)
+                ast_free(node->as.interp.parts[i]);
+            free(node->as.interp.parts);
             break;
         case AST_INDEX:
         case AST_FIELD:
@@ -220,6 +239,15 @@ AstNode *ast_struct(const char *name, Field *fields, size_t fc, SourceLoc loc) {
     return n;
 }
 
+AstNode *ast_enum(const char *name, const char **variants, int64_t *values, size_t vc, SourceLoc loc) {
+    AstNode *n = ast_new(AST_ENUM_DECL, loc);
+    n->as.enum_decl.name = name;
+    n->as.enum_decl.variants = variants;
+    n->as.enum_decl.values = values;
+    n->as.enum_decl.variant_count = vc;
+    return n;
+}
+
 AstNode *ast_var(const char *name, AstNode *type, AstNode *init, int is_mut, SourceLoc loc) {
     AstNode *n = ast_new(AST_VAR_DECL, loc);
     n->as.var.name = name;
@@ -242,6 +270,13 @@ AstNode *ast_if(AstNode *cond, AstNode *thenb, AstNode *elseb, SourceLoc loc) {
     n->as.if_stmt.then_block = thenb;
     n->as.if_stmt.else_block = elseb;
     return n;
+}
+
+AstNode *ast_block_tail(AstNode *block) {
+    if (!block || block->kind != AST_BLOCK || !block->as.block.stmt_count) return NULL;
+    AstNode *last = block->as.block.stmts[block->as.block.stmt_count - 1];
+    if (last->kind != AST_EXPR_STMT) return NULL;
+    return last->as.expr_stmt.expr;
 }
 
 AstNode *ast_for(const char *var, AstNode *iter, AstNode *body, SourceLoc loc) {
@@ -332,6 +367,67 @@ AstNode *ast_call(AstNode *callee, AstNode **args, size_t n, SourceLoc loc) {
     node->as.call.callee = callee;
     node->as.call.args = args;
     node->as.call.arg_count = n;
+    return node;
+}
+
+AstNode *ast_call_named(AstNode *callee, AstNode **args, const char **names, size_t n, SourceLoc loc) {
+    AstNode *node = ast_call(callee, args, n, loc);
+    node->as.call.arg_names = names;
+    return node;
+}
+
+AstNode *ast_clone_const(const AstNode *n) {
+    if (!n) return NULL;
+    switch (n->kind) {
+        case AST_NUMBER: return ast_number(n->as.lit.value, n->loc);
+        case AST_FLOAT: return ast_float(n->as.lit.f, n->loc);
+        case AST_BOOL: return ast_bool(n->as.lit.b, n->loc);
+        case AST_STRING: {
+            const char *s = n->as.lit.str ? n->as.lit.str : "";
+            return ast_string(yuga_dupn(s, strlen(s)), n->loc);
+        }
+        case AST_IDENT: {
+            /* Names a constant or a function (e.g. a no-op handler default);
+               `resolved` is re-derived when the copy is checked. */
+            const char *s = n->as.ident.name ? n->as.ident.name : "";
+            return ast_ident(yuga_dupn(s, strlen(s)), n->loc);
+        }
+        case AST_STRUCT_LIT: {
+            /* e.g. `style: BoxStyle = BoxStyle {}` — the copy's own omitted
+               fields pick up their defaults when it is checked. */
+            size_t fc = n->as.struct_lit.field_count;
+            FieldInit *fi = fc ? (FieldInit *)calloc(fc, sizeof(FieldInit)) : NULL;
+            for (size_t i = 0; i < fc; i++) {
+                AstNode *v = ast_clone_const(n->as.struct_lit.fields[i].init);
+                if (!v) {
+                    for (size_t j = 0; j < i; j++) {
+                        free((void *)fi[j].name);
+                        ast_free(fi[j].init);
+                    }
+                    free(fi);
+                    return NULL;
+                }
+                const char *fn = n->as.struct_lit.fields[i].name;
+                fi[i].name = yuga_dupn(fn ? fn : "", fn ? strlen(fn) : 0);
+                fi[i].init = v;
+            }
+            const char *tn = n->as.struct_lit.type_name;
+            return ast_struct_lit(yuga_dupn(tn ? tn : "", tn ? strlen(tn) : 0), fi, fc, n->loc);
+        }
+        case AST_UNARY: {
+            if (n->as.unary.op != TOK_MINUS) return NULL;
+            AstNode *inner = ast_clone_const(n->as.unary.operand);
+            if (!inner) return NULL;
+            return ast_unary(TOK_MINUS, inner, n->loc);
+        }
+        default: return NULL;
+    }
+}
+
+AstNode *ast_interp_string(AstNode **parts, size_t n, SourceLoc loc) {
+    AstNode *node = ast_new(AST_INTERP_STRING, loc);
+    node->as.interp.parts = parts;
+    node->as.interp.count = n;
     return node;
 }
 

@@ -1,0 +1,41 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Tabs: each tab is a button that lights while `sig == value`; the bar
+// answers arrow keys.
+
+struct TabProps {
+    label: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+    value: int = 0,
+}
+
+struct TabsProps {
+    a: string = "",
+    b: string = "",
+    c: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+}
+
+fn Tab(p: TabProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Column, spacing = 0, align_items = ALIGN.Start, shrink = 0) {
+        let a = Button(p.label, on_click = fn() => p.sig.set(p.value), background = text(), color = canvas(), pad_x = tab_px(1), pad_y = tab_py(1), radius = radius_of(1), font = font_px(1), shrink = 0)
+        show_eq(a, p.sig, p.value)
+        let b = Button(p.label, on_click = fn() => p.sig.set(p.value), color = muted(), pad_x = tab_px(1), pad_y = tab_py(1), radius = radius_of(1), font = font_px(1), shrink = 0)
+        show_ne(b, p.sig, p.value)
+    }
+    return n
+}
+
+fn Tabs(p: TabsProps) -> Node {
+    let n = Box(align_direction = DIRECTION.Row, spacing = SPACE.Xs2, align_items = ALIGN.Center) {
+        Tab(label = p.a, sig = p.sig, value = 0),
+        Tab(label = p.b, sig = p.sig, value = 1),
+        Tab(label = p.c, sig = p.sig, value = 2)
+    }
+    key(n, "right", "tab.next")
+    key(n, "left", "tab.prev")
+    on_range(n, "tab.next", p.sig, 1, 0, 2)
+    on_range(n, "tab.prev", p.sig, -1, 0, 2)
+    return n
+}

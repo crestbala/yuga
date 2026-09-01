@@ -1,0 +1,134 @@
+// ZEUS_SPEC.md section 3B/3C — struct-configured props, mouse events carrying
+// a `MouseEvent` payload, conditional UI driven by a signal, and key events
+// (`on_key_down` / `on_key_up` / `on_key_press`) carrying a `KeyEvent`.
+// `Key.K` is an enum constant; `zeus.key_k()` was its old name.
+import "std:zeus"
+import "std:fmt"
+
+/// Trap (nonzero exit) so the test harness notices a failed assertion;
+/// printing alone would be swallowed by the runner.
+fn fail(msg: string) {
+    println(msg)
+    let z = 0
+    println(1 / z)
+}
+
+struct FormConfig {
+    placeholder: string = "",
+    min_length: int = 0,
+}
+
+fn CanvasWidget(status: Signal<string>) {
+    Box(
+        style = BoxStyle(width = 300, height = 200, background = "#1e1e2e"),
+        on_mouse_down = fn(e: MouseEvent) => status.set("Pressed button {{e.button}}"),
+        on_mouse_up = fn(e: MouseEvent) => status.set("Released mouse")
+    ) {
+        Box(align_direction = DIRECTION.Column, padding = 16) {
+            Text(status.get())
+        }
+    }
+}
+
+fn ProfileForm(config: FormConfig) {
+    let username = signal("")
+
+    Box(align_direction = DIRECTION.Column, spacing = 12) {
+        Input(bind = username, placeholder = config.placeholder)
+        if username.get().len < config.min_length {
+            Text("Username must be at least {{config.min_length}} characters!", color = "#f38ba8")
+        }
+        Button("Submit", enabled = username.get().len >= config.min_length)
+    }
+}
+
+fn KeyboardInput(kd: Signal<string>, ku: Signal<string>, kp: Signal<string>) {
+    Input(
+        bind = signal(""),
+        placeholder = "Type a command",
+        on_key_down = fn(e: KeyEvent) => kd.set("down {{e.key}} ctrl={{e.ctrl}}"),
+        on_key_up = fn(e: KeyEvent) => ku.set("up {{e.key}}"),
+        on_key_press = fn(e: KeyEvent) => kp.set("press {{e.key}}")
+    )
+}
+
+fn main() {
+    window("Events", 400, 300)
+    ui_reset()
+    let status = signal("Idle")
+    let kd = signal("")
+    let ku = signal("")
+    let kp = signal("")
+
+    // One tree, built once: components are just fns, so ids follow build
+    // order deterministically (root=1, Box=2).
+    Box(align_direction = DIRECTION.Column, spacing = 12) {
+        CanvasWidget(status),
+        ProfileForm(FormConfig(placeholder = "Enter username", min_length = 3)),
+        KeyboardInput(kd, ku, kp)
+    }
+    root(ui_root())
+    engine_layout(400, 300)
+
+    // root=1, Box=2, Canvas Box=3, canvas Box=4, status Text=5,
+    // form Box=6, form Input=7, warning Text=8, Submit=9, key Input=10.
+    let box = 3
+    let label = 5
+    let warning = 8
+    let submit = 9
+    let field = 10
+    if !eq(node_text(label), "Idle") {
+        fail("FAIL initial status: {{node_text(label)}}")
+    }
+    // Height comes straight from BoxStyle; width is stretched by the root
+    // column's cross-axis alignment, as flex layout requires.
+    if node_h(box) != 200 {
+        fail("FAIL BoxStyle height: {{node_h(box)}}")
+    }
+    // Struct-configured component with defaults for omitted fields. The
+    // bound signal starts "" — never the placeholder — so the validation
+    // warning shows and Submit is disabled (spec section 3B).
+    if !eq(node_text(warning), "Username must be at least 3 characters!") {
+        fail("FAIL validation warning: {{node_text(warning)}}")
+    }
+    if !eq(node_text(submit), "Submit") {
+        fail("FAIL submit label: {{node_text(submit)}}")
+    }
+
+    // A press delivers a MouseEvent to on_mouse_down, whose handler writes the
+    // signal; only the bound label re-renders.
+    engine_click(node_x(box) + 2, node_y(box) + 2)
+    if !eq(node_text(label), "Pressed button 0") {
+        fail("FAIL mouse down: {{node_text(label)}}")
+    }
+    engine_mouseup()
+    if !eq(node_text(label), "Released mouse") {
+        fail("FAIL mouse up: {{node_text(label)}}")
+    }
+
+    // Key events: on_key_down on press, on_key_up on release, on_key_press on
+    // the matching down→up cycle. Clicking the input focuses it.
+    engine_click(node_x(field) + 2, node_y(field) + 2)
+    engine_key(65)
+    if !eq(kd.get(), "down 65 ctrl=false") {
+        fail("FAIL key down: {{kd.get()}}")
+    }
+    engine_key_up(65, 0)
+    if !eq(ku.get(), "up 65") {
+        fail("FAIL key up: {{ku.get()}}")
+    }
+    if !eq(kp.get(), "press 65") {
+        fail("FAIL key press: {{kp.get()}}")
+    }
+
+    // Modifiers ride in the KeyEvent payload; Ctrl+K is a shortcut chord.
+    engine_key_ev(Key.K, 2)
+    if !eq(kd.get(), "down 107 ctrl=true") {
+        fail("FAIL ctrl key down: {{kd.get()}}")
+    }
+    engine_key_up(Key.K, 2)
+    if !eq(kp.get(), "press 107") {
+        fail("FAIL ctrl key press: {{kp.get()}}")
+    }
+    println("events ok:", node_text(label), kp.get())
+}

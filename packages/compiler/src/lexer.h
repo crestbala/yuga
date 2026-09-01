@@ -59,6 +59,7 @@ typedef enum {
     TOK_LET,
     TOK_MUT,
     TOK_STRUCT,
+    TOK_ENUM,
     TOK_IMPORT,
     TOK_IF,
     TOK_ELSE,

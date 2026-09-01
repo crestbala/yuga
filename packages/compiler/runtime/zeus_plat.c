@@ -550,12 +550,15 @@ static void intern_fn_reset(void) {
 
 int64_t yuga_platform_plat_intern_fn(yuga_fn handler) {
     yuga_fn kept;
-    if (nclick_fns >= ZEUS_MAX_CLICK_FNS) return 0;
+    if (nclick_fns >= ZEUS_MAX_CLICK_FNS) {
+        yuga_fn_drop(&handler);
+        return 0;
+    }
     int id = nclick_fns++;
     kept = handler;
-    /* Snapshot the env. The Yuga value is often a field that is dropped when
-       the props struct returns, which would free the original and leave the
-       interned click/styled handler dangling. */
+    /* Snapshot the env, then drop the moved-in value: the caller transferred
+       ownership (static field-move tracking), so the original env is ours to
+       free. The snapshot is never freed — handlers live for the UI's life. */
     if (handler.env && handler.env_size > 0) {
         void *copy = malloc(handler.env_size);
         if (copy) {
@@ -564,8 +567,48 @@ int64_t yuga_platform_plat_intern_fn(yuga_fn handler) {
         }
     }
     click_fns[id] = kept;
+    yuga_fn_drop(&handler);
     return id;
 }
+
+/* Identity by code pointer: two closures over the same body compare equal
+   whatever they captured. Enough to spot an unset handler default. */
+bool yuga_platform_plat_fn_eq(yuga_fn a, yuga_fn b) {
+    return a.fn == b.fn;
+}
+
+/* Handlers and thunks that outlive the call that supplied them.
+ *
+ * A handler arrives as a props-struct field or a parameter, both of which Yuga
+ * drops on return, freeing the closure's captured env. Storing the yuga_fn as
+ * given would leave that env dangling, so copy it here — the same snapshot
+ * plat_intern_fn takes, and for the same reason. The copy is never freed: these
+ * live for the lifetime of the UI.
+ *
+ * The incoming value is a move (the caller no longer owns it), so the original
+ * env is freed after the copy.
+ *
+ * Returning the fn (rather than a slot) keeps the call in Yuga, so C never
+ * needs the MouseEvent / KeyEvent layouts. */
+static yuga_fn fn_snapshot(yuga_fn h) {
+    yuga_fn kept = h;
+    if (h.env && h.env_size > 0) {
+        void *copy = malloc(h.env_size);
+        if (copy) {
+            memcpy(copy, h.env, h.env_size);
+            kept.env = copy;
+        }
+    }
+    yuga_fn_drop(&h);
+    return kept;
+}
+
+yuga_fn yuga_zeus_keep_txt(yuga_fn h) { return fn_snapshot(h); }
+yuga_fn yuga_zeus_keep_ev(yuga_fn h) { return fn_snapshot(h); }
+yuga_fn yuga_zeus_keep_key(yuga_fn h) { return fn_snapshot(h); }
+yuga_fn yuga_zeus_keep_sty_s(yuga_fn h) { return fn_snapshot(h); }
+yuga_fn yuga_zeus_keep_sty_i(yuga_fn h) { return fn_snapshot(h); }
+yuga_fn yuga_zeus_keep_sty_b(yuga_fn h) { return fn_snapshot(h); }
 
 void yuga_platform_plat_invoke_fn(int64_t id) {
     if (id <= 0 || id >= nclick_fns) return;
@@ -630,6 +673,10 @@ int zeus_handle_key_ev(int key, int mods) {
         return zeus_focus_step(mods & ZEUS_MOD_SHIFT);
     if (mods & ~ZEUS_MOD_SHIFT) return 0;
     return zeus_handle_key(key);
+}
+
+int zeus_handle_key_up_ev(int key, int mods) {
+    return (int)yuga_zeus_engine_key_up(key, mods);
 }
 
 int zeus_focus_chain(int *nodes_out, int *ctxs, int max) {

@@ -1,0 +1,22 @@
+import "std:zeus"
+
+fn PageAt(n: int) -> Node {
+    return Box(align_direction = "row", spacing = 0, align_items = align_center()) {
+        let a = Button("{{n}}", background = text(), color = app(), size = 24, radius = 6, font = 13, shrink = 0)
+        let sig = signal(0)
+        show_eq(a, sig, n)
+        let b = Button("{{n}}", color = muted(), size = 24, radius = 6, font = 13, shrink = 0)
+        show_ne(b, sig, n)
+    }
+}
+
+fn main() {
+    let last = 3
+    App("t", 400, 300, fn() {
+        Box(align_direction = "row") {
+            for i in 1..(last + 1) {
+                PageAt(i)
+            }
+        }
+    })
+}

@@ -1,421 +1,371 @@
+//! The Bezel component kit, in the declarative Zeus syntax. Every widget is a
+//! `fn`, the tree comes from trailing blocks, state is `signal`, and
+//! interpolation is `{{ }}`. Colors and spacing are the bezel tokens in
+//! packages/zeus-components/theme.yuga — the same design language as
+//! https://github.com/crabtalk/bezel. Names are unqualified: the barrel
+//! import exposes `Button`, `Card`, `muted()`, … directly.
+
 import "std:zeus"
-import "../../../packages/zeus/lib/theme.yuga"
-import "../../../packages/zeus/lib/ui.yuga"
-import "../../../packages/zeus/lib/ui/display/icons.yuga"
+import "../../../packages/zeus-components/ui.yuga"
+import "../../../packages/zeus-components/ui/display/icons.yuga"
 
-struct Job {
-    title: string,
-    meta: string,
-    value: int,
+fn Note(s: string) {
+    Text(s, color = muted(), font = type_caption())
 }
 
-struct FileRow {
-    name: string,
-    kind: string,
-    size: string,
+fn Section(title: string) {
+    Text(title, color = text(), font = type_heading())
 }
 
-fn Wrap() -> Node {
-    return zeus.row().gap(theme.space_sm()).align(zeus.flex_center()).justify(zeus.flex_start()).flex_wrap()
+fn Orb(kind: int, s: string) {
+    Box(align_direction = DIRECTION.Column, spacing = SPACE.Sm, align_items = ALIGN.Center, shrink = 0) {
+        if kind == 0 {
+            LoaderCluster()
+        }
+        if kind == 1 {
+            LoaderRing()
+        }
+        if kind == 2 {
+            LoaderConverge()
+        }
+        if kind == 3 {
+            LoaderBloom()
+        }
+        if kind == 4 {
+            LoaderPulse()
+        }
+        if kind == 5 {
+            LoaderMatrix()
+        }
+        if kind == 6 {
+            LoaderMini()
+        }
+        if kind == 7 {
+            LoaderWord(size = 1)
+        }
+        Note(s)
+    }
 }
 
-fn Note(s: string) -> Node {
-    return zeus.label(s).fg(theme.muted()).font(11)
-}
-
-fn Orb(n: Node, s: string) -> Node {
-    return zeus.col().gap(theme.space_sm()).align(zeus.flex_center()).shrink(0).children(
-        n,
-        Note(s),
-    )
-}
-
-fn Glyph(label: string, markup: string) -> Node {
-    return zeus.col().w(88).h(76).gap(6).bg(theme.card()).radius(theme.button_radius()).center().shrink(0).children(
-        ui.Icon(GlyphProps { markup: markup, color: theme.text(), size: 22 }),
-        zeus.label(label).fg(theme.muted()).font(9),
-    )
+fn Glyph(label: string, markup: string) {
+    Box(align_direction = DIRECTION.Column, width = 88, height = 76, spacing = 6, background = panel(), radius = button_radius(), align_items = ALIGN.Center, justify_content = ALIGN.Center, shrink = 0) {
+        Icon(markup = markup, color = text(), size = 22),
+        Text(label, color = muted(), font = 9)
+    }
 }
 
 fn main() {
-    let mut ticks = 0
-    let load = zeus.signal(42)
-    let page = zeus.signal(4)
-    let page_sm = zeus.signal(2)
-    let tab = zeus.signal(0)
-    let tab_sm = zeus.signal(0)
-    let tab_lg = zeus.signal(1)
-    let tab_pill = zeus.signal(0)
-    let acc = zeus.signal(1)
-    let acc_sm = zeus.signal(0)
-    let acc_lg = zeus.signal(1)
-    let plan = zeus.signal(1)
-    let status = zeus.signal(1)
-    let picked = zeus.signal(0)
-    let count = zeus.signal(3)
-    let toast_open = zeus.signal(0)
-    let note_open = zeus.signal(0)
-    let year = zeus.signal(2026)
-    let month = zeus.signal(10)
-    let day = zeus.signal(17)
-    let sort = zeus.signal(0)
-    let level = zeus.signal(50)
-    let mut on = zeus.signal(1)
-    let mut jobs = []Job {}
-    push(jobs, Job { title: "Deploy web", meta: "2m", value: 0 })
-    push(jobs, Job { title: "Job #12", meta: "14m", value: 1 })
-    push(jobs, Job { title: "Signup", meta: "1h", value: 2 })
-    push(jobs, Job { title: "Invoice #88", meta: "3h", value: 3 })
-    push(jobs, Job { title: "Build linux", meta: "5h", value: 4 })
-    push(jobs, Job { title: "Mirror docs", meta: "1d", value: 5 })
-    push(jobs, Job { title: "Rotate keys", meta: "2d", value: 6 })
-    push(jobs, Job { title: "Archive logs", meta: "4d", value: 7 })
-    push(jobs, Job { title: "Warm cache", meta: "1w", value: 8 })
-    push(jobs, Job { title: "Trim indexes", meta: "2w", value: 9 })
-    let mut picks = []Job {}
-    push(picks, Job { title: "Deploy web", meta: "2m", value: 0 })
-    push(picks, Job { title: "Job #12", meta: "14m", value: 1 })
-    push(picks, Job { title: "Signup", meta: "1h", value: 2 })
-    let mut files = []FileRow {}
-    push(files, FileRow { name: "bezel.toml", kind: "Config", size: "812 B" })
-    push(files, FileRow { name: "palette.rs", kind: "Source", size: "24.9 kB" })
-    push(files, FileRow { name: "README.md", kind: "Document", size: "4.2 kB" })
-    push(files, FileRow { name: "Geist.ttf", kind: "Font", size: "1.3 MB" })
-    push(files, FileRow { name: "zeus_plat.c", kind: "Source", size: "18 kB" })
-    push(files, FileRow { name: "kit.yuga", kind: "Source", size: "12 kB" })
+    let ticks = signal(0)
+    let load = signal(42)
+    let page = signal(4)
+    let tab = signal(0)
+    let tab_lg = signal(1)
+    let tab_pill = signal(0)
+    let acc = signal(1)
+    let plan = signal(1)
+    let status = signal(1)
+    let picked = signal(0)
+    let count = signal(3)
+    let toast_open = signal(0)
+    let note_open = signal(0)
+    let year = signal(2026)
+    let month = signal(10)
+    let day = signal(17)
+    let sort = signal(0)
+    let level = signal(50)
+    let on = signal(1)
+    let notify = signal(1)
 
-    theme.Page("Zeus Kit", 960, 4200).children(
-        ui.Navbar(NavbarProps { brand: "Zeus", a: "Foundations", b: "Components", c: "Patterns", appearance: "Dark" }),
-        ui.Breadcrumbs(BreadcrumbProps { a: "Zeus", b: "Examples", c: "Kit" }),
-        ui.Overline(TypeProps { text: "Library" }),
-        ui.Display(TypeProps { text: "Build interfaces with Zeus" }),
-        ui.Body(TypeProps { text: "Every widget ships medium. Chain .size(ui.sm) or .size(ui.lg), and .look(ui.solid) / ui.soft / ui.outline / ui.ghost / ui.danger. Values come from the app, not the widget." }),
-        Wrap().children(
-            ui.Chip(ChipProps { label: "Stable", color: theme.success() }),
-            ui.Chip(ChipProps { label: "Headless tests", color: theme.accent() }),
-            ui.Badge(BadgeProps { label: "v1", color: theme.purple() }),
-            ui.Kbd(KbdProps { key: "Esc" }),
-        ),
-        ui.Alert(AlertProps { title: "Local state", body: "Clicks run a callback that writes component state. Passing that value into a child is a prop: the next view rebuild shows the new number.", color: theme.accent() }),
-        ui.Card().children(
-            ui.CardHeader(CardHeaderProps { title: "Project card", subtitle: "A surface with a title, supporting copy that wraps to the column width, and a footer of actions — the same pattern as a Tailwind card." }),
-            ui.CardFooter().children(
-                ui.Ghost(ButtonProps { label: "Cancel", on_press: || { ticks = ticks + 1 } }),
-                ui.Prominent(ButtonProps { label: "Save", on_press: || { ticks = ticks + 1 } }),
-                zeus.spacer(),
-            ).child(zeus.label("0").bind_n(ticks).fg(theme.muted()).font(12)),
-        ),
-        ui.Overline(TypeProps { text: "Scale" }),
-        ui.Heading(TypeProps { text: "Buttons" }),
-        ui.Body(TypeProps { text: "Five looks, three sizes. Medium is the default Ghost / Soft / Outline / Prominent / Destructive row." }),
-        ui.Panel(PanelProps { title: "Looks" }).children(
-            Note("small"),
-            Wrap().children(
-                ui.Button(ButtonProps { label: "Solid", on_press: || { ticks = ticks + 1 } }).size(ui.sm()).look(ui.solid()),
-                ui.Button(ButtonProps { label: "Soft", on_press: || { ticks = ticks + 1 } }).size(ui.sm()).look(ui.soft()),
-                ui.Button(ButtonProps { label: "Outline", on_press: || { ticks = ticks + 1 } }).size(ui.sm()).look(ui.outline()),
-                ui.Button(ButtonProps { label: "Ghost", on_press: || { ticks = ticks + 1 } }).size(ui.sm()).look(ui.ghost()),
-                ui.Button(ButtonProps { label: "Danger", on_press: || { ticks = ticks + 1 } }).size(ui.sm()).look(ui.danger()),
-            ),
-            Note("medium"),
-            Wrap().children(
-                ui.Prominent(ButtonProps { label: "Solid", on_press: || { ticks = ticks + 1 } }),
-                ui.Soft(ButtonProps { label: "Soft", on_press: || { ticks = ticks + 1 } }),
-                ui.Outline(ButtonProps { label: "Outline", on_press: || { ticks = ticks + 1 } }),
-                ui.Ghost(ButtonProps { label: "Ghost", on_press: || { ticks = ticks + 1 } }),
-                ui.Destructive(ButtonProps { label: "Danger", on_press: || { ticks = ticks + 1 } }),
-            ),
+    App("Zeus Kit", 960, 2800, fn() {
+        Scroll(background = canvas(), padding = SPACE.Page, spacing = SPACE.Section) {
+            Navbar(brand = "Zeus", a = "Foundations", b = "Components", c = "Patterns"),
+            Breadcrumbs(a = "Zeus", b = "Examples", c = "Kit"),
+            Overline(text = "Library"),
+            Display(text = "Build interfaces with Zeus"),
+            Body(text = "Every widget ships medium. Size and look are props: size = sm() / md() / lg(), look = solid() / soft() / outline() / ghost() / danger(). Values come from the app, not the widget."),
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+                Chip(label = "Stable", color = success()),
+                Chip(label = "Headless tests", color = accent()),
+                Badge(label = "v1", color = purple()),
+                Kbd(key = "Esc")
+            },
+            Alert(title = "Local state", body = "Clicks run a callback that writes component state. Passing that value into a child is a prop: the next label re-render shows the new number.", color = accent()),
+            Card() {
+                CardHeader(title = "Project card", subtitle = "A surface with a title, supporting copy that wraps to the column width, and a footer of actions — the same pattern as a Tailwind card."),
+                CardFooter() {
+                    Ghost(label = "Cancel", on_press = fn() => ticks.set(ticks.get() + 1)),
+                    Prominent(label = "Save", on_press = fn() => ticks.set(ticks.get() + 1))
+                },
+                Text("{{ticks.get()}}", color = muted(), font = 12)
+            },
+
+            Section("Buttons"),
+            Note("five looks, small"),
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+                Button(label = "Solid", look = solid(), size = sm()),
+                Button(label = "Soft", look = soft(), size = sm()),
+                Button(label = "Outline", look = outline(), size = sm()),
+                Button(label = "Ghost", look = ghost(), size = sm()),
+                Button(label = "Danger", look = danger_look(), size = sm())
+            },
+            Note("medium variants"),
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+                Prominent(label = "Solid", on_press = fn() => ticks.set(ticks.get() + 1)),
+                Soft(label = "Soft", on_press = fn() => ticks.set(ticks.get() + 1)),
+                Outline(label = "Outline", on_press = fn() => ticks.set(ticks.get() + 1)),
+                Ghost(label = "Ghost", on_press = fn() => ticks.set(ticks.get() + 1)),
+                Destructive(label = "Danger", on_press = fn() => ticks.set(ticks.get() + 1))
+            },
             Note("large"),
-            Wrap().children(
-                ui.Button(ButtonProps { label: "Solid", on_press: || { ticks = ticks + 1 } }).size(ui.lg()).look(ui.solid()),
-                ui.Button(ButtonProps { label: "Soft", on_press: || { ticks = ticks + 1 } }).size(ui.lg()).look(ui.soft()),
-                ui.Button(ButtonProps { label: "Outline", on_press: || { ticks = ticks + 1 } }).size(ui.lg()).look(ui.outline()),
-                ui.Button(ButtonProps { label: "Ghost", on_press: || { ticks = ticks + 1 } }).size(ui.lg()).look(ui.ghost()),
-                ui.Button(ButtonProps { label: "Danger", on_press: || { ticks = ticks + 1 } }).size(ui.lg()).look(ui.danger()),
-            ),
-        ),
-        ui.Overline(TypeProps { text: "Scale" }),
-        ui.Heading(TypeProps { text: "Chips, badges, keys, avatars" }),
-        ui.Panel(PanelProps { title: "Display" }).children(
-            Note("chips"),
-            Wrap().children(
-                ui.Chip(ChipProps { label: "Solid", color: theme.accent() }).size(ui.sm()).look(ui.solid()),
-                ui.Chip(ChipProps { label: "Soft", color: theme.success() }).size(ui.sm()).look(ui.soft()),
-                ui.Chip(ChipProps { label: "Outline", color: theme.purple() }).size(ui.sm()).look(ui.outline()),
-                ui.Chip(ChipProps { label: "Ghost", color: theme.muted() }).size(ui.sm()).look(ui.ghost()),
-                ui.Chip(ChipProps { label: "Danger", color: theme.danger() }).size(ui.sm()).look(ui.danger()),
-            ),
-            Wrap().children(
-                ui.Chip(ChipProps { label: "Solid", color: theme.accent() }).size(ui.md()).look(ui.solid()),
-                ui.Chip(ChipProps { label: "Soft", color: theme.success() }).size(ui.md()).look(ui.soft()),
-                ui.Chip(ChipProps { label: "Outline", color: theme.purple() }).size(ui.md()).look(ui.outline()),
-                ui.Chip(ChipProps { label: "Ghost", color: theme.muted() }).size(ui.md()).look(ui.ghost()),
-                ui.Chip(ChipProps { label: "Danger", color: theme.danger() }).size(ui.md()).look(ui.danger()),
-            ),
-            Wrap().children(
-                ui.Chip(ChipProps { label: "Solid", color: theme.accent() }).size(ui.lg()).look(ui.solid()),
-                ui.Chip(ChipProps { label: "Soft", color: theme.success() }).size(ui.lg()).look(ui.soft()),
-                ui.Chip(ChipProps { label: "Outline", color: theme.purple() }).size(ui.lg()).look(ui.outline()),
-                ui.Chip(ChipProps { label: "Ghost", color: theme.muted() }).size(ui.lg()).look(ui.ghost()),
-                ui.Chip(ChipProps { label: "Danger", color: theme.danger() }).size(ui.lg()).look(ui.danger()),
-            ),
-            Note("badges"),
-            Wrap().children(
-                ui.Badge(BadgeProps { label: "sm", color: theme.accent() }).size(ui.sm()).look(ui.solid()),
-                ui.Badge(BadgeProps { label: "md", color: theme.accent() }).size(ui.md()).look(ui.soft()),
-                ui.Badge(BadgeProps { label: "lg", color: theme.accent() }).size(ui.lg()).look(ui.outline()),
-                ui.Badge(BadgeProps { label: "ghost", color: theme.purple() }).size(ui.md()).look(ui.ghost()),
-                ui.Badge(BadgeProps { label: "danger", color: theme.danger() }).size(ui.md()).look(ui.danger()),
-            ),
-            Note("kbd"),
-            Wrap().children(
-                ui.Kbd(KbdProps { key: "Esc" }).size(ui.sm()).look(ui.outline()),
-                ui.Kbd(KbdProps { key: "⌘S" }).size(ui.md()).look(ui.soft()),
-                ui.Kbd(KbdProps { key: "Tab" }).size(ui.lg()).look(ui.solid()),
-            ),
-            Note("avatars"),
-            Wrap().children(
-                ui.Avatar(AvatarProps { initials: "SM", color: theme.accent() }).size(ui.sm()).look(ui.solid()),
-                ui.Avatar(AvatarProps { initials: "MD", color: theme.purple() }).size(ui.md()).look(ui.soft()),
-                ui.Avatar(AvatarProps { initials: "LG", color: theme.success() }).size(ui.lg()).look(ui.outline()),
-                ui.Avatar(AvatarProps { initials: "GH", color: theme.muted() }).size(ui.md()).look(ui.ghost()),
-                ui.Avatar(AvatarProps { initials: "DN", color: theme.danger() }).size(ui.md()).look(ui.danger()),
-            ),
-        ),
-        ui.Overline(TypeProps { text: "Scale" }),
-        ui.Heading(TypeProps { text: "Alerts" }),
-        ui.Panel(PanelProps { title: "Looks" }).children(
-            ui.Alert(AlertProps { title: "Small soft", body: "The default alert is medium and soft: a card with a tinted rail.", color: theme.accent() }).size(ui.sm()).look(ui.soft()),
-            ui.Alert(AlertProps { title: "Medium outline", body: "Outline uses the tint on the border instead of a fill.", color: theme.purple() }).size(ui.md()).look(ui.outline()),
-            ui.Alert(AlertProps { title: "Large solid", body: "Solid fills the tint. Use it for a status that must not be missed.", color: theme.success() }).size(ui.lg()).look(ui.solid()),
-            ui.Alert(AlertProps { title: "Danger", body: "The danger look is the warning plate, at any size.", color: theme.danger() }).size(ui.md()).look(ui.danger()),
-        ),
-        ui.Overline(TypeProps { text: "Scale" }),
-        ui.Heading(TypeProps { text: "Fields" }),
-        ui.Body(TypeProps { text: "Soft is the default field. Outline tightens the edge; ghost drops the plate." }),
-        zeus.grid(2, theme.space_lg()).children(
-            ui.Panel(PanelProps { title: "Size" }).children(
-                ui.Field(FieldProps { label: "Small", placeholder: "you@yuga.dev", hint: "Caption and input scale together." }).size(ui.sm()).look(ui.soft()),
-                ui.Field(FieldProps { label: "Medium", placeholder: "you@yuga.dev", hint: "We only use this to send product notes. Never sold." }).size(ui.md()).look(ui.soft()),
-                ui.Field(FieldProps { label: "Large", placeholder: "you@yuga.dev", hint: "Same copy, larger type and padding." }).size(ui.lg()).look(ui.soft()),
-            ),
-            ui.Panel(PanelProps { title: "Look" }).children(
-                ui.TextField(TextFieldProps { placeholder: "Soft field" }).size(ui.md()).look(ui.soft()),
-                ui.TextField(TextFieldProps { placeholder: "Outline field" }).size(ui.md()).look(ui.outline()),
-                ui.TextField(TextFieldProps { placeholder: "Ghost field" }).size(ui.md()).look(ui.ghost()),
-                ui.InputGroup(InputGroupProps { prefix: "https://", placeholder: "heroui.com" }).size(ui.sm()).look(ui.outline()),
-                ui.Number(NumberProps { label: "Count", sig: count, min: 0, max: 99 }).size(ui.lg()).look(ui.soft()),
-            ),
-        ),
-        ui.Overline(TypeProps { text: "Scale" }),
-        ui.Heading(TypeProps { text: "Choice" }),
-        zeus.grid(2, theme.space_lg()).children(
-            ui.Panel(PanelProps { title: "Checkbox and switch" }).children(
-                Wrap().children(
-                    ui.Checkbox(CheckboxProps { label: "Small", sig: on }).size(ui.sm()).look(ui.soft()),
-                    ui.Checkbox(CheckboxProps { label: "Medium", sig: on }).size(ui.md()).look(ui.solid()),
-                    ui.Checkbox(CheckboxProps { label: "Large", sig: on }).size(ui.lg()).look(ui.danger()),
-                ),
-                Wrap().children(
-                    ui.Switch(SwitchProps { sig: on }).size(ui.sm()).look(ui.soft()),
-                    ui.Switch(SwitchProps { sig: on }).size(ui.md()).look(ui.solid()),
-                    ui.Switch(SwitchProps { sig: on }).size(ui.lg()).look(ui.danger()),
-                ),
-            ),
-            ui.Panel(PanelProps { title: "Radio" }).children(
-                ui.RadioGroup(RadioGroupProps { label: "Selected", sig: plan, last: 1 }).children(
-                    ui.Radio(RadioProps { label: "Hobby", sig: plan, value: 0 }).size(ui.sm()),
-                    ui.Radio(RadioProps { label: "Pro", sig: plan, value: 1 }).size(ui.md()),
-                ),
-                ui.Select(SelectProps { a: "Comfortable", b: "Compact", c: "Dense", sig: status }),
-            ),
-        ),
-        ui.Overline(TypeProps { text: "Scale" }),
-        ui.Heading(TypeProps { text: "Slider and progress" }),
-        ui.Panel(PanelProps { title: "Tracks" }).children(
-            ui.Slider(SliderProps { caption: "Small", sig: level }).size(ui.sm()).look(ui.solid()),
-            ui.Slider(SliderProps { caption: "Medium", sig: level }).size(ui.md()).look(ui.soft()),
-            ui.Slider(SliderProps { caption: "Large danger", sig: level }).size(ui.lg()).look(ui.danger()),
-            Wrap().children(
-                Note("sm"),
-                ui.Progress(ProgressProps { sig: load }).size(ui.sm()).look(ui.solid()),
-            ),
-            Wrap().children(
-                Note("md"),
-                ui.Progress(ProgressProps { sig: load }).size(ui.md()).look(ui.soft()),
-            ),
-            Wrap().children(
-                Note("lg"),
-                ui.Progress(ProgressProps { sig: load }).size(ui.lg()).look(ui.danger()),
-            ),
-        ),
-        ui.Overline(TypeProps { text: "Scale" }),
-        ui.Heading(TypeProps { text: "Tabs and pages" }),
-        ui.Panel(PanelProps { title: "Navigation" }).children(
-            Note("small underline"),
-            ui.Tabs(TabsProps { a: "One", b: "Two", c: "Three", sig: tab_sm }).size(ui.sm()).look(ui.outline()),
-            Note("medium underline"),
-            ui.Tabs(TabsProps { a: "Components", b: "Tokens", c: "Motion", sig: tab }),
-            Note("large solid"),
-            ui.Tabs(TabsProps { a: "Comfort", b: "Compact", c: "Dense", sig: tab_lg }).size(ui.lg()).look(ui.solid()),
-            Note("medium soft pills"),
-            ui.Tabs(TabsProps { a: "A", b: "B", c: "C", sig: tab_pill }).size(ui.md()).look(ui.soft()),
-            Note("pagination"),
-            ui.Pagination(PaginationProps { page: page_sm, last: 5 }).size(ui.sm()),
-            ui.Pagination(PaginationProps { page: page, last: 8 }),
-            ui.Pagination(PaginationProps { page: page, last: 8 }).size(ui.lg()),
-        ),
-        ui.Overline(TypeProps { text: "Scale" }),
-        ui.Heading(TypeProps { text: "People, disclosure, empty" }),
-        ui.Panel(PanelProps { title: "Team" }).children(
-            ui.User(UserProps { initials: "JD", name: "Jane Doe", role: "Editor", color: theme.purple() }).size(ui.sm()).look(ui.solid()),
-            ui.Divider(),
-            ui.User(UserProps { initials: "RK", name: "Ravi Kumar", role: "Operator", color: theme.accent() }).size(ui.md()).look(ui.soft()),
-            ui.Divider(),
-            ui.User(UserProps { initials: "AM", name: "Ada Park", role: "Admin", color: theme.success() }).size(ui.lg()).look(ui.outline()),
-        ),
-        ui.Accordion(AccordionProps { title: "Small ghost", body: "Zeus examples live under zeus/. std:zeus stays primitives.", open: acc_sm }).size(ui.sm()).look(ui.ghost()),
-        ui.Accordion(AccordionProps { title: "Where do components live?", body: "Zeus examples live under zeus/: components, themes, and the kit apps. std:zeus stays primitives: row, col, label, button, input, overlay.", open: acc }),
-        ui.Accordion(AccordionProps { title: "Large soft", body: "Size changes type and padding. The look changes the plate.", open: acc_lg }).size(ui.lg()).look(ui.soft()),
-        ui.Empty(EmptyProps { title: "No results", body: "Try another filter. Small empty state." }).size(ui.sm()).look(ui.soft()),
-        ui.Empty(EmptyProps { title: "No results", body: "Try another filter. This empty state is a full-width card; the body copy wraps like a paragraph." }),
-        ui.Empty(EmptyProps { title: "No results", body: "Large outline empty state." }).size(ui.lg()).look(ui.outline()),
-        ui.Overline(TypeProps { text: "Scale" }),
-        ui.Heading(TypeProps { text: "Links and cards" }),
-        Wrap().children(
-            ui.Link(LinkProps { label: "small" }).size(ui.sm()).look(ui.ghost()),
-            ui.Link(LinkProps { label: "medium" }).size(ui.md()).look(ui.ghost()),
-            ui.Link(LinkProps { label: "large" }).size(ui.lg()).look(ui.ghost()),
-            ui.Link(LinkProps { label: "danger" }).size(ui.md()).look(ui.danger()),
-        ),
-        zeus.grid(3, theme.space_md()).children(
-            ui.Card().size(ui.sm()).look(ui.outline()).child(ui.CardHeader(CardHeaderProps { title: "Small", subtitle: "Outline card." })),
-            ui.Card().size(ui.md()).look(ui.soft()).child(ui.CardHeader(CardHeaderProps { title: "Medium", subtitle: "Soft is the default card." })),
-            ui.Card().size(ui.lg()).look(ui.solid()).child(ui.CardHeader(CardHeaderProps { title: "Large", subtitle: "Solid fills the plate." })),
-        ),
-        ui.Overline(TypeProps { text: "Forms" }),
-        ui.Heading(TypeProps { text: "Date picker" }),
-        ui.Body(TypeProps { text: "Enter opens and also chooses. Arrows walk days; the grid follows into the next month. Page Up and Page Down change the month. Escape dismisses." }),
-        ui.Panel(PanelProps { title: "Calendar" }).child(ui.DatePicker(DatePickerProps { y: year, m: month, d: day })),
-        ui.Overline(TypeProps { text: "Overlays" }),
-        ui.Heading(TypeProps { text: "Tooltip and hover card" }),
-        ui.Body(TypeProps { text: "A tooltip waits 500ms and ignores the pointer once shown. A hover card stays if the pointer travels into it." }),
-        zeus.grid(2, theme.space_lg()).children(
-            ui.Panel(PanelProps { title: "Tooltip" }).child(ui.Tooltip(TooltipProps { label: "Hover me", message: "Copy path", shortcut: "Ctrl+C" })),
-            ui.Panel(PanelProps { title: "Hover card" }).child(ui.HoverCard(HoverCardProps { handle: "@clearloop", name: "clearloop", bio: "Builds desktop software in Yuga. Maintains Zeus.", meta: "Joined 2019 · 412 repositories", color: theme.accent() })),
-        ),
-        ui.Overline(TypeProps { text: "Layout" }),
-        ui.Heading(TypeProps { text: "Scrollbar" }),
-        ui.Body(TypeProps { text: "Scrollbars are auto: they appear only when content is larger than the pane, on both axes. Wheel or drag the thumb." }),
-        ui.Panel(PanelProps { title: "Pane" }).child(
-            ui.Scroll(ScrollProps { height: 160 }).each(jobs, |i, j| {
-                ui.ScrollRow(ScrollRowProps { title: j.title, meta: j.meta })
-            })
-        ),
-        ui.Overline(TypeProps { text: "Layout" }),
-        ui.Heading(TypeProps { text: "Group box" }),
-        ui.GroupBox().children(
-            ui.GroupRow(GroupRowProps { label: "First row", icon: 0 }),
-            ui.GroupSplit(),
-            ui.GroupRow(GroupRowProps { label: "Second row", icon: 1 }),
-        ),
-        ui.Overline(TypeProps { text: "Collections" }),
-        ui.Heading(TypeProps { text: "List and table" }),
-        zeus.grid(2, theme.space_lg()).children(
-            ui.Panel(PanelProps { title: "List" }).each(picks, |i, j| {
-                ui.ListItem(ListItemProps { title: j.title, meta: j.meta, sig: picked, value: j.value })
-            }).child(ui.Body(TypeProps { text: "Selected row" })).bound(picked, theme.accent(), 14),
-            ui.Table().children(
-                ui.TableHead(TableHeadProps { a: "Name", b: "Kind", c: "Size", sort: sort }),
-                ui.TableBody(TableBodyProps { height: 132 }).each(files, |i, f| {
-                    ui.TableRow(TableRowProps { a: f.name, b: f.kind, c: f.size })
-                }),
-            ),
-        ),
-        ui.Overline(TypeProps { text: "Feedback" }),
-        ui.Heading(TypeProps { text: "Loaders" }),
-        ui.Body(TypeProps { text: "The four orbs are bezel's own. Everything below them is a grid of cells; the orbs are circles, because circles are the whole vocabulary — no rotation, no conic gradient, no blur filter." }),
-        ui.Panel(PanelProps { title: "Status" }).children(
-            zeus.row().gap(theme.space_2xl()).align(zeus.flex_end()).flex_wrap().children(
-                Orb(ui.LoaderCluster(), "cluster"),
-                Orb(ui.LoaderRing(), "ring"),
-                Orb(ui.LoaderConverge(), "converge"),
-                Orb(ui.LoaderBloom(), "bloom"),
-            ),
-            ui.Body(TypeProps { text: "And the older three:" }),
-            zeus.row().gap(theme.space_2xl()).align(zeus.flex_center()).flex_wrap().children(
-                ui.LoaderPulse(),
-                ui.LoaderMatrix(),
-                ui.LoaderMini(),
-                ui.LoaderWord(LoaderWordProps { text: "L O A D I N G" }),
-            ),
-            zeus.row().gap(theme.space_sm()).children(
-                ui.Skeleton(SkeletonProps { width: 160, height: 10 }),
-                ui.Skeleton(SkeletonProps { width: 88, height: 10 }),
-            ),
-        ),
-        ui.Overline(TypeProps { text: "Assets" }),
-        ui.Heading(TypeProps { text: "Icons" }),
-        ui.Body(TypeProps { text: "Solar Icons Linear (CC BY 4.0, 480 Design) — the same set bezel embeds. Hover fades on controls use HOVER_FADE (150ms)." }),
-        ui.Panel(PanelProps { title: "Glyphs" }).child(
-            Wrap().children(
-                Glyph("SMARTPHONE", icons.smartphone()),
-                Glyph("ARCHIVE UP", icons.archive_up_minimalistic()),
-                Glyph("REFRESH", icons.refresh()),
-                Glyph("RESTART", icons.restart()),
-                Glyph("ADD CIRCLE", icons.add_circle()),
-                Glyph("TUNING", icons.tuning()),
-                Glyph("PAPERCLIP", icons.paperclip()),
-                Glyph("PEN", icons.pen()),
-                Glyph("ARCHIVE", icons.archive_minimalistic()),
-                Glyph("TRASH", icons.trash_bin_minimalistic()),
-                Glyph("SETTINGS", icons.settings_minimalistic()),
-                Glyph("LOGOUT", icons.logout_2()),
-                Glyph("MAGNIFIER", icons.magnifer()),
-                Glyph("COMMAND", icons.command()),
-                Glyph("DOCUMENT", icons.document()),
-                Glyph("DOCUMENT ADD", icons.document_add()),
-                Glyph("DOWNLOAD", icons.download()),
-                Glyph("LINK", icons.link()),
-                Glyph("BOOK", icons.book()),
-                Glyph("COMPASS", icons.compass()),
-                Glyph("CPU", icons.cpu()),
-                Glyph("GLOBAL", icons.global()),
-                Glyph("CHECKLIST", icons.checklist()),
-                Glyph("WIDGET", icons.widget()),
-                Glyph("WIFI OFF", icons.wifi_off()),
-                Glyph("CLOSE CIRCLE", icons.close_circle()),
-                Glyph("INFO", icons.info_circle()),
-                Glyph("DANGER", icons.danger_triangle()),
-                Glyph("MONITOR", icons.monitor()),
-                Glyph("LAPTOP", icons.laptop()),
-                Glyph("FOLDER", icons.folder()),
-                Glyph("GIT BRANCH", icons.git_branch()),
-                Glyph("SUN", icons.sun()),
-                Glyph("MOON", icons.moon()),
-                Glyph("PLAY", icons.play()),
-                Glyph("PAUSE", icons.pause()),
-                Glyph("STAR", icons.star()),
-                Glyph("HEART", icons.heart()),
-                Glyph("BELL", icons.bell()),
-                Glyph("TERMINAL", icons.terminal()),
-                Glyph("PLUS", icons.plus()),
-                Glyph("CLOSE", icons.close()),
-                Glyph("CHECK", icons.check()),
-                Glyph("COPY", icons.copy()),
-                Glyph("RETURN", icons.return_key()),
-                Glyph("LIST", icons.list()),
-                Glyph("TAG", icons.tag()),
-                Glyph("KEYBOARD", icons.keyboard()),
-            )
-        ),
-        ui.Snippet(SnippetProps { text: "Wrap().child(ui.Button(ButtonProps { label: \"Save\", on_press: || { ticks = ticks + 1 } }).size(ui.lg()).look(ui.solid()))" }),
-        Wrap().children(
-            ui.GhostOpen(ButtonProps { label: "Toast", on_press: || { toast_open.set(1) } }),
-            ui.Open(ButtonProps { label: "Dialog", on_press: || { note_open.set(1) } }),
-        ),
-        ui.Body(TypeProps { text: "Primary increments a counter. Radio, select, list, tabs, and pages write signals. Esc dismisses overlays." }),
-        ui.Toast(ToastProps { title: "Saved", body: "Your settings were written.", open: toast_open }),
-        ui.Dialog(DialogProps { title: "Discard changes?", body: "This cannot be undone. The working tree keeps whatever you have not saved.", cancel: "Cancel", discard: "Discard", open: note_open }),
-    ).run()
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+                Button(label = "Solid", look = solid(), size = lg()),
+                Button(label = "Soft", look = soft(), size = lg()),
+                Button(label = "Outline", look = outline(), size = lg()),
+                Button(label = "Ghost", look = ghost(), size = lg()),
+                Button(label = "Danger", look = danger_look(), size = lg())
+            },
+
+            Section("Chips, badges, keys, avatars"),
+            Note("small"),
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+                Chip(label = "Solid", color = accent(), size = sm()),
+                Chip(label = "Soft", color = success(), size = sm()),
+                Chip(label = "Outline", color = purple(), size = sm()),
+                Chip(label = "Ghost", color = muted(), size = sm()),
+                Chip(label = "Danger", color = danger(), size = sm())
+            },
+            Note("badges, keys, avatars"),
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+                Badge(label = "sm", color = accent(), size = sm()),
+                Badge(label = "md", color = accent()),
+                Badge(label = "lg", color = purple(), size = lg()),
+                Kbd(key = "Esc", size = sm()),
+                Kbd(key = "⌘S"),
+                Kbd(key = "Tab", size = lg()),
+                Avatar(initials = "SM", color = accent(), size = sm()),
+                Avatar(initials = "MD", color = purple()),
+                Avatar(initials = "LG", color = success(), size = lg()),
+                Avatar(initials = "DN", color = danger())
+            },
+
+            Section("Alerts"),
+            Alert(title = "Medium outline", body = "Outline uses the tint on the border instead of a fill.", color = purple()),
+            Alert(title = "Large solid", body = "Solid fills the tint. Use it for a status that must not be missed.", color = success()),
+            Alert(title = "Danger", body = "The danger look is the warning plate, at any size.", color = danger()),
+
+            Section("Fields"),
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Lg, align_items = ALIGN.Start) {
+                Box(align_direction = DIRECTION.Column, spacing = SPACE.Sm, grow = 1) {
+                    Field(label = "Small", placeholder = "you@yuga.dev", hint = "Caption and input scale together."),
+                    Field(label = "Medium", placeholder = "you@yuga.dev", hint = "We only use this to send product notes. Never sold."),
+                    Field(label = "Large", placeholder = "you@yuga.dev", hint = "Same copy, larger type and padding.")
+                },
+                Box(align_direction = DIRECTION.Column, spacing = SPACE.Sm, grow = 1) {
+                    TextField(placeholder = "Soft field"),
+                    TextField(placeholder = "Outline field"),
+                    InputGroup(prefix = "https://", placeholder = "heroui.com"),
+                    Number(label = "Count", sig = count, min = 0, max = 99)
+                }
+            },
+
+            Section("Choice"),
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Lg, align_items = ALIGN.Start) {
+                Box(align_direction = DIRECTION.Column, spacing = SPACE.Sm, grow = 1) {
+                    Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+                        Checkbox(label = "Small", sig = on, size = sm()),
+                        Checkbox(label = "Medium", sig = on),
+                        Checkbox(label = "Large", sig = on, size = lg())
+                    },
+                    Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+                        Switch(sig = on, size = sm()),
+                        Switch(sig = on),
+                        Switch(sig = on, size = lg())
+                    }
+                },
+                Box(align_direction = DIRECTION.Column, spacing = SPACE.Sm, grow = 1) {
+                    RadioGroup(label = "Plan", sig = plan, last = 2) {
+                        Radio(label = "Hobby", sig = plan, value = 0),
+                        Radio(label = "Pro", sig = plan, value = 1)
+                    },
+                    Select(a = "Comfortable", b = "Compact", c = "Dense", sig = status)
+                }
+            },
+
+            Section("Slider and progress"),
+            Slider(caption = "Level", sig = level),
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+                Text("load {{load.get()}}", color = muted(), font = type_caption()),
+                Progress(sig = load)
+            },
+
+            Section("Tabs and pages"),
+            Tabs(a = "One", b = "Two", c = "Three", sig = tab),
+            Tabs(a = "Components", b = "Tokens", c = "Motion", sig = tab_lg),
+            Tabs(a = "A", b = "B", c = "C", sig = tab_pill),
+            Pagination(page = page, last = 8),
+
+            Section("People, disclosure, empty"),
+            Panel(title = "Team") {
+                User(initials = "JD", name = "Jane Doe", role = "Editor", color = purple()),
+                Divider(),
+                User(initials = "RK", name = "Ravi Kumar", role = "Operator", color = accent()),
+                Divider(),
+                User(initials = "AM", name = "Ada Park", role = "Admin", color = success())
+            },
+            Accordion(title = "Where do components live?", body = "Zeus examples live under examples/zeus/: components, themes, and the kit apps. std:zeus stays primitives: Text, Button, Box, Input, signal. The kit layers theme on top.", open = acc),
+            Empty(title = "No results", body = "Try another filter. This empty state is a full-width card; the body copy wraps like a paragraph."),
+
+            Section("Links and cards"),
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+                Link(label = "small"),
+                Link(label = "medium"),
+                Link(label = "large"),
+                Link(label = "danger")
+            },
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Md, align_items = ALIGN.Start) {
+                let c1 = Card(grow = 1) {
+                    CardHeader(title = "Small", subtitle = "A compact card.")
+                }
+                let c2 = Card(grow = 1) {
+                    CardHeader(title = "Medium", subtitle = "Soft is the default card.")
+                }
+                let c3 = Card(grow = 1) {
+                    CardHeader(title = "Large", subtitle = "Three cards in a row.")
+                }
+            },
+
+            Section("Date picker"),
+            Body(text = "Arrows walk months; the field shows the live value. Enter opens, Escape dismisses."),
+            DatePicker(day = day, month = month, year = year),
+
+            Section("Tooltip and hover card"),
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Lg, align_items = ALIGN.Start) {
+                Box(align_direction = DIRECTION.Column, spacing = SPACE.Sm, grow = 1) {
+                    Tooltip(label = "Hover me", message = "Copy path", shortcut = "Ctrl+C")
+                },
+                Box(align_direction = DIRECTION.Column, spacing = SPACE.Sm, grow = 1) {
+                    HoverCard(handle = "@clearloop", name = "clearloop", bio = "Builds desktop software in Yuga. Maintains Zeus.", meta = "Joined 2019 · 412 repositories", color = accent())
+                }
+            },
+
+            Section("Scrollbar"),
+            Panel(title = "Pane") {
+                Scroll(height = 160) {
+                    ScrollRow(title = "Deploy web", meta = "2m ago"),
+                    ScrollRow(title = "Job #12", meta = "14m ago"),
+                    ScrollRow(title = "Signup", meta = "1h ago"),
+                    ScrollRow(title = "Invoice #88", meta = "3h ago"),
+                    ScrollRow(title = "Build linux", meta = "5h ago"),
+                    ScrollRow(title = "Mirror docs", meta = "1d ago"),
+                    ScrollRow(title = "Rotate keys", meta = "2d ago"),
+                    ScrollRow(title = "Archive logs", meta = "4d ago")
+                }
+            },
+
+            Section("Group box"),
+            GroupBox() {
+                GroupRow(label = "First row", icon = 0),
+                GroupSplit(),
+                GroupRow(label = "Second row", icon = 1)
+            },
+
+            Section("List and table"),
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Lg, align_items = ALIGN.Start) {
+                Box(align_direction = DIRECTION.Column, spacing = SPACE.Sm, grow = 1) {
+                    List() {
+                        ListItem(title = "Deploy web", meta = "2m ago", sig = picked, value = 0),
+                        ListItem(title = "Job #12", meta = "14m ago", sig = picked, value = 1),
+                        ListItem(title = "Signup", meta = "1h ago", sig = picked, value = 2)
+                    },
+                    Text("Selected row {{picked.get()}}", color = muted(), font = 12)
+                },
+                Box(align_direction = DIRECTION.Column, spacing = SPACE.Sm, grow = 1) {
+                    Table() {
+                        TableHead(a = "Name", b = "Kind", c = "Size", sort = sort),
+                        TableBody() {
+                            TableRow(a = "bezel.toml", b = "Config", c = "812 B"),
+                            TableRow(a = "palette.rs", b = "Source", c = "24.9 kB"),
+                            TableRow(a = "README.md", b = "Document", c = "4.2 kB"),
+                            TableRow(a = "Geist.ttf", b = "Font", c = "1.3 MB"),
+                            TableRow(a = "kit.yuga", b = "Source", c = "12 kB")
+                        }
+                    }
+                }
+            },
+
+            Section("Metrics and activity"),
+            Stats(users_t = "Users", users = "1,204", jobs_t = "Jobs", jobs = "12", uptime_t = "Uptime", uptime = "99.9%", ticks_t = "Ticks", ticks = ticks),
+            Panel(title = "Activity") {
+                Activity(title = "Deploy web", meta = "2m ago"),
+                Divider(),
+                Activity(title = "Job #12 done", meta = "14m ago"),
+                Divider(),
+                Activity(title = "User signup", meta = "1h ago")
+            },
+
+            Section("Loaders"),
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Xl2, align_items = ALIGN.End) {
+                Orb(0, "cluster"),
+                Orb(1, "ring"),
+                Orb(2, "converge"),
+                Orb(3, "bloom"),
+                Orb(4, "pulse"),
+                Orb(5, "matrix"),
+                Orb(6, "mini"),
+                Orb(7, "word")
+            },
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Center) {
+                Spinner(msg = "Compiling"),
+                Skeleton(width = 160, height = 10),
+                Snippet(text = "let n = signal(0)")
+            },
+
+            Section("Icons"),
+            Note("Solar Icons Linear (CC BY 4.0, 480 Design) — the same set bezel embeds."),
+            Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm, align_items = ALIGN.Start) {
+                Glyph("SMARTPHONE", smartphone()),
+                Glyph("ARCHIVE UP", archive_up_minimalistic()),
+                Glyph("REFRESH", refresh()),
+                Glyph("RESTART", restart()),
+                Glyph("ADD CIRCLE", add_circle()),
+                Glyph("TUNING", tuning()),
+                Glyph("PAPERCLIP", paperclip()),
+                Glyph("PEN", pen()),
+                Glyph("ARCHIVE", archive_minimalistic()),
+                Glyph("TRASH", trash_bin_minimalistic()),
+                Glyph("SETTINGS", settings_minimalistic()),
+                Glyph("LOGOUT", logout_2()),
+                Glyph("MAGNIFIER", magnifer()),
+                Glyph("COMMAND", command()),
+                Glyph("DOCUMENT", document()),
+                Glyph("DOWNLOAD", download()),
+                Glyph("LINK", link()),
+                Glyph("BOOK", book()),
+                Glyph("COMPASS", compass()),
+                Glyph("CPU", cpu()),
+                Glyph("GLOBAL", global()),
+                Glyph("CHECKLIST", checklist()),
+                Glyph("WIDGET", widget()),
+                Glyph("CLOSE", close()),
+                Glyph("INFO", info_circle()),
+                Glyph("DANGER", danger_triangle()),
+                Glyph("MONITOR", monitor()),
+                Glyph("FOLDER", folder()),
+                Glyph("SUN", sun()),
+                Glyph("MOON", moon()),
+                Glyph("PLAY", play()),
+                Glyph("PAUSE", pause()),
+                Glyph("STAR", star()),
+                Glyph("HEART", heart()),
+                Glyph("BELL", bell()),
+                Glyph("CLOUD", cloud())
+            },
+
+            Section("Overlays"),
+            Button(label = "Open toast", on_press = fn() => toast_open.set(1)),
+            Toast(title = "Saved", body = "Your changes are on disk.", open = toast_open),
+            Button(label = "Open dialog", on_press = fn() => note_open.set(1)),
+            Dialog(title = "Discard changes?", body = "This cannot be undone. The working tree keeps whatever you have not saved.", cancel = "Cancel", discard = "Discard", open = note_open)
+        }
+    })
 }

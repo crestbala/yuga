@@ -1,0 +1,203 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Loader catalog.
+//
+// The four orbs are built from circles only — no rotation, no conic gradient,
+// no blur. Motion comes from alpha: `pulse` runs a triangle wave off
+// `arena.pulse_t`, and `phase` pins where each circle sits in that wave.
+// Spread the phases evenly around a ring and the travelling bright spot reads
+// as rotation, which is how a spinner is drawn without rotating anything.
+//
+// Circles are placed with absolute pins inside a fixed-size relative box, so
+// the flex pass does not reflow them.
+
+struct LoaderProps {
+    size: int = 1,
+}
+
+/// Full pulse period, matching `arena.paint_alpha`.
+fn period() -> int {
+    return 144
+}
+
+/// Unit circle at 45 degree steps, scaled by 1000. Eight fixed points avoid
+/// needing trigonometry in the layout.
+fn ux(i: int) -> int {
+    return [8]int{0, 707, 1000, 707, 0, -707, -1000, -707}[i % 8]
+}
+fn uy(i: int) -> int {
+    return [8]int{-1000, -707, 0, 707, 1000, 707, 0, -707}[i % 8]
+}
+
+/// A pulsing disc of `px` diameter, pinned so its centre sits at (`cx`, `cy`)
+/// within the parent, at phase `ph`.
+fn Orbit(px: int, cx: int, cy: int, ph: int) -> Node {
+    let n = Box(
+        background = accent(),
+        size = px,
+        radius = px / 2,
+        shrink = 0,
+        position = pos_absolute(),
+        left = cx - px / 2,
+        top = cy - px / 2
+    )
+    // `pulse`/`phase` are animation wiring, not style.
+    pulse(n)
+    phase(n, ph)
+    return n
+}
+
+/// Fixed-size stage that absolute children pin against.
+fn Stage(px: int) -> Node {
+    return Box(size = px, shrink = 0, position = pos_relative())
+}
+
+/// A pulsing disc that flows with the layout (no pinning).
+fn DotPx(px: int) -> Node {
+    let n = Box(background = accent(), size = px, radius = px / 2, shrink = 0)
+    pulse(n)
+    return n
+}
+
+fn LoaderDot(p: LoaderProps) -> Node {
+    return DotPx(dot())
+}
+
+/// Single small dot.
+fn LoaderMini() -> Node {
+    return DotPx(SPACE.Sm)
+}
+
+/// One large orb with a small satellite riding above it, counter-phased so
+/// the pair breathes rather than blinking together.
+fn LoaderCluster() -> Node {
+    let d = loader_of(1)
+    let big = d * 5 / 8
+    let small = d / 5
+    let n = Stage(d) {
+        Orbit(big, d * 7 / 16, d * 9 / 16, 0),
+        Orbit(small, d * 13 / 16, d * 4 / 16, period() / 2)
+    }
+    return n
+}
+
+/// Eight dots on a circle, phases spread one eighth of the period apart, so
+/// the bright spot travels around the ring.
+fn LoaderRing() -> Node {
+    let d = loader_of(1)
+    let dot = d / 6
+    let r = d / 2 - dot / 2
+    let c = d / 2
+    let n = Stage(d) {
+        for i in 0..8 {
+            Orbit(dot, c + r * ux(i) / 1000, c + r * uy(i) / 1000, i * period() / 8)
+        }
+    }
+    return n
+}
+
+/// The same eight points drawn tight to the centre and overlapping, so the
+/// dots read as collapsing inward rather than orbiting.
+fn LoaderConverge() -> Node {
+    let d = loader_of(1)
+    let dot = d / 5
+    let r = d / 5
+    let c = d / 2
+    let n = Stage(d) {
+        for i in 0..8 {
+            Orbit(dot, c + r * ux(i) / 1000, c + r * uy(i) / 1000, i * period() / 8)
+        }
+    }
+    return n
+}
+
+/// Concentric circles: a stroked outer ring with a filled core, pulsing in
+/// opposition so the centre blooms as the ring fades.
+fn LoaderBloom() -> Node {
+    let d = loader_of(1)
+    let core = d / 3
+    let n = Stage(d) {
+        let ring = Box(
+            background = panel(),
+            size = d,
+            radius = d / 2,
+            shrink = 0,
+            border = 2,
+            border_color = accent(),
+            position = pos_absolute(),
+            left = 0,
+            top = 0
+        )
+        pulse(ring)
+        phase(ring, 0)
+        Orbit(core, d / 2, d / 2, period() / 2)
+    }
+    return n
+}
+
+/// Filled disc.
+fn LoaderPulse() -> Node {
+    return DotPx(hit_of(1))
+}
+
+fn LoaderOrb(p: LoaderProps) -> Node {
+    return DotPx(avatar_of(p.size))
+}
+
+/// 3x3 dot field; phases step per cell so the pulse sweeps across the grid.
+fn LoaderMatrix() -> Node {
+    let dot = dot()
+    let n = Grid(config = GridConfig(columns = 3, gap = SPACE.Xs)) {
+        for i in 0..9 {
+            let c = DotPx(dot)
+            phase(c, i * period() / 9)
+        }
+    }
+    return n
+}
+
+/// A pulsing bar, sized by `size`.
+fn LoaderWord(p: LoaderProps) -> Node {
+    let n = Box(
+        background = accent(),
+        width = SPACE.Xl2 * (p.size + 1),
+        height = SPACE.Xs,
+        radius = SPACE.Xs2,
+        shrink = 0
+    )
+    pulse(n)
+    return n
+}
+
+/// Five squares stepping in sequence.
+fn LoaderBar() -> Node {
+    let s = SPACE.Sm
+    let n = Box(align_direction = DIRECTION.Row, spacing = SPACE.Xs, align_items = ALIGN.Center) {
+        for i in 0..5 {
+            let sq = Box(background = accent(), size = s, radius = SPACE.Xs2, shrink = 0)
+            pulse(sq)
+            phase(sq, i * period() / 5)
+        }
+    }
+    return n
+}
+
+fn LoaderGrid() -> Node {
+    let n = Box(background = accent(), size = SPACE.Lg, radius = SPACE.Xs2, shrink = 0)
+    pulse(n)
+    return n
+}
+
+/// Three stacked bars of staggered phase.
+fn LoaderStack() -> Node {
+    let n = Box(align_direction = DIRECTION.Column, spacing = SPACE.Xs, align_items = ALIGN.Start) {
+        let a = LoaderWord()
+        phase(a, 0)
+        let b = LoaderWord()
+        phase(b, period() / 3)
+        let c = LoaderWord()
+        phase(c, period() * 2 / 3)
+    }
+    return n
+}

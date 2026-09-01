@@ -1,0 +1,31 @@
+import "std:zeus"
+import "../../theme.yuga"
+
+// Stat metric: muted caption above a tinted value. `Static` takes a string;
+// `Live` reads a signal, so its value re-renders alone.
+
+struct MetricProps {
+    title: string = "",
+    value: string = "",
+    color: string = "",
+}
+
+fn Metric(p: MetricProps) {
+    Box(align_direction = DIRECTION.Column, spacing = SPACE.Xs) {
+        Text(p.title, color = muted(), font = caption_px(1)),
+        Text(p.value, color = p.color, font = title_px(1))
+    }
+}
+
+struct LiveMetricProps {
+    title: string = "",
+    sig: Signal<int> = Signal { id: 0 },
+    color: string = "",
+}
+
+fn LiveMetric(p: LiveMetricProps) {
+    Box(align_direction = DIRECTION.Column, spacing = SPACE.Xs) {
+        Text(p.title, color = muted(), font = caption_px(1)),
+        Text("{{p.sig.get()}}", color = p.color, font = title_px(1))
+    }
+}

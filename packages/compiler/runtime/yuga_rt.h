@@ -329,6 +329,40 @@ static inline void yuga_fn_drop(yuga_fn *f) {
     f->fn = NULL;
 }
 
+/* --- string interpolation ("a {{x}} b") ---
+ * Each helper returns a fresh heap string with a trailing NUL for C hosts.
+ * Ownership matches yuga_string_from_bytes: the result is never freed. */
+
+static inline yuga_str yuga_str_concat(yuga_str a, yuga_str b) {
+    int64_t an = a.len > 0 ? a.len : 0;
+    int64_t bn = b.len > 0 ? b.len : 0;
+    char *p = (char *)yuga_new((size_t)(an + bn) + 1, "str_concat", 0);
+    int64_t i;
+    for (i = 0; i < an; i++) p[i] = a.ptr[i];
+    for (i = 0; i < bn; i++) p[an + i] = b.ptr[i];
+    p[an + bn] = 0;
+    return (yuga_str){ .ptr = p, .len = an + bn };
+}
+
+/* Copy a stack-formatted number into a heap string. */
+static inline yuga_str yuga_str_dup(yuga_str s) {
+    return yuga_str_concat((yuga_str){"", 0}, s);
+}
+
+static inline yuga_str yuga_str_of_int(int64_t v) {
+    char buf[24];
+    return yuga_str_dup(yuga_fmt_itoa(buf, v));
+}
+
+static inline yuga_str yuga_str_of_float(double v) {
+    char buf[64];
+    return yuga_str_dup(yuga_fmt_ftoa(buf, v));
+}
+
+static inline yuga_str yuga_str_of_bool(bool b) {
+    return b ? (yuga_str){"true", 4} : (yuga_str){"false", 5};
+}
+
 /* Takes ownership of `b` (IR_CALL steals []int). Trailing NUL for C hosts. */
 static inline yuga_str yuga_string_from_bytes(yuga_vec b) {
     int64_t n = b.len > 0 ? b.len : 0;

@@ -1,0 +1,25 @@
+import "std:zeus"
+import "../../theme.yuga"
+import "../display/metric.yuga"
+
+// 2×2 grid of metrics. Fills the parent width; columns are equal.
+
+struct StatsProps {
+    users_t: string = "",
+    users: string = "",
+    jobs_t: string = "",
+    jobs: string = "",
+    uptime_t: string = "",
+    uptime: string = "",
+    ticks_t: string = "",
+    ticks: Signal<int> = Signal { id: 0 },
+}
+
+fn Stats(p: StatsProps) {
+    Grid(config = GridConfig(columns = 2, gap = SPACE.Lg)) {
+        Metric(title = p.users_t, value = p.users, color = accent()),
+        Metric(title = p.jobs_t, value = p.jobs, color = purple()),
+        Metric(title = p.uptime_t, value = p.uptime, color = success()),
+        LiveMetric(title = p.ticks_t, sig = p.ticks, color = danger())
+    }
+}
