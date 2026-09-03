@@ -32,3 +32,9 @@ www/backend/build/
 www/macos/build/
 examples/zeus/counter/backend/build/
 bezel/
+
+# Phase 1b realtime demo scratch
+.yuga_tmp/
+examples/zeus/ws/frontend/build/
+examples/zeus/ws/frontend/node_modules/
+examples/zeus/ws/backend/build/

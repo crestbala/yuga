@@ -60,3 +60,20 @@ fn fetch_ready() -> int {}
 /// Take one completed async fetch response (ownership moves). Empty on error
 /// or when nothing is ready.
 fn fetch_take() -> string {}
+
+/// Open a same-origin WebSocket over the browser bridge (wasm; native
+/// returns -1). Returns a slot handle to poll with the ws_* calls.
+fn ws_issue(url: string) -> int {}
+
+/// WebSocket state of `slot`: 0 = open, 1 = closed/error (wasm; native 1).
+fn ws_state(slot: int) -> int {}
+
+/// Pending inbound messages on `slot` (wasm; native 0).
+fn ws_count(slot: int) -> int {}
+
+/// Take the next inbound message of `slot` (ownership moves). Empty when
+/// none is pending.
+fn ws_copy(slot: int, max: int) -> string {}
+
+/// Close the socket and free `slot`.
+fn ws_close(slot: int) {}

@@ -28,6 +28,7 @@ import "std:fmt"
 import "std:sys"
 import "httpcore/wire.yuga"
 import "httpcore/h2.yuga"
+import "httpcore/ws.yuga"
 
 /// Handle for a listening app (runtime table index). Copy.
 struct App {
@@ -105,6 +106,41 @@ let mut last_status: int = 0
 let mut handlers: []fn(string) -> string = []fn(string) -> string {}
 let mut mw_fns: []fn(string, string) -> string = []fn(string, string) -> string {}
 let mut next_app: int = 0
+
+// --- Auth/session convention (Phase 1b) --------------------------------
+// Clients carry one bearer token (`set_token`); `client_post` sends it as
+// `Authorization: Bearer <t>`. The server parses it into `req_token()` for
+// the request being dispatched, and `app.before` hooks (alias of `use`) can
+// `reject()` to gate the handler — dispatch then answers unauthenticated
+// (grpc-status 16) without running it.
+let mut auth_tok: string = ""
+let mut req_tok: string = ""
+let mut gate: int = 0
+
+/// Set the bearer token the sync/async clients send on every call.
+fn set_token(t: string) {
+    auth_tok = t
+}
+
+/// Current client token ("" = anonymous).
+fn token() -> string {
+    return auth_tok
+}
+
+/// Bearer token of the request being dispatched (server side).
+fn req_token() -> string {
+    return req_tok
+}
+
+/// From a `before` hook: skip the handler, answer grpc-status 16.
+fn reject() {
+    gate = 1
+}
+
+/// Middleware alias matching the roadmap convention: `app.before(fn)`.
+fn before(app: App, hook: fn(string, string) -> string) -> App {
+    return use(app, hook)
+}
 
 /// Allocate an empty app. Register RPCs, then `listen`.
 ///
@@ -642,7 +678,8 @@ fn concat_str(a: string, b: string) -> string {
     return string_of(out)
 }
 
-/// Unary gRPC-Web POST request (headers + framed body).
+/// Unary gRPC-Web POST request (headers + framed body). Carries the bearer
+/// token set by `set_token` (the auth/session convention, Phase 1b).
 fn client_post(host: string, port: int, path: string, body: string) -> string {
     let mut b = bytes_of("POST ")
     append_bytes(b, bytes_of(path))
@@ -652,6 +689,10 @@ fn client_post(host: string, port: int, path: string, body: string) -> string {
     append_bytes(b, u_itoa(port))
     append_bytes(b, bytes_of("\r\nContent-Type: application/grpc-web+proto\r\nContent-Length: "))
     append_bytes(b, u_itoa(body.len))
+    if auth_tok.len > 0 {
+        append_bytes(b, bytes_of("\r\nAuthorization: Bearer "))
+        append_bytes(b, bytes_of(auth_tok))
+    }
     append_bytes(b, bytes_of("\r\nConnection: close\r\n\r\n"))
     append_bytes(b, bytes_of(body))
     return string_of(b)
@@ -1561,11 +1602,76 @@ fn http_reply(code: int, ctype: string, body: string) -> string {
 }
 
 /// Unary gRPC-Web POST, or an HTTP error. GET and other REST methods are 404.
+fn str_slice(s: string, a: int, b: int) -> string {
+    let mut out = []int {}
+    let mut i = a
+    if i < 0 {
+        i = 0
+    }
+    let mut e = b
+    if e > s.len {
+        e = s.len
+    }
+    while i < e {
+        out.push(s[i])
+        i = i + 1
+    }
+    return string_of(out)
+}
+
+/// Bearer token from the lowercased `name\0value\0` header pairs
+/// (`ParsedReq.hdrs`). "" when absent.
+fn bearer_of(hdrs: string) -> string {
+    let mut pos = 0
+    let n = hdrs.len
+    let mut val = ""
+    while pos < n {
+        let mut nend = pos
+        while nend < n {
+            if hdrs[nend] == 0 {
+                break
+            }
+            nend = nend + 1
+        }
+        let name = str_slice(hdrs, pos, nend)
+        let mut vstart = nend + 1
+        let mut vend = vstart
+        while vend < n {
+            if hdrs[vend] == 0 {
+                break
+            }
+            vend = vend + 1
+        }
+        if eq(name, "authorization") {
+            if vstart < n {
+                val = str_slice(hdrs, vstart, vend)
+            }
+        }
+        pos = vend + 1
+    }
+    // strip a "Bearer " prefix (case-insensitive); otherwise use it raw
+    let mut out = val
+    if val.len > 7 {
+        let lit = "bearer "
+        let mut ok = 1
+        for i in 0..7 {
+            if lower_byte(val[i]) != lit[i] {
+                ok = 0
+            }
+        }
+        if ok == 1 {
+            out = str_slice(val, 7, val.len)
+        }
+    }
+    return out
+}
+
 fn serve_h1(app: App, raw: string) -> string {
     let req = parse_http11(raw)
     if req.err != 0 {
         return http_reply(req.err, "text/plain; charset=utf-8", reason_phrase(req.err))
     }
+    req_tok = bearer_of(req.hdrs)
     let mut grpc = 0
     if eq(req.method, "POST") {
         if ctype_grpc_web(req.ctype) == 1 {
@@ -2374,10 +2480,16 @@ fn last_rpc_status() -> int {
 fn dispatch(app: App, name: string, body: string) -> string {
     let mut b = body
     last_status = 12
+    gate = 0
     for i in 0..mws.len {
         if mws[i].app == app.id {
             b = invoke_mw(mws[i].hid, name, b)
         }
+    }
+    if gate != 0 {
+        // a `before` hook rejected: unauthenticated, handler skipped
+        last_status = 16
+        return ""
     }
     for i in 0..rpcs.len {
         if rpcs[i].app == app.id {
@@ -2628,4 +2740,529 @@ fn call_async(c: Client, name: string, body: string, cb: fn(string)) {
     }
     acb_drop(cbid)
     cb("")
+}
+
+// --- Streaming clients + server push (Phase 1b) -------------------------
+// SSE and WebSocket both ride the same per-frame steppers as `call_async`:
+// a non-blocking connect, one request write, then poll-driven reads that
+// deliver each event/message to a callback on the UI thread. The server
+// side stays on the blocking accept loop: `read_head` / `sse_start` /
+// `sse_send` / `ws_upgrade` / `ws_send_text` are the push helpers a server
+// process (or a later reactor) calls per connection.
+
+fn read_head(fd: int) -> string {
+    let mut acc = ""
+    let mut more = 1
+    for k in 0..128 {
+        if more == 1 {
+            let chunk = net.tcp_read(fd, 2048)
+            if chunk.len == 0 {
+                more = 0
+            }
+            if chunk.len != 0 {
+                acc = concat_str(acc, chunk)
+                if contains(acc, "\r\n\r\n") == 1 {
+                    more = 0
+                }
+                if acc.len > 32768 {
+                    more = 0
+                }
+            }
+        }
+    }
+    return acc
+}
+
+/// SSE response head (text/event-stream, close at EOF).
+fn sse_start(fd: int) {
+    let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n"
+    net.tcp_write(fd, head)
+}
+
+/// One SSE event: `data: <data>\n\n`.
+fn sse_send(fd: int, data: string) {
+    let mut b = bytes_of("data: ")
+    append_bytes(b, bytes_of(data))
+    append_bytes(b, bytes_of("\n\n"))
+    net.tcp_write(fd, string_of(b))
+}
+
+/// WebSocket upgrade reply for a client `Sec-WebSocket-Key`. Returns 0 on
+/// success, 1 when the write failed.
+fn ws_upgrade(fd: int, key: string) -> int {
+    let mut b = bytes_of("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ")
+    append_bytes(b, bytes_of(ws.accept_key(key)))
+    append_bytes(b, bytes_of("\r\n\r\n"))
+    let n = net.tcp_write(fd, string_of(b))
+    if n < 0 {
+        return 1
+    }
+    return 0
+}
+
+/// Header value (case-insensitive) from a raw request head — thin wrapper
+/// over the ws codec so apps do not need to import httpcore.
+fn ws_header(head: string, name: string) -> string {
+    return ws.header_val(head, name)
+}
+
+/// Push one WebSocket text frame (server side).
+fn ws_send_text(fd: int, s: string) -> int {
+    let n = net.tcp_write(fd, ws.server_text(s))
+    if n < 0 {
+        return 1
+    }
+    return 0
+}
+
+struct SseCall {
+    req: string,
+    sent: int,
+    fd: int,
+    stage: int,
+    acc: string,
+    on_event: fn(string),
+    on_done: fn(),
+    at: int,
+}
+
+let mut sse_calls: []SseCall = []SseCall {}
+let mut sse_on: int = 0
+
+/// Stream one SSE endpoint: `on_event(data)` per `data:` line, `on_done` at
+/// EOF/error. Callbacks run on the UI thread inside a frame's async tick.
+fn sse_open(c: Client, path: string, on_event: fn(string), on_done: fn()) {
+    let hp = parse_addr(c.addr)
+    if hp.port == 0 {
+        on_done()
+        return
+    }
+    let mut b = bytes_of("GET ")
+    append_bytes(b, bytes_of(path))
+    append_bytes(b, bytes_of(" HTTP/1.1\r\nHost: "))
+    append_bytes(b, bytes_of(hp.host))
+    append_bytes(b, bytes_of(":"))
+    append_bytes(b, u_itoa(hp.port))
+    append_bytes(b, bytes_of("\r\nAccept: text/event-stream\r\nConnection: close\r\n\r\n"))
+    if sse_on == 0 {
+        sse_on = 1
+        async.add_step(|| { sse_pump() })
+    }
+    let fd = net.tcp_nb_connect(hp.host, hp.port)
+    if fd < 0 {
+        on_done()
+        return
+    }
+    push(sse_calls, SseCall { req: string_of(b), sent: 0, fd: fd, stage: 1, acc: "",
+                              on_event: on_event, on_done: on_done, at: async.now_ms() + 8000 })
+    async.io_open()
+}
+
+fn sse_finish(idx: int) {
+    let fd = sse_calls[idx].fd
+    let done = sse_calls[idx].on_done
+    if fd >= 0 {
+        net.tcp_close(fd)
+    }
+    async.io_close()
+    let mut keep = []SseCall {}
+    let n = sse_calls.len
+    for i in 0..n {
+        if i != idx {
+            push(keep, sse_calls[i])
+        }
+    }
+    sse_calls = keep
+    done()
+}
+
+/// Index of the next "\n\n" at or after `from`, or -1.
+fn find_nl2(s: string, from: int) -> int {
+    let mut i = from
+    if i < 0 {
+        i = 0
+    }
+    while i + 1 < s.len {
+        if s[i] == 10 {
+            if s[i + 1] == 10 {
+                return i
+            }
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+/// Deliver every complete `\n\n`-separated event in `sse_calls[idx].acc`;
+/// returns the undelivered remainder.
+fn sse_deliver(idx: int) -> string {
+    let buf = sse_calls[idx].acc
+    let n = buf.len
+    let mut prev = 0
+    let mut evs = 0
+    let mut at = find_nl2(buf, 0)
+    while at >= 0 {
+        let mut seg = str_slice(buf, prev, at)
+        if seg.len > 6 {
+            let lit = "data: "
+            let mut ok = 1
+            for i in 0..6 {
+                if seg[i] != lit[i] {
+                    ok = 0
+                }
+            }
+            if ok == 1 {
+                seg = str_slice(seg, 6, seg.len)
+            }
+        }
+        let cb = sse_calls[idx].on_event
+        cb(seg)
+        evs = 1
+        prev = at + 2
+        at = find_nl2(buf, prev)
+    }
+    if evs == 1 {
+        return str_slice(buf, prev, n)
+    }
+    return buf
+}
+
+fn sse_advance(idx: int) -> int {
+    let mut guard = 0
+    while guard < 8 {
+        guard = guard + 1
+        let stage = sse_calls[idx].stage
+        if stage == 1 {
+            let p = net.tcp_poll(sse_calls[idx].fd, 2, 0)
+            if p < 0 {
+                sse_finish(idx)
+                return 1
+            }
+            if p == 0 {
+                return 0
+            }
+            if net.tcp_so_error(sse_calls[idx].fd) != 0 {
+                sse_finish(idx)
+                return 1
+            }
+            sse_calls[idx].stage = 2
+        }
+        if stage == 2 {
+            let n = net.tcp_send(sse_calls[idx].fd, sse_calls[idx].req, sse_calls[idx].sent)
+            if n < 0 {
+                sse_finish(idx)
+                return 1
+            }
+            if n == 0 {
+                return 0
+            }
+            sse_calls[idx].sent = sse_calls[idx].sent + n
+            if sse_calls[idx].sent >= sse_calls[idx].req.len {
+                sse_calls[idx].stage = 3
+            } else {
+                return 0
+            }
+        }
+        if stage == 3 {
+            let p = net.tcp_poll(sse_calls[idx].fd, 1, 0)
+            if p < 0 {
+                sse_finish(idx)
+                return 1
+            }
+            if p == 0 {
+                return 0
+            }
+            let chunk = net.tcp_read(sse_calls[idx].fd, 4096)
+            if chunk.len == 0 {
+                sse_finish(idx)
+                return 1
+            }
+            sse_calls[idx].acc = concat_str(sse_calls[idx].acc, chunk)
+            // skip the response head once
+            let hd = contains(sse_calls[idx].acc, "\r\n\r\n")
+            if hd == 1 {
+                let at = find_dbl_crlf(sse_calls[idx].acc)
+                if at >= 0 {
+                    let body = str_slice(sse_calls[idx].acc, at + 4, sse_calls[idx].acc.len)
+                    sse_calls[idx].acc = body
+                    sse_calls[idx].stage = 4
+                }
+            }
+            if sse_calls[idx].stage == 4 {
+                sse_calls[idx].acc = sse_deliver(idx)
+            }
+        }
+        if stage == 4 {
+            let p = net.tcp_poll(sse_calls[idx].fd, 1, 0)
+            if p < 0 {
+                sse_finish(idx)
+                return 1
+            }
+            if p == 0 {
+                return 0
+            }
+            let chunk = net.tcp_read(sse_calls[idx].fd, 4096)
+            if chunk.len == 0 {
+                sse_finish(idx)
+                return 1
+            }
+            sse_calls[idx].acc = concat_str(sse_calls[idx].acc, chunk)
+            sse_calls[idx].acc = sse_deliver(idx)
+        }
+        if stage <= 0 {
+            return 0
+        }
+    }
+    return 0
+}
+
+fn sse_pump() {
+    let mut i = 0
+    while i < sse_calls.len {
+        if async.now_ms() > sse_calls[i].at {
+            sse_finish(i)
+            continue
+        }
+        if sse_advance(i) == 0 {
+            i = i + 1
+        }
+    }
+}
+
+struct WsCall {
+    req: string,
+    sent: int,
+    fd: int,
+    stage: int,
+    acc: string,
+    on_text: fn(string),
+    on_done: fn(),
+    at: int,
+}
+
+let mut ws_calls: []WsCall = []WsCall {}
+let mut ws_on: int = 0
+
+/// Open one WebSocket: `on_text(payload)` per text frame, `on_done` on
+/// close/EOF/error. Callbacks run on the UI thread inside a frame's tick.
+/// Native: TCP + the RFC 6455 codec. Wasm (`client("")`): the browser's
+/// WebSocket via the JS bridge — `path` is same-origin (`"/ws"`).
+fn ws_open(c: Client, path: string, on_text: fn(string), on_done: fn()) {
+    let hp = parse_addr(c.addr)
+    if hp.port == 0 {
+        // wasm/browser style: the JS loader owns the WebSocket; wasm drains
+        // its message queue per frame (stage 5). Native cannot reach "".
+        if ws_on == 0 {
+            ws_on = 1
+            async.add_step(|| { ws_pump() })
+        }
+        let slot = net.ws_issue(path)
+        if slot < 0 {
+            on_done()
+            return
+        }
+        push(ws_calls, WsCall { req: "", sent: 0, fd: slot, stage: 5, acc: "",
+                                on_text: on_text, on_done: on_done, at: 0 })
+        async.io_open()
+        return
+    }
+    let key = ws.client_key(async.now_ms())
+    let mut b = bytes_of("GET ")
+    append_bytes(b, bytes_of(path))
+    append_bytes(b, bytes_of(" HTTP/1.1\r\nHost: "))
+    append_bytes(b, bytes_of(hp.host))
+    append_bytes(b, bytes_of(":"))
+    append_bytes(b, u_itoa(hp.port))
+    append_bytes(b, bytes_of("\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: "))
+    append_bytes(b, bytes_of(key))
+    append_bytes(b, bytes_of("\r\nSec-WebSocket-Version: 13\r\n\r\n"))
+    if ws_on == 0 {
+        ws_on = 1
+        async.add_step(|| { ws_pump() })
+    }
+    let fd = net.tcp_nb_connect(hp.host, hp.port)
+    if fd < 0 {
+        on_done()
+        return
+    }
+    push(ws_calls, WsCall { req: string_of(b), sent: 0, fd: fd, stage: 1, acc: "",
+                            on_text: on_text, on_done: on_done, at: async.now_ms() + 8000 })
+    async.io_open()
+}
+
+fn ws_finish(idx: int) {
+    let fd = ws_calls[idx].fd
+    let stage = ws_calls[idx].stage
+    let done = ws_calls[idx].on_done
+    if fd >= 0 {
+        if stage == 5 {
+            net.ws_close(fd)
+        } else {
+            net.tcp_close(fd)
+        }
+    }
+    async.io_close()
+    let mut keep = []WsCall {}
+    let n = ws_calls.len
+    for i in 0..n {
+        if i != idx {
+            push(keep, ws_calls[i])
+        }
+    }
+    ws_calls = keep
+    done()
+}
+
+fn ws_advance(idx: int) -> int {
+    let mut guard = 0
+    while guard < 16 {
+        guard = guard + 1
+        let stage = ws_calls[idx].stage
+        if stage == 1 {
+            let p = net.tcp_poll(ws_calls[idx].fd, 2, 0)
+            if p < 0 {
+                ws_finish(idx)
+                return 1
+            }
+            if p == 0 {
+                return 0
+            }
+            if net.tcp_so_error(ws_calls[idx].fd) != 0 {
+                ws_finish(idx)
+                return 1
+            }
+            ws_calls[idx].stage = 2
+        }
+        if stage == 2 {
+            let n = net.tcp_send(ws_calls[idx].fd, ws_calls[idx].req, ws_calls[idx].sent)
+            if n < 0 {
+                ws_finish(idx)
+                return 1
+            }
+            if n == 0 {
+                return 0
+            }
+            ws_calls[idx].sent = ws_calls[idx].sent + n
+            if ws_calls[idx].sent >= ws_calls[idx].req.len {
+                ws_calls[idx].stage = 3
+            } else {
+                return 0
+            }
+        }
+        if stage == 3 {
+            let p = net.tcp_poll(ws_calls[idx].fd, 1, 0)
+            if p < 0 {
+                ws_finish(idx)
+                return 1
+            }
+            if p == 0 {
+                return 0
+            }
+            let chunk = net.tcp_read(ws_calls[idx].fd, 4096)
+            if chunk.len == 0 {
+                ws_finish(idx)
+                return 1
+            }
+            ws_calls[idx].acc = concat_str(ws_calls[idx].acc, chunk)
+            let hd = contains(ws_calls[idx].acc, "\r\n\r\n")
+            if hd == 1 {
+                let head = str_slice(ws_calls[idx].acc, 0, find_dbl_crlf(ws_calls[idx].acc))
+                if contains(head, "101") == 0 {
+                    ws_finish(idx)
+                    return 1
+                }
+                let at = find_dbl_crlf(ws_calls[idx].acc)
+                ws_calls[idx].acc = str_slice(ws_calls[idx].acc, at + 4, ws_calls[idx].acc.len)
+                ws_calls[idx].stage = 4
+            }
+        }
+        if stage == 4 {
+            let mut done = 0
+            let mut broke = 0
+            while done == 0 && broke == 0 {
+                let f = ws.take_frame(ws_calls[idx].acc)
+                if f.ok == 0 {
+                    broke = 1
+                }
+                if f.ok < 0 {
+                    ws_finish(idx)
+                    return 1
+                }
+                if f.ok == 1 {
+                    if f.op == 1 {
+                        let cb = ws_calls[idx].on_text
+                        cb(f.text)
+                    }
+                    if f.op == 8 {
+                        ws_finish(idx)
+                        return 1
+                    }
+                    ws_calls[idx].acc = f.rest
+                    if f.rest.len == 0 {
+                        broke = 1
+                    }
+                }
+            }
+            if ws_calls.len == 0 {
+                return 1
+            }
+            if ws_calls[idx].stage != 4 {
+                return 1
+            }
+            let p = net.tcp_poll(ws_calls[idx].fd, 1, 0)
+            if p < 0 {
+                ws_finish(idx)
+                return 1
+            }
+            if p == 0 {
+                return 0
+            }
+            let chunk = net.tcp_read(ws_calls[idx].fd, 4096)
+            if chunk.len == 0 {
+                ws_finish(idx)
+                return 1
+            }
+            ws_calls[idx].acc = concat_str(ws_calls[idx].acc, chunk)
+        }
+        if stage == 5 {
+            // wasm: drain the JS message queue; finish when the socket closes.
+            if net.ws_state(ws_calls[idx].fd) != 0 {
+                ws_finish(idx)
+                return 1
+            }
+            let mut took = 0
+            while took < 16 {
+                if net.ws_count(ws_calls[idx].fd) == 0 {
+                    break
+                }
+                let txt = net.ws_copy(ws_calls[idx].fd, 8192)
+                if txt.len == 0 {
+                    break
+                }
+                let cb = ws_calls[idx].on_text
+                cb(txt)
+                took = took + 1
+            }
+            return 0
+        }
+        if stage <= 0 {
+            return 0
+        }
+    }
+    return 0
+}
+
+fn ws_pump() {
+    let mut i = 0
+    while i < ws_calls.len {
+        if ws_calls[i].at > 0 {
+            if async.now_ms() > ws_calls[i].at {
+                ws_finish(i)
+                continue
+            }
+        }
+        if ws_advance(i) == 0 {
+            i = i + 1
+        }
+    }
 }
