@@ -1,7 +1,7 @@
 import "std:fmt"
 
 fn main() {
-    let x = 2
+    let x = 3
     let mut s = 0
     match x {
         0 | 1 => {

@@ -210,6 +210,8 @@
       panic: (p, n) => {
         throw new Error(bytes(p, n) || cstr(p) || "zeus panic");
       },
+      view_w: () => Math.max(1, Math.round(canvas.clientWidth || window.innerWidth || 1)),
+      view_h: () => Math.max(1, Math.round(canvas.clientHeight || window.innerHeight || 1)),
       fill: (x, y, w, h, color, r) => {
         ctx.fillStyle = rgb(color);
         roundRect(x, y, w, h, r);
@@ -226,6 +228,20 @@
         setFont(px);
         ctx.textBaseline = "alphabetic";
         ctx.fillText(s, x, y + box.ascent);
+      },
+      /* Rotated text, clockwise around the top-left of the line box. */
+      text_rot: (x, y, ptr, color, font, deg) => {
+        const s = cstr(ptr);
+        const px = font > 0 ? font : 13;
+        const box = lineBox(px);
+        ctx.fillStyle = rgb(color);
+        setFont(px);
+        ctx.textBaseline = "alphabetic";
+        ctx.save();
+        ctx.translate(x, y + box.ascent);
+        ctx.rotate((deg * Math.PI) / 180);
+        ctx.fillText(s, 0, 0);
+        ctx.restore();
       },
       measure: (ptr, px, wPtr, hPtr) => {
         const s = cstr(ptr);
@@ -357,6 +373,8 @@
       canvas.addEventListener("pointermove", (e) => {
         const r = canvas.getBoundingClientRect();
         exp.zeus_pointer_move(e.clientX - r.left, e.clientY - r.top);
+        const cp = exp.zeus_cursor_sync ? exp.zeus_cursor_sync() : 0;
+        canvas.style.cursor = cstr(cp) || "default";
       });
       canvas.addEventListener("pointerup", () => exp.zeus_pointer_up());
       canvas.addEventListener(

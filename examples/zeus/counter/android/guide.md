@@ -80,9 +80,9 @@ The emulator reaches the Mac backend at **`10.0.2.2:8080`**, not `127.0.0.1`
 use `127.0.0.1` because they share the Mac loopback.
 
 Layout is the phone view in density-independent pixels, like iOS points.
-`theme.Page("Zeus", 560, 520)` only sizes the macOS window; wasm and iOS already
-ignored that size and used the canvas / `UIView` bounds. Android now does the
-same. Rebuild the APK after host changes (`./run.sh`).
+`zeus.App("Zeus", 640, 680, ...)` only sizes the macOS window; wasm and iOS
+use the canvas / `UIView` bounds. Android does the same. Rebuild the APK
+after host changes (`./run.sh`).
 
 Output Gradle tree: `examples/zeus/counter/android/build/app`.
 Launch activity: `com.yuga.app/com.yuga.zeus.ZeusActivity`.

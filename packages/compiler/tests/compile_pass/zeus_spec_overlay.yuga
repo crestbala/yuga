@@ -1,0 +1,33 @@
+// Nested Overlay is laid out in window space. After the page scroller
+// moves, a click in the window must still hit it (click-outside dismiss).
+import "std:fmt"
+import "std:sys"
+import "std:zeus"
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn main() {
+    let open = zeus.signal(1)
+    zeus.snapshot(200, 160, fn() -> Node {
+        zeus.Scroll() {
+            zeus.Box(height = 400) {
+                zeus.Text("pad")
+            }
+            zeus.Box() {
+                let dim = zeus.Overlay(on_click = fn() => open.set(0))
+                zeus.show(dim, open)
+            }
+        }
+    })
+    expect(open.get() == 1, "overlay starts open")
+    zeus.engine_scroll(20, 20, 0, 250)
+    zeus.engine_click(20, 20)
+    expect(open.get() == 0, "click-outside after scroll dismisses overlay")
+    fmt.println("overlay ok")
+}

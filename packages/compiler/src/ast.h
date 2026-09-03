@@ -26,12 +26,14 @@
 #define ASTF_MOVED      4
 #define ASTF_FN_VAL     8
 #define ASTF_STATE      16
+#define ASTF_AWAIT      32 /* `await` sugar call: only valid inside `async fn` */
 
 typedef enum {
     AST_PROGRAM,
     AST_IMPORT,
     AST_FN_DECL,
     AST_STRUCT_DECL,
+    AST_ENUM_DECL,
     AST_VAR_DECL,
     AST_BLOCK,
     AST_IF,
@@ -69,12 +71,15 @@ typedef struct AstNode AstNode;
 typedef struct {
     const char *name;
     AstNode *type;
+    AstNode *def; /* `= expr` default, or NULL. Constant expressions only;
+                     only the trailing parameters may carry one. */
     SourceLoc loc;
 } Param;
 
 typedef struct {
     const char *name;
     AstNode *type;
+    AstNode *def;    /* `= expr` default, or NULL. Constant expressions only. */
     const char *doc; /* `///` above this field, or NULL */
 } Field;
 
@@ -121,6 +126,7 @@ struct AstNode {
             size_t cap_count;
             int clos_id;
             int used_as_value;
+            int is_async; /* `async fn`: body may contain `await` */
         } fn;
         struct {
             const char *name;
@@ -130,6 +136,12 @@ struct AstNode {
             size_t tparam_count;
             int is_proto; /* inject encode_/decode_ as Yuga calling std:http */
         } strct;
+        struct {
+            const char *name;
+            const char **vnames;
+            int64_t *vals;
+            size_t count;
+        } enm;
         struct {
             const char *name;
             AstNode *type;
@@ -251,6 +263,7 @@ AstNode *ast_program(AstNode **imps, size_t ni, AstNode **decls, size_t nd, Sour
 AstNode *ast_import(const char *alias, const char *path, SourceLoc loc);
 AstNode *ast_fn(const char *name, Param *params, size_t pc, AstNode *ret, AstNode *body, SourceLoc loc);
 AstNode *ast_struct(const char *name, Field *fields, size_t fc, SourceLoc loc);
+AstNode *ast_enum(const char *name, const char **vnames, int64_t *vals, size_t n, SourceLoc loc);
 AstNode *ast_var(const char *name, AstNode *type, AstNode *init, int is_mut, SourceLoc loc);
 AstNode *ast_block(AstNode **stmts, size_t n, SourceLoc loc);
 AstNode *ast_if(AstNode *cond, AstNode *thenb, AstNode *elseb, SourceLoc loc);

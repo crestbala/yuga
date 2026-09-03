@@ -53,7 +53,8 @@ Type *type_param(const char *name);
 /** Structural equality. Generic structs compare name + type arguments. */
 int type_eq(const Type *a, const Type *b);
 
-/** 1 if the value is copied on use (not moved). Box, []T, and &mut are not Copy. */
+/** 1 if the value is copied on use (not moved). Box and &mut are not Copy.
+ *  []T is Copy when T is Copy (refcounted header). fn values are Copy handles. */
 int type_is_copy(const Type *t);
 
 /** 1 if a local of this type must run a destructor (Box, []T, or a struct/array of those). */

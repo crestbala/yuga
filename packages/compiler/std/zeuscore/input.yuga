@@ -35,7 +35,7 @@ fn hit_floaters(id: int, px: int, py: int) -> int {
         let c = arena.nodes[id].kids[nk - 1 - j]
         let mut h = 0
         if arena.nodes[c].kind == 9 {
-            h = hit_floaters(c, px, py)
+            h = hit_floaters(c, arena.ptr_x, arena.ptr_y)
         }
         if arena.nodes[c].kind != 9 {
             h = hit_floaters(c, hx, hy)
@@ -46,7 +46,7 @@ fn hit_floaters(id: int, px: int, py: int) -> int {
     }
     if arena.is_floater(id) != 0 {
         if arena.nodes[id].kind == 9 {
-            return hit_node(id, px, py)
+            return hit_node(id, arena.ptr_x, arena.ptr_y)
         }
         return hit_node(id, px, hy)
     }
@@ -135,8 +135,8 @@ fn hit_node(id: int, px: int, py: int) -> int {
         let mut hx = cx
         let mut hy = cy
         if arena.nodes[c].kind == 9 {
-            hx = px
-            hy = py
+            hx = arena.ptr_x
+            hy = arena.ptr_y
         }
         let h = hit_node(c, hx, hy)
         if h != 0 {
@@ -150,6 +150,14 @@ fn hit_node(id: int, px: int, py: int) -> int {
         return id
     }
     if arena.nodes[id].click_fn > 0 {
+        return id
+    }
+    // A node carrying only a pointer handler is hit-testable; children are
+    // tried first, so this doubles as event bubbling.
+    if arena.nodes[id].down_fn > 0 {
+        return id
+    }
+    if arena.nodes[id].up_fn > 0 {
         return id
     }
     if arena.nodes[id].kind == 4 {
@@ -184,6 +192,8 @@ fn hit_node(id: int, px: int, py: int) -> int {
 
 fn click(px: int, py: int) -> int {
     arena.ensure()
+    arena.ptr_x = px
+    arena.ptr_y = py
     arena.drag_id = 0
     arena.drag_bar = 0
     if arena.root_id <= 0 {
@@ -265,6 +275,13 @@ fn click(px: int, py: int) -> int {
     apply_click(c2)
     if arena.nodes[id].click_fn > 0 {
         platform.plat_invoke_fn(arena.nodes[id].click_fn)
+    }
+    arena.ev_x = px
+    arena.ev_y = py
+    arena.ev_button = 0
+    arena.down_id = id
+    if arena.nodes[id].down_fn > 0 {
+        platform.plat_invoke_fn(arena.nodes[id].down_fn)
     }
     return 1
 }
@@ -452,6 +469,49 @@ fn drag(px: int, py: int) -> int {
 fn mouseup() {
     arena.drag_id = 0
     arena.drag_bar = 0
+    let id = arena.down_id
+    arena.down_id = 0
+    if id <= 0 {
+        return
+    }
+    if id >= arena.nodes.len {
+        return
+    }
+    if arena.nodes[id].up_fn > 0 {
+        arena.ev_button = 0
+        platform.plat_invoke_fn(arena.nodes[id].up_fn)
+    }
+}
+
+/// Deliver a key to the focused node's `on_key_down` / `on_key_press`
+/// handlers. Returns 1 if a handler ran, so the host repaints.
+fn key_handlers(k: int, mods: int, up: int) -> int {
+    let id = arena.focus_id
+    if id <= 0 {
+        return 0
+    }
+    if id >= arena.nodes.len {
+        return 0
+    }
+    arena.ev_key = k
+    arena.ev_mods = mods
+    let mut ran = 0
+    if up != 0 {
+        if arena.nodes[id].kup_fn > 0 {
+            platform.plat_invoke_fn(arena.nodes[id].kup_fn)
+            ran = 1
+        }
+        if arena.nodes[id].kpress_fn > 0 {
+            platform.plat_invoke_fn(arena.nodes[id].kpress_fn)
+            ran = 1
+        }
+        return ran
+    }
+    if arena.nodes[id].kdown_fn > 0 {
+        platform.plat_invoke_fn(arena.nodes[id].kdown_fn)
+        ran = 1
+    }
+    return ran
 }
 
 fn hover_walk(id: int, px: int, py: int, sid: int) -> int {
@@ -478,8 +538,8 @@ fn hover_walk(id: int, px: int, py: int, sid: int) -> int {
         let mut hy = cy
         let mut hx = cx
         if arena.nodes[c].kind == 9 {
-            hy = py
-            hx = px
+            hy = arena.ptr_y
+            hx = arena.ptr_x
         }
         if hover_walk(c, hx, hy, sid) != 0 {
             return 1
@@ -537,19 +597,76 @@ fn hover(px: int, py: int) -> int {
     return dirty
 }
 
+/// Pointer affordance: the host shows a hand cursor while the pointer is
+/// inside an interactive node. This is decoupled from the hover wash
+/// (`is_hot`, which `Box.hover_off` now silences by default): clickable
+/// boxes and native thumbs claim the hand, while full-surface click
+/// swallows (dialogs, picker panels) keep the arrow.
 fn over_button() -> int {
     let n = arena.nodes.len
     for i in 1..n {
-        if arena.is_hot(i) != 0 {
-            if arena.ptr_in(i) != 0 {
-                return 1
-            }
+        if arena.want_show(i) == 0 {
+            continue
+        }
+        if arena.ptr_in(i) == 0 {
+            continue
+        }
+        let k = arena.nodes[i].kind
+        if k == 9 {
+            continue
+        }
+        if k == 11 {
+            continue
+        }
+        // Native thumbs: buttons, progress/toggle/check/slider.
+        if k == 4 || k == 7 || k == 8 || k == 13 {
+            return 1
+        }
+        // Explicit hover opt-in (Boxes with hover_off = false still wash).
+        if arena.nodes[i].hover_fade > 0 {
+            return 1
+        }
+        // Click swallows that cover a whole surface act like the page,
+        // not a control — no hand cursor over a dialog body.
+        if arena.nodes[i].a11y_role == "dialog" {
+            continue
+        }
+        if arena.nodes[i].click_sig > 0 || arena.nodes[i].click_fn > 0 {
+            return 1
         }
     }
     return 0
 }
 
+/// CSS cursor name for the node under the pointer. Nodes with an explicit
+/// cursor ("" = default) win; later-created nodes outrank earlier ones, so
+/// children override parents. Returns "" when nothing claims a cursor.
+fn cursor_at() -> string {
+    let n = arena.nodes.len
+    for i in 1..n {
+        let id = n - i
+        if arena.want_show(id) == 0 {
+            continue
+        }
+        if arena.ptr_in(id) == 0 {
+            continue
+        }
+        let k = arena.nodes[id].kind
+        if k == 9 {
+            continue
+        }
+        if k == 11 {
+            continue
+        }
+        if arena.nodes[id].cursor.len > 0 {
+            return arena.nodes[id].cursor
+        }
+    }
+    return ""
+}
+
 fn key(k: int) -> int {
+    let handled = key_handlers(k, arena.ev_mods, 0)
     if k == 27 {
         let mut changed = 0
         if arena.focus_id != 0 {
@@ -571,7 +688,7 @@ fn key(k: int) -> int {
         return changed
     }
     if arena.focus_captures_text() == 0 {
-        return 0
+        return handled
     }
     let id = arena.focus_id
     if id <= 0 {
@@ -585,27 +702,31 @@ fn key(k: int) -> int {
     }
     let slot = arena.nodes[id].edit_slot
     if slot < 0 {
-        return 0
+        return handled
     }
+    let mut edited = 0
     if k == 8 {
-        return platform.plat_edit_back(slot)
-    }
-    if k == 127 {
-        return platform.plat_edit_back(slot)
-    }
-    if k == 9 {
-        return platform.plat_edit_append(slot, 9)
-    }
-    if k == 10 {
-        return platform.plat_edit_append(slot, 10)
-    }
-    if k == 13 {
-        return platform.plat_edit_append(slot, 10)
-    }
-    if k >= 32 {
+        edited = platform.plat_edit_back(slot)
+    } else if k == 127 {
+        edited = platform.plat_edit_back(slot)
+    } else if k == 9 {
+        edited = platform.plat_edit_append(slot, 9)
+    } else if k == 10 {
+        edited = platform.plat_edit_append(slot, 10)
+    } else if k == 13 {
+        edited = platform.plat_edit_append(slot, 10)
+    } else if k >= 32 {
         if k < 127 {
-            return platform.plat_edit_append(slot, k)
+            edited = platform.plat_edit_append(slot, k)
         }
     }
-    return 0
+    if edited != 0 {
+        /* `Input(bind = sig)` writes the edit buffer back on each edit; the
+           signal store notifies only on a real change. */
+        if arena.nodes[id].bind_fn > 0 {
+            platform.plat_invoke_fn(arena.nodes[id].bind_fn)
+        }
+        return 1
+    }
+    return handled
 }

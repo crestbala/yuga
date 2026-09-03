@@ -105,6 +105,20 @@ static void ios_text(void *ctx, int64_t x, int64_t y, const char *s,
     [str drawAtPoint:CGPointMake((CGFloat)x, (CGFloat)y) withAttributes:zeus_attrs(rgb, font)];
 }
 
+/* Rotated text: UIKit is y-down, so positive degrees are clockwise on
+   screen; pivot at the top-left corner of the line box. */
+static void ios_text_rot(void *ctx, int64_t x, int64_t y, const char *s,
+                         int64_t rgb, int64_t font, int64_t deg) {
+    (void)ctx;
+    NSString *str = s ? [NSString stringWithUTF8String:s] : @"";
+    CGContextRef c = UIGraphicsGetCurrentContext();
+    CGContextSaveGState(c);
+    CGContextTranslateCTM(c, (CGFloat)x, (CGFloat)y);
+    CGContextRotateCTM(c, (CGFloat)deg * (CGFloat)0.017453292519943295);
+    [str drawAtPoint:CGPointZero withAttributes:zeus_attrs(rgb, font)];
+    CGContextRestoreGState(c);
+}
+
 static void ios_save(void *ctx) {
     (void)ctx;
     CGContextSaveGState(UIGraphicsGetCurrentContext());
@@ -661,6 +675,7 @@ static CGPoint zeus_content_point(UIView *v, CGPoint p) {
     d.fill = ios_fill;
     d.fill_a = ios_fill_a;
     d.text = ios_text;
+    d.text_rot = ios_text_rot;
     d.save = ios_save;
     d.clip = ios_clip;
     d.restore = ios_restore;

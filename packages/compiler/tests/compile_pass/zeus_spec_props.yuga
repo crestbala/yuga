@@ -1,0 +1,45 @@
+// Props are data: `const`-style bindings, struct instances, and enum
+// constants — never a zero-argument function. A prop may be a conditional
+// expression as long as each branch is still a constant.
+import "std:fmt"
+import "std:zeus"
+
+let ACCENT: string = "#89b4fa"
+let MUTED: string = "#6c7086"
+let CARD_PAD: int = 16
+
+struct CardStyle {
+    background: string = "#1e1e2e",
+    padding: int = 16,
+    radius: int = 8,
+}
+
+fn Tab(label: string, sel: bool) {
+    zeus.Text(label, color = if sel { ACCENT } else { MUTED })
+}
+
+fn Card(style: CardStyle, compact: bool) {
+    zeus.Box(
+        background = style.background,
+        padding = if compact { 8 } else { style.padding },
+        radius = style.radius,
+        align_direction = if compact { DIRECTION.Row } else { DIRECTION.Column },
+        align_items = ALIGN.Center,
+        spacing = SPACE.Sm
+    ) {
+        Tab("Selected", true)
+        Tab("Other", false)
+    }
+}
+
+fn main() {
+    zeus.snapshot(300, 200, fn() -> Node {
+        zeus.Box(align_direction = DIRECTION.Column) {
+            // Every field of CardStyle has a default, so an omitted one is filled
+            // in from the declaring module.
+            Card(CardStyle(padding = CARD_PAD), false)
+            Card(CardStyle(), true)
+        }
+    })
+    fmt.println("props ok")
+}

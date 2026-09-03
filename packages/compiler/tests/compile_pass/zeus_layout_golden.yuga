@@ -1,0 +1,76 @@
+// Golden layout checks: a handful of coordinates per widget, asserted from
+// the headless layout instead of paint dumps, so row/grid/overlay regressions
+// fail here and not in a desktop session. Docs/zeus_kit_downsides.md §16.
+
+import "std:fmt"
+import "std:sys"
+import "std:kit"
+import "std:zeus"
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn main() {
+    let open = zeus.signal(0)
+    zeus.snapshot(480, 320, fn() -> Node {
+        kit.Page() {
+            // Fixed-width buttons: row gap 8.
+            zeus.Box(align_direction = DIRECTION.Row, spacing = 8) {
+                zeus.Button("a", width = 80, height = 28, on_click = fn() {})
+                zeus.Button("b", width = 120, height = 28, on_click = fn() {})
+            }
+            // Right-aligned row pins its trailing child to the content edge.
+            zeus.Box(align_direction = DIRECTION.Row, justify = ALIGN.End, width = 416) {
+                zeus.Button("c", width = 60, height = 24, on_click = fn() {})
+            }
+            // 2x2 grid of fixed cells: columns then rows at gap 8.
+            zeus.Grid(config = zeus.GridConfig(columns = 2, gap = 8)) {
+                zeus.Button("g1", width = 70, height = 40, on_click = fn() {})
+                zeus.Button("g2", width = 70, height = 40, on_click = fn() {})
+                zeus.Button("g3", width = 70, height = 40, on_click = fn() {})
+                zeus.Button("g4", width = 70, height = 40, on_click = fn() {})
+            }
+            zeus.Button("open", width = 60, height = 24, on_click = fn() => open.set(1))
+            kit.Dialog(open) {
+                kit.Title("Golden")
+                kit.Body("Fixed 440 wide card, centered over the dim.")
+            }
+        }
+    })
+    let b1 = zeus.engine_find_text("a")
+    let b2 = zeus.engine_find_text("b")
+    let c = zeus.engine_find_text("c")
+    let g1 = zeus.engine_find_text("g1")
+    let g2 = zeus.engine_find_text("g2")
+    let g3 = zeus.engine_find_text("g3")
+    let g4 = zeus.engine_find_text("g4")
+    expect(b1 > 0 && b2 > 0 && c > 0 && g1 > 0 && g4 > 0, "widgets found")
+    // Fixed row: same baseline; the gap between fixed widths is exactly 8.
+    expect(zeus.node_y(b1) == zeus.node_y(b2), "row shares baseline")
+    expect(zeus.node_w(b1) == 80 && zeus.node_w(b2) == 120, "button widths")
+    expect(zeus.node_x(b2) - (zeus.node_x(b1) + zeus.node_w(b1)) == 8, "row gap is 8")
+    // End-justified row: the trailing child ends at the page content edge
+    // (Page pad is 32; the window is 480 wide).
+    expect(zeus.node_x(c) + zeus.node_w(c) == 480 - 32, "end row touches content edge")
+    // Grid: equal columns at gap 8 (cells stretch to the column width).
+    let gw = zeus.node_w(g1)
+    expect(zeus.node_x(g2) - zeus.node_x(g1) == gw + 8, "grid column pitch")
+    expect(zeus.node_w(g2) == gw, "grid columns equal")
+    expect(zeus.node_x(g3) == zeus.node_x(g1), "grid rows align left")
+    expect(zeus.node_y(g3) - zeus.node_y(g1) == 48, "grid row pitch")
+    expect(zeus.node_x(g4) == zeus.node_x(g2) && zeus.node_y(g4) == zeus.node_y(g3),
+           "grid last cell lands")
+    // Dialog: opening centers the fixed 440 card over the dim.
+    expect(zeus.engine_click_text("open") != 0, "open click")
+    zeus.engine_layout(480, 320)
+    let dlg = zeus.engine_find_role("dialog")
+    expect(dlg > 0, "dialog shows after open")
+    expect(zeus.node_w(dlg) == 440, "dialog card width")
+    expect(zeus.node_x(dlg) == (480 - 440) / 2, "dialog centered x")
+    fmt.println("golden ok")
+}

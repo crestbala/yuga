@@ -23,6 +23,7 @@
 //! `ZEUS_HEADLESS=1` runs a self-test and exits.
 
 import "std:net"
+import "std:async"
 import "std:fmt"
 import "std:sys"
 import "httpcore/wire.yuga"
@@ -2406,4 +2407,225 @@ fn client(addr: string) -> Client {
 
 fn call(c: Client, name: string, body: string) -> string {
     return rt_call(c.addr, name, body)
+}
+
+/// Awaitable unary gRPC-Web call: `let raw = await c.acall(name, body)`
+/// inside an `async fn`. Same `#[proto]` contract as `call` / `call_async`;
+/// the await pumps the one-thread async world until the response lands.
+fn acall(c: Client, name: string, body: string) -> Future<string> {
+    let f = async.future_str()
+    call_async(c, name, body, fn(out) { async.resolve(f, out) })
+    return f
+}
+
+// --- Async unary client (`call_async`) -------------------------------
+//
+// Same `#[proto]` contract as `call`, but the gRPC-Web exchange advances one
+// step per frame on the UI thread and never blocks it: a non-blocking
+// connect, then poll-driven send/read state machines run by `std:async`'s
+// per-frame steppers. The completion callback fires on the UI thread inside
+// the next tick; a signal set there repaints that same frame.
+// Wasm has no sockets: a failed connect falls back to the JS async fetch
+// slots (same framed gRPC-Web POST as `fetch_rpc`, delivered per frame).
+// Transport failure — or an empty browser-style address on native — yields
+// "", the same shape as `call`.
+
+/// One in-flight async call. `stage`: 1 connecting, 2 sending, 3 reading,
+/// 4 wasm fetch wait. `cbid` indexes `acbs`; callbacks stay in their own
+/// table so this record remains a plain Copy struct.
+struct RpcCall {
+    req: string,
+    sent: int,
+    fd: int,
+    stage: int,
+    acc: string,
+    cbid: int,
+    at: int,
+}
+
+let mut acalls: []RpcCall = []RpcCall {}
+let mut acbs: []fn(string) = []fn(string) {}
+let mut astep_on: int = 0
+
+fn acb_drop(cbid: int) {
+    let mut keep = []fn(string) {}
+    let n = acbs.len
+    for i in 0..n {
+        if i != cbid {
+            push(keep, acbs[i])
+        }
+    }
+    acbs = keep
+}
+
+/// Rewrite every live record's `cbid` after `acb_drop` shifted the table:
+/// ids above the dropped one move down by one.
+fn acbs_remap(dropped: int) {
+    let n = acalls.len
+    for i in 0..n {
+        if acalls[i].cbid > dropped {
+            acalls[i].cbid = acalls[i].cbid - 1
+        }
+    }
+}
+
+fn acall_remove(idx: int) {
+    let mut keep = []RpcCall {}
+    let n = acalls.len
+    for i in 0..n {
+        if i != idx {
+            push(keep, acalls[i])
+        }
+    }
+    acalls = keep
+}
+
+/// Terminal path for call `idx`: close the socket, release the in-flight
+/// count, drop the callback slot, then run the callback with `out`. The
+/// callback value is retained before the table is rebuilt, so the drop and
+/// the id remap cannot free it.
+fn acall_finish(idx: int, out: string) {
+    let fd = acalls[idx].fd
+    let cbid = acalls[idx].cbid
+    let cb = acbs[cbid]
+    if fd >= 0 {
+        net.tcp_close(fd)
+    }
+    async.io_close()
+    acall_remove(idx)
+    acb_drop(cbid)
+    acbs_remap(cbid)
+    cb(out)
+}
+
+/// Advance call `idx` by as much as the socket allows right now. Returns 1
+/// when the call terminated (its record was removed and the callback ran).
+fn acall_advance(idx: int) -> int {
+    let mut guard = 0
+    while guard < 8 {
+        guard = guard + 1
+        let stage = acalls[idx].stage
+        if stage == 1 {
+            let fd = acalls[idx].fd
+            let p = net.tcp_poll(fd, 2, 0)
+            if p < 0 {
+                acall_finish(idx, "")
+                return 1
+            }
+            if p == 0 {
+                return 0
+            }
+            if net.tcp_so_error(fd) != 0 {
+                acall_finish(idx, "")
+                return 1
+            }
+            acalls[idx].stage = 2
+        }
+        if stage == 2 {
+            let n = net.tcp_send(acalls[idx].fd, acalls[idx].req, acalls[idx].sent)
+            if n < 0 {
+                acall_finish(idx, "")
+                return 1
+            }
+            if n == 0 {
+                return 0
+            }
+            acalls[idx].sent = acalls[idx].sent + n
+            if acalls[idx].sent >= acalls[idx].req.len {
+                acalls[idx].stage = 3
+            } else {
+                return 0
+            }
+        }
+        if stage == 3 {
+            let fd = acalls[idx].fd
+            let p = net.tcp_poll(fd, 1, 0)
+            if p < 0 {
+                acall_finish(idx, "")
+                return 1
+            }
+            if p == 0 {
+                return 0
+            }
+            let chunk = net.tcp_read(fd, 4096)
+            if chunk.len == 0 {
+                // EOF: the server closed after the body (Connection: close).
+                acall_finish(idx, unframe_str(http_payload(acalls[idx].acc)))
+                return 1
+            }
+            acalls[idx].acc = concat_str(acalls[idx].acc, chunk)
+            if acalls[idx].acc.len > 1048576 {
+                acall_finish(idx, "")
+                return 1
+            }
+        }
+        if stage == 4 {
+            if net.fetch_ready() != 0 {
+                acall_finish(idx, unframe_str(net.fetch_take()))
+                return 1
+            }
+            return 0
+        }
+        if stage <= 0 {
+            return 0
+        }
+    }
+    return 0
+}
+
+/// Per-frame stepper: give every in-flight call one non-blocking advance.
+fn io_pump() {
+    let mut i = 0
+    while i < acalls.len {
+        if acalls[i].at > 0 {
+            if async.now_ms() > acalls[i].at {
+                acall_finish(i, "")
+                continue
+            }
+        }
+        if acall_advance(i) == 0 {
+            i = i + 1
+        }
+    }
+}
+
+/// Unary gRPC-Web call whose completion runs `cb` on the UI thread (inside a
+/// frame's async tick) with the same protobuf `out` `call` returns. Native:
+/// non-blocking TCP, pumped per frame. Wasm: the JS async fetch fallback.
+fn call_async(c: Client, name: string, body: string, cb: fn(string)) {
+    let path = name_to_path(name)
+    if path.len == 0 {
+        cb("")
+        return
+    }
+    let hp = parse_addr(c.addr)
+    if hp.port == 0 {
+        cb("")
+        return
+    }
+    let framed = frame_str(body)
+    let req = client_post(hp.host, hp.port, path, framed)
+    if astep_on == 0 {
+        astep_on = 1
+        async.add_step(|| { io_pump() })
+    }
+    let cbid = acbs.len
+    push(acbs, cb)
+    let fd = net.tcp_nb_connect(hp.host, hp.port)
+    if fd >= 0 {
+        push(acalls, RpcCall { req: req, sent: 0, fd: fd, stage: 1, acc: "",
+                               cbid: cbid, at: async.now_ms() + 8000 })
+        async.io_open()
+        return
+    }
+    // No TCP here (wasm): fall back to the async fetch slots. Native connect
+    // failure fails the call the same way `call` does.
+    if net.fetch_issue(path, framed) == 0 {
+        push(acalls, RpcCall { req: req, sent: 0, fd: -1, stage: 4, acc: "",
+                               cbid: cbid, at: async.now_ms() + 8000 })
+        async.io_open()
+        return
+    }
+    acb_drop(cbid)
+    cb("")
 }

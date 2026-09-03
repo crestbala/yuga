@@ -116,6 +116,7 @@ typedef struct {
     int is_main;
     int lowered;        /* 0 when a construct was not representable yet */
     int clos_id;        /* non-zero: this IrFn is yuga_clos_<id> */
+    int env_local;      /* closure: the local holding `_env`; -1 otherwise */
     const char **caps;
     Type **cap_types;
     int ncaps;

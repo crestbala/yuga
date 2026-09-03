@@ -73,6 +73,74 @@ fn drop_eid_deps(eid: int) {
     dep_eff = ne
 }
 
+/// Drop every dependency edge on a freed signal. A live effect must never
+/// re-run from a signal id that was recycled onto another value.
+fn drop_sig(sid: int) {
+    if sid <= 0 {
+        return
+    }
+    let mut ns = []int {}
+    let mut ne = []int {}
+    let n = dep_sig.len
+    for i in 0..n {
+        if dep_sig[i] != sid {
+            push(ns, dep_sig[i])
+            push(ne, dep_eff[i])
+        }
+    }
+    dep_sig = ns
+    dep_eff = ne
+}
+
+/// Remove the effects of a torn-down node. The interned handlers behind the
+/// effects were recorded on the rebuild scope that created the node and are
+/// freed there; this only drops the dependency edges and compacts the tables.
+/// Effect ids are table positions, so surviving edges are remapped.
+fn free_node_effects(nid: int) {
+    boot()
+    let n = node_ids.len
+    if n <= 1 {
+        return
+    }
+    let mut remap = []int {}
+    push(remap, 0)
+    let mut keep_fn = []int {}
+    let mut keep_node = []int {}
+    for i in 1..n {
+        if node_ids[i] == nid {
+            push(remap, -1)
+        } else {
+            push(remap, keep_fn.len + 1)
+            push(keep_fn, fn_ids[i])
+            push(keep_node, node_ids[i])
+        }
+    }
+    fn_ids = []int { 0 }
+    node_ids = []int { 0 }
+    let k = keep_fn.len
+    for i in 0..k {
+        push(fn_ids, keep_fn[i])
+        push(node_ids, keep_node[i])
+    }
+    let mut ns = []int {}
+    let mut ne = []int {}
+    let d = dep_sig.len
+    for i in 0..d {
+        let e = dep_eff[i]
+        if e > 0 {
+            if e < remap.len {
+                let ne2 = remap[e]
+                if ne2 > 0 {
+                    push(ns, dep_sig[i])
+                    push(ne, ne2)
+                }
+            }
+        }
+    }
+    dep_sig = ns
+    dep_eff = ne
+}
+
 fn run(eid: int) {
     boot()
     if eid <= 0 {

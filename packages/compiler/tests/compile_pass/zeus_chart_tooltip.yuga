@@ -1,0 +1,76 @@
+// One chart tooltip follows the hovered column: content and position come
+// from a single shared `act` signal, not one pre-built panel per category,
+// and a cursor hairline rides the hovered column. Regression for the
+// tooltip-follow work (docs/zeus_kit_downsides.md §11).
+
+import "std:fmt"
+import "std:sys"
+import "std:kit"
+import "std:zeus"
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn main() {
+    let labs = []string { "Mon", "Tue", "Wed" }
+    let names = []string { "Visits" }
+    let vals = []int { 11, 22, 33 }
+    zeus.snapshot(340, 240, fn() -> Node {
+        kit.Page() {
+            kit.LineChart(labs, names, vals, 300, 160)
+        }
+    })
+    // Settle the chart's first refit (estimate -> measured width) so the
+    // tree is stable before any node ids are captured. While nothing is
+    // hovered the panel is hidden, so these finds hit the rotated x labels;
+    // their pitch is the column width the cursor must step by.
+    zeus.engine_layout(340, 240)
+    let lab_tue = zeus.engine_find_text("Tue")
+    let lab_wed = zeus.engine_find_text("Wed")
+    expect(lab_tue > 0 && lab_wed > 0, "x labels found")
+    let pitch = zeus.node_x(lab_wed) - zeus.node_x(lab_tue)
+    // Column 2 (x ~154..242). Hovering it must surface Tue / 22 in the
+    // shared panel.
+    zeus.engine_hover(170, 60)
+    expect(zeus.engine_find_text("Tue") != 0, "label Tue")
+    expect(zeus.engine_find_text("22") != 0, "value 22")
+    expect(zeus.engine_find_text("11") == 0, "no stale value 11")
+    // ...and hovering the third column swaps the content in place.
+    zeus.engine_hover(262, 60)
+    expect(zeus.engine_find_text("Wed") != 0, "label Wed")
+    expect(zeus.engine_find_text("33") != 0, "value 33")
+    expect(zeus.engine_find_text("22") == 0, "no stale value 22")
+    let panel = zeus.engine_find_role("dialog")
+    expect(panel > 0, "tooltip panel found")
+    expect(zeus.node_visible(panel) == 1, "panel shown on hover")
+    // The cursor hairline rides the hovered column: it steps exactly one
+    // column pitch between column 2 and column 3.
+    let cur1 = zeus.engine_find_text("cursor")
+    expect(cur1 > 0, "cursor found")
+    let band = zeus.engine_find_text("band")
+    expect(band > 0, "band found")
+    zeus.engine_hover(170, 60)
+    zeus.engine_layout(340, 240)
+    let cx2 = zeus.node_x(cur1)
+    expect(zeus.node_w(band) == pitch, "band spans one column")
+    expect(zeus.node_x(band) == cx2 - pitch / 2, "band hugs the hovered column")
+    zeus.engine_hover(262, 60)
+    zeus.engine_layout(340, 240)
+    expect(zeus.node_x(cur1) - cx2 == pitch, "cursor follows to next column")
+    expect(zeus.node_x(band) == zeus.node_x(cur1) - pitch / 2, "band follows too")
+    // Leaving the plot hides panel and cursor.
+    zeus.engine_hover(2, 60)
+    expect(zeus.node_visible(panel) == 0, "panel hidden after leave")
+    expect(zeus.node_visible(cur1) == 0, "cursor hidden after leave")
+    expect(zeus.node_visible(band) == 0, "band hidden after leave")
+    // Hovering again re-shows it with the right column.
+    zeus.engine_hover(170, 60)
+    expect(zeus.node_visible(panel) == 1, "panel shows again")
+    expect(zeus.engine_find_text("22") != 0, "value 22 again")
+    fmt.println("tooltip ok")
+}

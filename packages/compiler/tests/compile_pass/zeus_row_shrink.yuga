@@ -1,0 +1,48 @@
+// A row that overflows shrinks its flexible (grow = 1) children instead of
+// wrapping trailing children onto a second line; when the flexible children
+// cannot absorb the whole deficit, it still wraps. Regression for the
+// shrink-before-wrap layout work (docs/zeus_kit_downsides.md §4).
+
+import "std:fmt"
+import "std:sys"
+import "std:zeus"
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn R(text: fn() -> string, flexed: int, tag: string) -> Node {
+    zeus.Box(align_direction = DIRECTION.Row, spacing = 4, width = 200) {
+        zeus.Text(text, grow = flexed, color = "#000000")
+        zeus.Button(tag, width = 40, height = 20)
+    }
+}
+
+fn main() {
+    zeus.snapshot(220, 140, fn() -> Node {
+        zeus.Box(align_direction = DIRECTION.Column, spacing = 8) {
+            R(fn() -> string { "a long flexible label that cannot fit" }, 1, "b1")
+            R(fn() -> string { "another long flexible label that cannot fit" }, 0, "b2")
+        }
+    })
+    let text1 = zeus.engine_find_text("a long flexible label that cannot fit")
+    let text2 = zeus.engine_find_text("another long flexible label that cannot fit")
+    let b1 = zeus.engine_find_text("b1")
+    let b2 = zeus.engine_find_text("b2")
+    expect(text1 > 0 && text2 > 0 && b1 > 0 && b2 > 0, "nodes found")
+    // Flexed row: the long text shares its line with the button, and the
+    // button still ends inside the 200 px row. The text absorbed the
+    // overflow by narrowing.
+    expect(zeus.node_y(b1) == zeus.node_y(text1), "flexed row stays one line")
+    expect(zeus.node_x(b1) + zeus.node_w(b1) <= 200, "flexed row fits width")
+    expect(zeus.node_w(text1) < 160, "flex text narrowed")
+    // Unflexed row: same content but no flex child — the button wrapped to
+    // the second line, below the first row's button.
+    expect(zeus.node_y(b2) > zeus.node_y(b1), "unflexed row still wraps")
+    expect(zeus.node_y(b2) > zeus.node_y(text2), "button below its text")
+    fmt.println("shrink ok")
+}

@@ -1,0 +1,80 @@
+// Phase 1: std:async timers — after / interval / cancel / spawn, all running
+// on the one (UI) thread via explicit console ticks. No zeus, no sockets:
+// this pins the timer semantics the engine pump builds on.
+
+import "std:async"
+import "std:fmt"
+import "std:sys"
+
+let mut order: int = 0
+let mut count: int = 0
+
+fn fail(what: string) {
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn pump(ms: int) {
+    async.sleep(ms)
+    async.tick()
+}
+
+fn main() {
+    // Spawns run at the start of the next tick, in order, before due timers.
+    async.spawn(|| { order = order * 10 + 1 })
+    async.after(10, || { order = order * 10 + 4 })
+    async.spawn(|| { order = order * 10 + 2 })
+    async.tick()
+    if order != 12 {
+        fail("spawn order")
+    }
+    // The one-shot is not due yet (10ms), and later fires exactly once.
+    let mut g = 0
+    while order != 124 && g < 4000 {
+        pump(1)
+        g = g + 1
+    }
+    if order != 124 {
+        fail("after never fired")
+    }
+    let mut g1 = 0
+    while g1 < 20 {
+        pump(1)
+        g1 = g1 + 1
+    }
+    if order != 124 {
+        fail("one-shot re-fired")
+    }
+    // An interval keeps firing until canceled.
+    let iv = async.interval(1, || { count = count + 1 })
+    let mut g2 = 0
+    while count < 3 && g2 < 4000 {
+        pump(1)
+        g2 = g2 + 1
+    }
+    if count < 3 {
+        fail("interval never fired")
+    }
+    async.cancel(iv)
+    let frozen = count
+    let mut g3 = 0
+    while g3 < 20 {
+        pump(1)
+        g3 = g3 + 1
+    }
+    if count != frozen {
+        fail("interval not canceled")
+    }
+    // Canceling before due keeps a one-shot from ever running.
+    let t = async.after(1, || { order = 999 })
+    async.cancel(t)
+    let mut g4 = 0
+    while g4 < 20 {
+        pump(1)
+        g4 = g4 + 1
+    }
+    if order == 999 {
+        fail("cancel did not stop one-shot")
+    }
+    fmt.println("async timers ok", order, count)
+}

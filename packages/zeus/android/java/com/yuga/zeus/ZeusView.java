@@ -161,6 +161,18 @@ public class ZeusView extends View implements Choreographer.FrameCallback {
         c.drawText(s, x, y - fm.ascent, text);
     }
 
+    void jniTextRot(Canvas c, int x, int y, String s, int rgb, int font, int deg) {
+        if (s == null) s = "";
+        int px = font < 8 ? 8 : font;
+        text.setColor(0xFF000000 | (rgb & 0xFFFFFF));
+        text.setTextSize(px);
+        Paint.FontMetrics fm = text.getFontMetrics();
+        c.save();
+        c.rotate(deg, x, y);
+        c.drawText(s, x, y - fm.ascent, text);
+        c.restore();
+    }
+
     void jniSave(Canvas c) {
         c.save();
     }

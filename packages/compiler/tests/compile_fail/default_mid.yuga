@@ -1,0 +1,7 @@
+// Defaults must be a trailing suffix of the parameter list.
+fn f(a: int = 1, b: int) {
+}
+
+fn main() {
+    f()
+}

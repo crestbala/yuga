@@ -1,0 +1,44 @@
+{
+  "name": "yuga",
+  "displayName": "Yuga",
+  "description": "Yuga language: syntax highlighting and IntelliSense via yuga-lsp",
+  "version": "0.1.0",
+  "publisher": "yuga",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": ["Programming Languages"],
+  "activationEvents": [
+    "onLanguage:yuga",
+    "workspaceContains:**/*.yuga",
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "yuga",
+        "aliases": ["Yuga", "yuga"],
+        "extensions": [".yuga"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "yuga",
+        "scopeName": "source.yuga",
+        "path": "./syntaxes/yuga.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Yuga",
+      "properties": {
+        "yuga.lspPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to yuga-lsp. Empty walks up from the workspace to bin/yuga-lsp, then PATH."
+        }
+      }
+    }
+  }
+}

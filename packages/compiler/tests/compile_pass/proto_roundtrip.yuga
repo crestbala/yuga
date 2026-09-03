@@ -1,4 +1,5 @@
 import "std:fmt"
+import "std:sys"
 
 #[proto]
 struct Msg {
@@ -8,9 +9,7 @@ struct Msg {
 
 fn must(ok: bool) {
     if !ok {
-        let xs = [1]int { 0 }
-        let z = xs[1]
-        fmt.println(z)
+        sys.exit(1)
     }
 }
 

@@ -1,0 +1,35 @@
+import "std:fmt"
+import "std:sys"
+
+fn sum_of(xs: []int) -> int {
+    let mut s = 0
+    let n = xs.len
+    for i in 0..n {
+        s = s + xs[i]
+    }
+    return s
+}
+
+fn main() {
+    let mut a = []int {}
+    push(a, 1)
+    push(a, 2)
+    let b = a
+    push(a, 3)
+    if b.len != 2 {
+        fmt.println("FAIL copy len", b.len)
+        sys.exit(1)
+    }
+    if a.len != 3 {
+        fmt.println("FAIL grow len", a.len)
+        sys.exit(1)
+    }
+    let f = fn() -> int {
+        return sum_of(a)
+    }
+    if f() != 6 {
+        fmt.println("FAIL capture", f())
+        sys.exit(1)
+    }
+    fmt.println("vec copy ok")
+}

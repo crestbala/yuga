@@ -67,7 +67,8 @@ Call imported items as `foo.bar(...)`.
 | Import | What it is |
 |---|---|
 | `std:fmt` | Stdout. `fmt.println` is compile-time lowering to length-based writes, not `printf`. |
-| `std:zeus` | UI toolkit. One `Node` tree, signals, chain API. Same source on every host. |
+| `std:zeus` | UI toolkit. One `Node` tree, signals, `Box` / `Text` / `App` / `For`. Same source on Cocoa, iOS, Android, and wasm Canvas2D (no HTML DOM). |
+| `std:kit` | Shared Zeus look: Card, Button, Dialog, Tabs, Navbar, growing lists with `zeus.For`. |
 | `std:http` | Unary RPC over gRPC-Web (HTTP/1.1) and h2c. `#[proto]` structs, no REST routes. |
 | `std:maya` | Tiny 3D/2D engine. Scene and tracer in Yuga; C is the event loop and present. |
 | `std:net` | TCP connect / listen / read / write. Used by `http`; not an app-level import. |
@@ -78,30 +79,32 @@ shows those comments plus the type.
 
 ### Zeus
 
-Zeus is Yuga's UI library. A component is a function that takes a `Props`
-struct and returns a `Node` — no `View` trait, no `impl`. Backend is a
-`--target` flag, not an import.
+Zeus is Yuga's UI library. A component is a function; hierarchy is a
+trailing block. No `View` trait, no HTML DOM. Backend is a `--target`
+flag, not an import. Web is Canvas2D wasm.
 
 ```yuga
 import "std:zeus"
 
 fn main() {
     let n = zeus.signal(0)
-    zeus.col().pad(16).gap(8).children(
-        zeus.text("Count").font(22),
-        zeus.label("").bind(n).font(28),
-        zeus.row().gap(8).children(
-            zeus.button("-").on_click(|| { n.set(n.get() - 1) }),
-            zeus.button("+").on_click(|| { n.set(n.get() + 1) }),
-        ),
-    ).run()
+    zeus.App("Count", 320, 200, fn() {
+        zeus.Box(align_direction = DIRECTION.Column, padding = 16, spacing = 8) {
+            zeus.Text("Count", font = 22)
+            zeus.Text("{{n.get()}}", font = 28)
+            zeus.Box(align_direction = DIRECTION.Row, spacing = 8) {
+                zeus.Button("-", on_click = fn() => n.set(n.get() - 1))
+                zeus.Button("+", on_click = fn() => n.set(n.get() + 1))
+            }
+        }
+    })
 }
 ```
 
-Kit widgets, theme tokens, and the public barrel live in `packages/zeus/lib/`
-(`import "lib/ui.yuga"` from an app). Zeus paints its own theme on every host;
-Cocoa / UIKit / Android widgets are not used. Full map and recipes:
-[packages/zeus/README.md](packages/zeus/README.md). Architecture:
+Kit look is [`import "std:kit"`](packages/compiler/std/kit.yuga). The catalog
+is [`examples/zeus/gallery/gallery.yuga`](examples/zeus/gallery/gallery.yuga).
+Zeus paints its own theme on every host; Cocoa / UIKit / Android widgets are
+not used. Map: [packages/zeus/README.md](packages/zeus/README.md). Architecture:
 [docs/zeus.md](docs/zeus.md), [packages/zeus/docs/spec.md](packages/zeus/docs/spec.md).
 
 ## Platforms
@@ -109,7 +112,7 @@ Cocoa / UIKit / Android widgets are not used. Full map and recipes:
 | Target | Flag | Host | Notes |
 |---|---|---|---|
 | Native desktop | `--target=native` (default) | macOS Cocoa | Zeus paints; AppKit is the window, not the widgets. |
-| Web | `--target=wasm` / `wasm32` | Canvas2D | No WebGPU / WebGL. Needs a `wasm32` clang. |
+| Web | `--target=wasm` / `wasm32` | Canvas2D | Same Zeus tree as native. No HTML/DOM widgets. Needs a `wasm32` clang. |
 | iOS | `--target=ios` | UIKit Simulator | Window and touch only. Needs Xcode. Device signing is out of scope. |
 | Android | `--target=android` | JNI Canvas | Writes a Gradle project. Layout is density-independent pixels. |
 
@@ -132,13 +135,14 @@ exit (what `make test` does), set `ZEUS_HEADLESS=1` or `MAYA_HEADLESS=1`.
 ./run.sh dashboard            # Zeus app, Cocoa
 ./run.sh dashboard wasm32     # same app, browser
 ./run.sh dashboard ios        # same app, Simulator
-./run.sh zeus/counter         # full-stack: API :8080 + web UI :5173
-./run.sh zeus/counter macos   # same UI as a Cocoa client
+./run.sh counter              # full-stack: API :8080 + web UI :5173
+./run.sh counter macos        # same UI as a Cocoa client
 ./run.sh www                  # docs: Zeus wasm :5175 + Docs.Page :8082
 ```
 
-`counter` is both a language example and the full-stack Zeus app, so a bare
-`./run.sh counter` is rejected — use `language/counter` or `zeus/counter`.
+`counter` is both a language example and the full-stack Zeus app. A bare
+`./run.sh counter` (and `./run.sh counter web`) is the Zeus stack; the
+language demo is `./run.sh language/counter`. `zeus/counter` is an alias.
 
 ### Language (`examples/language/`)
 
@@ -169,24 +173,24 @@ Golden programs under `packages/compiler/tests/golden/` (hello, fib, fizzbuzz,
 
 | App | What it is |
 |---|---|
-| `kit` | Every kit widget in isolation. Start here to see the component library. |
+| `gallery` | Every `std:kit` widget in isolation. Start here to see the component library. |
 | `dashboard` | A small dashboard: stats, activity, dialog, signals. |
 | `counter` | Full-stack: shared `#[proto]` contract, Yuga backend, Zeus UI on web / macOS / iOS / Android. |
 
 ```
-./run.sh kit
-./run.sh kit wasm32
+./run.sh gallery
+./run.sh gallery wasm32
 ./run.sh dashboard ios
 ```
 
 Full-stack counter (backend on `:8080`, then a client):
 
 ```
-./run.sh zeus/counter              # web — UI http://127.0.0.1:5173
-./run.sh zeus/counter macos        # Cocoa
-./run.sh zeus/counter ios          # Simulator (Xcode)
-./run.sh zeus/counter android      # emulator (see below)
-./run.sh zeus/counter backend      # API only
+./run.sh counter              # web — UI http://127.0.0.1:5173
+./run.sh counter macos        # Cocoa
+./run.sh counter ios          # Simulator (Xcode)
+./run.sh counter android      # emulator (see below)
+./run.sh counter backend      # API only
 ```
 
 Android, from the repo root, on macOS with Homebrew:
@@ -210,8 +214,11 @@ examples/language/     standalone .yuga programs
 examples/zeus/         kit, dashboard, full-stack counter
 www/                   Zeus + gRPC docs (Vite serves wasm, no Svelte)
 docs/                  language, Zeus, C boundary
+                       zeus_std.md = std/zeus.yuga API + custom components
+                       downside_of_zeus_refactor.md = two APIs, next: drop chain
 bin/yugac              compiler
-bin/yuga-lsp           diagnostics, hover, go-to-def
+bin/yuga-lsp           diagnostics, hover, go-to-def, completion, semantic tokens
 ```
 
+Cursor / VS Code: [packages/editors/vscode/README.md](packages/editors/vscode/README.md) (`make && make install-editor`).
 Zed: [packages/editors/zed/README.md](packages/editors/zed/README.md).

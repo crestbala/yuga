@@ -1,9 +1,9 @@
 import "std:fmt"
+import "std:sys"
 import "std:zeus"
 
 fn fail() {
-    let z = 0
-    fmt.println(1 / z)
+    sys.exit(1)
 }
 
 fn expect(got: int, want: int) {
@@ -18,10 +18,9 @@ fn expect(got: int, want: int) {
 fn main() {
     let sig = zeus.signal(1)
     let out = zeus.signal(0)
-    let n = zeus.box()
-    n.styled(|| {
-        n.bg(sig.get())
+    zeus.Box(background = fn() -> string {
         out.set(sig.get())
+        "#010101"
     })
     expect(out.get(), 1)
     expect(sig.get(), 1)
@@ -31,9 +30,10 @@ fn main() {
     expect(sig.get(), 7)
 
     let bound = zeus.signal(3)
-    let lab = zeus.label("0").bind(bound)
     zeus.window("styled", 120, 80)
-    zeus.root(zeus.col().children(n, lab))
+    zeus.root(zeus.Box(align_direction = DIRECTION.Column) {
+        zeus.Text("{{bound.get()}}")
+    })
     zeus.engine_layout(120, 80)
     expect(bound.get(), 3)
     bound.set(9)

@@ -14,15 +14,18 @@ fn main() {
     for i in 1..4 {
         push(nums, i)
     }
-    let col = zeus.col()
-    col.each(nums, (i, n) => {
-        zeus.label("n").bind_n(n).font(11)
-    })
-    col.each(rows, (i, r) => {
-        zeus.label(r.a).bind_n(i).font(12)
-    })
-    col.child(zeus.when(open, || {
-        zeus.label("shown").font(12)
-    }))
-    zeus.window_root("each", 240, 160).child(col).run()
+    let top = zeus.Box(align_direction = DIRECTION.Column)
+    zeus.__ui_push(top.id)
+    for i in 0..nums.len {
+        let v = nums[i]
+        zeus.Text("{{v}}")
+    }
+    for i in 0..rows.len {
+        let a = rows[i].a
+        zeus.Text(a)
+    }
+    let shown = zeus.Text("shown")
+    zeus.show(shown, open)
+    zeus.__ui_pop()
+    zeus.snapshot(240, 160, fn() -> Node { top })
 }

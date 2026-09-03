@@ -1,4 +1,5 @@
 import "std:fmt"
+import "std:sys"
 import "std:http"
 import "std:zeus"
 
@@ -11,14 +12,14 @@ struct HelloResp {
     count: int,
 }
 
-fn Panel(initial: int) -> Node {
-    zeus.col()
-        .child(zeus.label("count").bind_n(initial).font(18))
+fn Panel(initial: int) {
+    zeus.Box(align_direction = DIRECTION.Column) {
+        zeus.Text("{{initial}}", font = 18)
+    }
 }
 
 fn fail() {
-    let z = 0
-    fmt.println(1 / z)
+    sys.exit(1)
 }
 
 fn main() {
@@ -36,8 +37,11 @@ fn main() {
     if 7 < initial {
         fail()
     }
-    Panel(initial).mount("Zeus", 480, 320).run()
-    zeus.engine_paint()
+    zeus.snapshot(480, 320, fn() -> Node {
+        zeus.Box(align_direction = DIRECTION.Column) {
+            Panel(initial)
+        }
+    })
     if zeus.draw_count() < 1 {
         fail()
     }

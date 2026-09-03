@@ -92,8 +92,10 @@ const char *token_kind_name(TokenKind k) {
         case TOK_UNKNOWN: return "unknown";
         case TOK_FN: return "fn";
         case TOK_LET: return "let";
+        case TOK_CONST: return "const";
         case TOK_MUT: return "mut";
         case TOK_STRUCT: return "struct";
+        case TOK_ENUM: return "enum";
         case TOK_IMPORT: return "import";
         case TOK_IF: return "if";
         case TOK_ELSE: return "else";
@@ -160,8 +162,10 @@ Token lexer_next(Lexer *l) {
         int len = (int)(l->pos - start);
         if (kw_eq(start, len, "fn")) return make_token(l, TOK_FN, start, sl, sc);
         if (kw_eq(start, len, "let")) return make_token(l, TOK_LET, start, sl, sc);
+        if (kw_eq(start, len, "const")) return make_token(l, TOK_CONST, start, sl, sc);
         if (kw_eq(start, len, "mut")) return make_token(l, TOK_MUT, start, sl, sc);
         if (kw_eq(start, len, "struct")) return make_token(l, TOK_STRUCT, start, sl, sc);
+        if (kw_eq(start, len, "enum")) return make_token(l, TOK_ENUM, start, sl, sc);
         if (kw_eq(start, len, "import")) return make_token(l, TOK_IMPORT, start, sl, sc);
         if (kw_eq(start, len, "if")) return make_token(l, TOK_IF, start, sl, sc);
         if (kw_eq(start, len, "else")) return make_token(l, TOK_ELSE, start, sl, sc);

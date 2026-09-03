@@ -13,7 +13,7 @@ int yuga_app_main(void);
 
 static JavaVM *g_jvm;
 static jobject g_view;
-static jmethodID m_fill, m_fill_a, m_text, m_save, m_clip, m_restore, m_svg, m_measure, m_invalidate;
+static jmethodID m_fill, m_fill_a, m_text, m_text_rot, m_save, m_clip, m_restore, m_svg, m_measure, m_invalidate;
 static JNIEnv *g_env;
 static jobject g_canvas;
 static int g_started;
@@ -54,6 +54,18 @@ static void draw_text(void *ctx, int64_t x, int64_t y, const char *s, int64_t rg
     js = (*env)->NewStringUTF(env, s ? s : "");
     (*env)->CallVoidMethod(env, g_view, m_text, g_canvas, (jint)x, (jint)y, js,
                            (jint)(rgb & 0xFFFFFF), (jint)font);
+    (*env)->DeleteLocalRef(env, js);
+}
+
+static void draw_text_rot(void *ctx, int64_t x, int64_t y, const char *s, int64_t rgb,
+                          int64_t font, int64_t deg) {
+    JNIEnv *env = g_env;
+    jstring js;
+    (void)ctx;
+    if (!env || !g_view || !g_canvas || !m_text_rot) return;
+    js = (*env)->NewStringUTF(env, s ? s : "");
+    (*env)->CallVoidMethod(env, g_view, m_text_rot, g_canvas, (jint)x, (jint)y, js,
+                           (jint)(rgb & 0xFFFFFF), (jint)font, (jint)deg);
     (*env)->DeleteLocalRef(env, js);
 }
 
@@ -137,6 +149,8 @@ static void cache_methods(JNIEnv *env, jobject thiz) {
     m_fill_a = (*env)->GetMethodID(env, cls, "jniFillA", "(Landroid/graphics/Canvas;IIIIIII)V");
     m_text = (*env)->GetMethodID(env, cls, "jniText",
                                  "(Landroid/graphics/Canvas;IILjava/lang/String;II)V");
+    m_text_rot = (*env)->GetMethodID(env, cls, "jniTextRot",
+                                     "(Landroid/graphics/Canvas;IILjava/lang/String;III)V");
     m_save = (*env)->GetMethodID(env, cls, "jniSave", "(Landroid/graphics/Canvas;)V");
     m_clip = (*env)->GetMethodID(env, cls, "jniClip", "(Landroid/graphics/Canvas;IIII)V");
     m_restore = (*env)->GetMethodID(env, cls, "jniRestore", "(Landroid/graphics/Canvas;)V");
@@ -198,6 +212,7 @@ JNIEXPORT void JNICALL Java_com_yuga_zeus_ZeusView_nativePaint(JNIEnv *env, jobj
     d.fill = draw_fill;
     d.fill_a = draw_fill_a;
     d.text = draw_text;
+    d.text_rot = draw_text_rot;
     d.save = draw_save;
     d.clip = draw_clip;
     d.restore = draw_restore;

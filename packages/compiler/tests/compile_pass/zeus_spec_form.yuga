@@ -1,0 +1,46 @@
+// Form validation with a struct configuration, and `Input(bind = sig)`
+// writing the edit buffer back into a `Signal<string>` on every edit.
+import "std:fmt"
+import "std:sys"
+import "std:zeus"
+
+struct FormConfig {
+    placeholder: string = "",
+    min_length: int = 0,
+}
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn ProfileForm(config: FormConfig, username: Signal<string>) {
+    zeus.Box(align_direction = DIRECTION.Column, spacing = 12) {
+        zeus.Input(bind = username, placeholder = config.placeholder)
+        if username.get().len < config.min_length {
+            zeus.Text("Username must be at least {{config.min_length}} characters!",
+                      color = "#f38ba8")
+        }
+        zeus.Button("Submit",
+            enabled = username.get().len >= config.min_length,
+            on_click = fn() => fmt.println("Submitted"))
+    }
+}
+
+fn main() {
+    let username = zeus.signal("")
+    zeus.snapshot(320, 240, fn() -> Node {
+        zeus.Box(align_direction = DIRECTION.Column) {
+            ProfileForm(FormConfig(placeholder = "username", min_length = 3), username)
+        }
+    })
+    // Focus the field, then type. Each edit writes the buffer back.
+    zeus.engine_click(4, 4)
+    zeus.engine_key(97)
+    zeus.engine_key(98)
+    expect(username.get() == "ab", "bind writes the edit buffer back")
+    fmt.println("form ok")
+}

@@ -1,0 +1,289 @@
+//! `async` — timers, spawn, and the one-thread async pump (std:async).
+//!
+//! The UI thread is the only thread (§5.1). Everything here runs **on** it:
+//! queues and dispatch are plain Yuga state; the C seam is only a monotonic
+//! clock (`now_ms`) and a blocking `sleep` (console/headless loops).
+//!
+//! ```
+//! import "std:async"
+//!
+//! let id = async.after(30, || { tick.set(tick.get() + 1) })
+//! let iv = async.interval(1000, || { pings.set(pings.get() + 1) })
+//! // later:
+//! async.cancel(iv)
+//! ```
+//!
+//! A UI app never calls `tick` by hand: the zeus engine runs it at the top of
+//! every frame (`engine_layout`), and `engine_step` keeps frames flowing while
+//! async work is in flight. Console programs pump explicitly:
+//!
+//! ```
+//! while !done {
+//!     async.tick()
+//!     async.sleep(1)
+//! }
+//! ```
+//!
+//! `after(ms, cb)` / `interval(ms, cb)` schedule `cb` on the UI thread; the
+//! callback may read or set signals, so a label fed by a signal updates on
+//! the next paint. `spawn(cb)` runs `cb` at the start of the next tick — the
+//! "fake async op" of headless tests. `add_step(f)` registers a per-frame
+//! stepper (the http async client registers its socket state machines here);
+//! `io_open` / `io_close` keep `busy()` true while an op is in flight so the
+//! hosts keep drawing frames until it completes.
+
+struct Timer {
+    id: int,
+    at: int,
+    every: int,
+    cb: fn(),
+}
+
+/// A single-use string mailbox: created by `future_str`, filled by
+/// `resolve`, drained by `await_value` (the `await` sugar). v1 carries
+/// strings — RPC bodies — the generic `T` is the type for later versions.
+struct Future<T> {
+    id: int,
+}
+
+/// Monotonic milliseconds (host clock). Bodyless: `yuga_async_now_ms`.
+fn now_ms() -> int {}
+
+/// Block the calling thread for `ms`. Console/headless only — never in UI
+/// code; use `after` there. Bodyless: `yuga_async_sleep_ms`.
+fn sleep(ms: int) {}
+
+let mut timers: []Timer = []Timer {}
+let mut next_tid: int = 1
+let mut spawns: []fn() = []fn() {}
+let mut steps: []fn() = []fn() {}
+let mut io_ops: int = 0
+
+/// Run `cb` once, `ms` from now, on the UI thread. Returns a handle for
+/// `cancel`. A UI app: the host wakes to run it even while idle.
+fn after(ms: int, cb: fn()) -> int {
+    let id = next_tid
+    next_tid = next_tid + 1
+    if next_tid <= 0 {
+        next_tid = 1
+    }
+    let mut d = ms
+    if d < 0 {
+        d = 0
+    }
+    push(timers, Timer { id: id, at: now_ms() + d, every: 0, cb: cb })
+    return id
+}
+
+/// Run `cb` every `ms`, on the UI thread, until `cancel`ed.
+fn interval(ms: int, cb: fn()) -> int {
+    let id = next_tid
+    next_tid = next_tid + 1
+    if next_tid <= 0 {
+        next_tid = 1
+    }
+    let mut d = ms
+    if d < 1 {
+        d = 1
+    }
+    push(timers, Timer { id: id, at: now_ms() + d, every: d, cb: cb })
+    return id
+}
+
+/// Drop a timer or interval. No-op for unknown ids.
+fn cancel(id: int) {
+    if timers.len == 0 {
+        return
+    }
+    let mut keep = []Timer {}
+    let n = timers.len
+    for i in 0..n {
+        if timers[i].id != id {
+            push(keep, timers[i])
+        }
+    }
+    timers = keep
+}
+
+/// Run `cb` on the UI thread at the start of the next `tick` (next frame).
+fn spawn(cb: fn()) {
+    push(spawns, cb)
+}
+
+/// Register a per-frame stepper. Steps run at the top of every tick, in
+/// registration order, before spawns and timers.
+fn add_step(f: fn()) {
+    push(steps, f)
+}
+
+/// Mark one async op in flight (the http client does this per call).
+fn io_open() {
+    io_ops = io_ops + 1
+}
+
+/// Mark one async op finished. Paired with `io_open`.
+fn io_close() {
+    if io_ops > 0 {
+        io_ops = io_ops - 1
+    }
+}
+
+/// Whether the engine should keep drawing frames: an op is in flight (its
+/// completion is not time-scheduled) or a spawn waits for the next tick.
+fn busy() -> int {
+    if io_ops > 0 {
+        return 1
+    }
+    if spawns.len > 0 {
+        return 1
+    }
+    return 0
+}
+
+/// Milliseconds until the next timer is due, for hosts that sleep while idle:
+/// 0 = no timer pending. `-1` = a spawn is waiting, draw a frame now.
+fn next_due() -> int {
+    if spawns.len > 0 {
+        return -1
+    }
+    let n = timers.len
+    if n == 0 {
+        return 0
+    }
+    let now = now_ms()
+    let mut soon = 0
+    for i in 0..n {
+        let mut d = timers[i].at - now
+        if d < 1 {
+            d = 1
+        }
+        if soon == 0 || d < soon {
+            soon = d
+        }
+    }
+    return soon
+}
+
+/// Advance the async world one frame: run steppers (in-flight socket state
+/// machines), then spawns, then timers that are due. Callbacks run on this
+/// (the UI) thread. The zeus engine calls this at the top of every
+/// `engine_layout`; console programs call it from their own loop.
+fn tick() {
+    let mut n = steps.len
+    for i in 0..n {
+        steps[i]()
+    }
+    // Spawns fire once, in order; ones added by a callback wait for the next
+    // tick (they are past the snapshot).
+    n = spawns.len
+    if n > 0 {
+        let mut run = []fn() {}
+        for i in 0..n {
+            push(run, spawns[i])
+        }
+        let mut rest = []fn() {}
+        let k = spawns.len
+        for i in n..k {
+            push(rest, spawns[i])
+        }
+        spawns = rest
+        for i in 0..n {
+            run[i]()
+        }
+    }
+    let nt = timers.len
+    if nt == 0 {
+        return
+    }
+    let now = now_ms()
+    // Snapshot the due ids; a callback that cancels/fires before its turn
+    // must not run. Re-arm or remove happens before the callback runs, so a
+    // repeating timer that schedules from its own callback cannot double-arm.
+    let mut due = []int {}
+    for i in 0..nt {
+        if timers[i].at <= now {
+            push(due, timers[i].id)
+        }
+    }
+    let nd = due.len
+    for i in 0..nd {
+        let id = due[i]
+        let mut idx = -1
+        let mut j = 0
+        let m = timers.len
+        while j < m {
+            if timers[j].id == id {
+                idx = j
+            }
+            j = j + 1
+        }
+        if idx >= 0 {
+            if timers[idx].at <= now_ms() {
+                let every = timers[idx].every
+                let cb = timers[idx].cb
+                if every > 0 {
+                    timers[idx].at = now_ms() + every
+                } else {
+                    let mut keep = []Timer {}
+                    let m2 = timers.len
+                    for j2 in 0..m2 {
+                        if j2 != idx {
+                            push(keep, timers[j2])
+                        }
+                    }
+                    timers = keep
+                }
+                cb()
+            }
+        }
+    }
+}
+
+// --- Futures: `await`-able string mailboxes ---------------------------
+// The `await expr` syntax in an `async fn` is sugar for `await_value(expr)`
+// (see parser.c). Awaiting re-enters the one-thread pump: timers, spawns,
+// and the http socket steppers keep running until `resolve` fills the
+// mailbox, then the value returns. UI code that must stay repaint-reactive
+// should keep using callbacks; `await` fits startup sequences and headless
+// flows (the counter app fetches before its App starts).
+
+let mut fut_vals: []string = []string {}
+let mut fut_ok: []int = []int {}
+
+/// Allocate a fresh string future (one value, one consumer).
+fn future_str() -> Future<string> {
+    push(fut_ok, 0)
+    push(fut_vals, "")
+    return Future { id: fut_ok.len - 1 }
+}
+
+/// Resolve `f` with `v`; an `await_value` pumping on it returns next tick.
+fn resolve(f: Future<string>, v: string) {
+    if f.id >= 0 {
+        if f.id < fut_ok.len {
+            fut_vals[f.id] = v
+            fut_ok[f.id] = 1
+        }
+    }
+}
+
+/// Wait for `f` while pumping the async world. Bounded (~20s at 1ms ticks)
+/// so a never-resolved future fails instead of hanging the process.
+fn await_value(f: Future<string>) -> string {
+    let mut guard = 0
+    while guard < 20000 {
+        if f.id >= 0 {
+            if f.id < fut_ok.len {
+                if fut_ok[f.id] != 0 {
+                    let v = fut_vals[f.id]
+                    fut_ok[f.id] = 0
+                    return v
+                }
+            }
+        }
+        tick()
+        sleep(1)
+        guard = guard + 1
+    }
+    return ""
+}

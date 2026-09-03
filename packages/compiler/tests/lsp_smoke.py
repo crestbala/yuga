@@ -103,6 +103,24 @@ def main() -> int:
     )
     fmt_uri = (ROOT / "std" / "fmt.yuga").resolve().as_uri()
 
+    async_src = (
+        'import "std:async"\n'
+        'import "std:fmt"\n'
+        "\n"
+        "async fn fetch_name() -> string {\n"
+        "    let f = async.future_str()\n"
+        "    async.spawn(|| { async.resolve(f, \"n\") })\n"
+        "    let v = await f\n"
+        "    return v\n"
+        "}\n"
+        "\n"
+        "fn main() {\n"
+        "    let s = fetch_name()\n"
+        "    fmt.println(s)\n"
+        "}\n"
+    )
+    async_uri = (ROOT / "tmp" / "lsp_async.yuga").resolve().as_uri()
+
     payload = (
         rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"capabilities": {}}})
         + rpc({"jsonrpc": "2.0", "method": "initialized", "params": {}})
@@ -223,6 +241,22 @@ def main() -> int:
         + rpc(
             {
                 "jsonrpc": "2.0",
+                "id": 15,
+                "method": "textDocument/semanticTokens/full",
+                "params": {"textDocument": {"uri": uri}},
+            }
+        )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 16,
+                "method": "textDocument/completion",
+                "params": {"textDocument": {"uri": uri}, "position": {"line": 4, "character": 0}},
+            }
+        )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
                 "id": 13,
                 "method": "textDocument/hover",
                 "params": {"textDocument": {"uri": fmt_uri}, "position": {"line": 23, "character": 3}},
@@ -252,6 +286,58 @@ def main() -> int:
                 "id": 14,
                 "method": "textDocument/hover",
                 "params": {"textDocument": {"uri": uri}, "position": {"line": 5, "character": 8}},
+            }
+        )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": async_uri,
+                        "languageId": "yuga",
+                        "version": 1,
+                        "text": async_src,
+                    }
+                },
+            }
+        )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 17,
+                "method": "textDocument/semanticTokens/full",
+                "params": {"textDocument": {"uri": async_uri}},
+            }
+        )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 18,
+                "method": "textDocument/completion",
+                "params": {"textDocument": {"uri": async_uri}, "position": {"line": 10, "character": 0}},
+            }
+        )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": async_uri,
+                        "languageId": "yuga",
+                        "version": 2,
+                        "text": async_src,
+                    }
+                },
+            }
+        )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 19,
+                "method": "textDocument/hover",
+                "params": {"textDocument": {"uri": uri}, "position": {"line": 5, "character": 16}},
             }
         )
         + rpc({"jsonrpc": "2.0", "id": 6, "method": "shutdown", "params": None})
@@ -284,6 +370,13 @@ def main() -> int:
     comp = caps.get("completionProvider")
     if not isinstance(comp, dict) or "." not in (comp.get("triggerCharacters") or []):
         return fail("missing completionProvider triggerCharacters", caps)
+    sem = caps.get("semanticTokensProvider")
+    if not isinstance(sem, dict):
+        return fail("missing semanticTokensProvider", caps)
+    legend = sem.get("legend") if isinstance(sem, dict) else None
+    types = legend.get("tokenTypes") if isinstance(legend, dict) else None
+    if not isinstance(types, list) or "keyword" not in types:
+        return fail("semanticTokens legend missing keyword", caps)
 
     diags_msgs = [m for m in messages if m.get("method") == "textDocument/publishDiagnostics"]
     if not diags_msgs:
@@ -376,6 +469,33 @@ def main() -> int:
     if "println" not in labels and "writeln" not in labels:
         return fail("completion after fmt. should list fmt functions", labels)
 
+    tokens = [m for m in messages if m.get("id") == 15 and "result" in m]
+    if not tokens:
+        return fail("no semanticTokens/full result", messages)
+    data = tokens[0].get("result", {}).get("data") if isinstance(tokens[0].get("result"), dict) else None
+    if not isinstance(data, list) or len(data) < 5:
+        return fail("semantic tokens empty", tokens[0].get("result"))
+    tok_types = data[3::5]
+    if 9 not in tok_types:
+        return fail("semantic tokens should include keyword (type 9)", tok_types[:20])
+    if 11 not in tok_types:
+        return fail("semantic tokens should include string (type 11)", tok_types[:20])
+    if 0 not in tok_types:
+        return fail("semantic tokens should include namespace (type 0) for fmt.", tok_types[:40])
+    if 4 not in tok_types:
+        return fail("semantic tokens should include parameter (type 4)", tok_types[:40])
+    if 8 not in tok_types:
+        return fail("semantic tokens should include function (type 8)", tok_types[:40])
+
+    kcomps = [m for m in messages if m.get("id") == 16 and "result" in m]
+    if not kcomps:
+        return fail("no keyword completion result", messages)
+    kres = kcomps[0].get("result")
+    kitems = kres.get("items") if isinstance(kres, dict) else kres
+    klabels = [it.get("label") for it in kitems if isinstance(it, dict)] if isinstance(kitems, list) else []
+    if "let" not in klabels or "enum" not in klabels:
+        return fail("completion at line start should list keywords", klabels[:30])
+
     if 13 not in hovers:
         return fail("no hover result in imported std/fmt.yuga", messages)
     value_w = hover_text(hovers[13].get("result"))
@@ -389,7 +509,52 @@ def main() -> int:
     if "count" not in value_ren or "int" not in value_ren:
         return fail("hover after incremental edit should show count: int", value_ren)
 
-    print("ok   yuga-lsp (%d diagnostic(s), hover, definition, completion)" % len(items))
+    # Contextual keywords `async fn` / `await` must tokenize as keywords, and
+    # the `async.` prefix must read as a module namespace.
+    atoks = [m for m in messages if m.get("id") == 17 and "result" in m]
+    if not atoks:
+        return fail("no semanticTokens/full result for async buffer", messages)
+    adata = atoks[0].get("result", {}).get("data")
+    if not isinstance(adata, list) or len(adata) < 5:
+        return fail("async semantic tokens empty", atoks[0].get("result"))
+    aline = acol = 0
+    by_pos = {}
+    for j in range(0, len(adata) - 4, 5):
+        aline += adata[j]
+        if adata[j] == 0:
+            acol += adata[j + 1]
+        else:
+            acol = adata[j + 1]
+        by_pos[(aline, acol, adata[j + 2])] = adata[j + 3]
+    alines = async_src.split("\n")
+    for lineno, needle in ((3, "async"), (6, "await")):
+        col = alines[lineno].index(needle)
+        if by_pos.get((lineno, col, len(needle))) != 9:
+            return fail("%s should be keyword type 9" % needle, by_pos)
+    ncol = alines[4].index("async.")
+    if by_pos.get((4, ncol, 5)) != 0:
+        return fail("async. prefix should be namespace type 0", by_pos)
+
+    acomp = [m for m in messages if m.get("id") == 18 and "result" in m]
+    if not acomp:
+        return fail("no completion result for async buffer", messages)
+    ares = acomp[0].get("result")
+    aitems = ares.get("items") if isinstance(ares, dict) else ares
+    alabels = [it.get("label") for it in aitems if isinstance(it, dict)] if isinstance(aitems, list) else []
+    if "async" not in alabels or "await" not in alabels:
+        return fail("completion should list async/await keywords", alabels[:40])
+
+    # A redundant didOpen of an already-open buffer (same text) must be a
+    # no-op, and the earlier document must still resolve after the async one
+    # was activated: buffers switch per requested uri.
+    back_hover = [m for m in messages if m.get("id") == 19 and "result" in m]
+    if not back_hover:
+        return fail("no hover result after redundant didOpen", messages)
+    value_back = hover_text(back_hover[0].get("result"))
+    if "add" not in value_back or "fn(" not in value_back:
+        return fail("hover should switch back to the first doc's fn add", value_back)
+
+    print("ok   yuga-lsp (%d diagnostic(s), hover, definition, completion, semantic tokens)" % len(items))
     return 0
 
 

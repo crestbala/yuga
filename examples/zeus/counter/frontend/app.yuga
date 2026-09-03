@@ -13,5 +13,8 @@ fn main() {
     let c = http.client("")
     let hello = api.decode_HelloResp(c.call(api.hello_rpc(), api.encode_HelloReq(HelloReq {})))
     let stats = api.decode_StatsResp(c.call(api.stats_rpc(), api.encode_StatsReq(StatsReq {})))
-    screen.Screen("API", "Canvas2D", stats.users, stats.jobs, stats.uptime, stats.load, hello.count).run()
+    let win = zeus.window_size()
+    zeus.App("Zeus", win.width, win.height, fn() {
+        screen.Screen("API", "Canvas2D", stats.users, stats.jobs, stats.uptime, stats.load, hello.count)
+    })
 }

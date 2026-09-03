@@ -1,9 +1,9 @@
 import "std:fmt"
+import "std:sys"
 import "std:zeus"
 
 fn fail() {
-    let z = 0
-    fmt.println(1 / z)
+    sys.exit(1)
 }
 
 fn expect(got: int, want: int) {
@@ -19,18 +19,19 @@ fn main() {
     let sel = zeus.signal(0)
     let open = zeus.signal(0)
     let saved = zeus.signal(0)
-    let face = zeus.button("Comfortable").on_click_toggle(open)
-    let box = zeus.col()
-        .w(200)
-        .h(100)
-        .focusable()
-        .key_context("Select")
-        .on_range("select.next", sel, 1, 0, 2)
-        .on_range("select.prev", sel, -1, 0, 2)
-        .on_action("select.toggle", open, 1, 0)
-        .child(face)
     zeus.window("keytest", 400, 300)
-    zeus.root(zeus.col().child(box))
+    let box = zeus.Box(width = 200, height = 100, align_direction = DIRECTION.Column)
+    zeus.focusable(box)
+    zeus.key_context(box, "Select")
+    zeus.on_range(box, "select.next", sel, 1, 0, 2)
+    zeus.on_range(box, "select.prev", sel, -1, 0, 2)
+    zeus.on_action(box, "select.toggle", open, 1, 0)
+    zeus.__ui_push(box.id)
+    zeus.Button("Comfortable", on_click = fn() => open.set(1 - open.get()), width = 200, height = 40)
+    zeus.__ui_pop()
+    let top = zeus.Box(align_direction = DIRECTION.Column)
+    zeus.child(top, box)
+    zeus.root(top)
     zeus.map_key("down", "select.next", "Select")
     zeus.map_key("up", "select.prev", "Select")
     zeus.map_key("enter", "select.toggle", "Select")

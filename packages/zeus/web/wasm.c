@@ -20,6 +20,10 @@ void zeus_js_fill_a(int32_t x, int32_t y, int32_t w, int32_t h, int32_t rgb, int
 __attribute__((import_module("zeus"), import_name("text")))
 void zeus_js_text(int32_t x, int32_t y, const char *s, int32_t rgb, int32_t font);
 
+__attribute__((import_module("zeus"), import_name("text_rot")))
+void zeus_js_text_rot(int32_t x, int32_t y, const char *s, int32_t rgb, int32_t font,
+                      int32_t deg);
+
 __attribute__((import_module("zeus"), import_name("measure")))
 void zeus_js_measure(const char *s, int32_t px, int32_t *w, int32_t *h);
 
@@ -53,6 +57,13 @@ static void draw_fill_a(void *ctx, int64_t x, int64_t y, int64_t w, int64_t h, i
 static void draw_text(void *ctx, int64_t x, int64_t y, const char *s, int64_t rgb, int64_t font) {
     (void)ctx;
     zeus_js_text((int32_t)x, (int32_t)y, s ? s : "", (int32_t)(rgb & 0xFFFFFF), (int32_t)font);
+}
+
+static void draw_text_rot(void *ctx, int64_t x, int64_t y, const char *s, int64_t rgb,
+                          int64_t font, int64_t deg) {
+    (void)ctx;
+    zeus_js_text_rot((int32_t)x, (int32_t)y, s ? s : "", (int32_t)(rgb & 0xFFFFFF),
+                     (int32_t)font, (int32_t)deg);
 }
 
 static void draw_save(void *ctx) {
@@ -96,6 +107,7 @@ static void bind_canvas(void) {
     d.fill = draw_fill;
     d.fill_a = draw_fill_a;
     d.text = draw_text;
+    d.text_rot = draw_text_rot;
     d.save = draw_save;
     d.clip = draw_clip;
     d.restore = draw_restore;
@@ -112,6 +124,7 @@ void zeus_start(void) {
 
 __attribute__((export_name("zeus_resize")))
 void zeus_resize(int32_t w, int32_t h) {
+    zeus_set_window_size(w, h);
     zeus_layout(w, h);
 }
 
@@ -138,9 +151,28 @@ void zeus_pointer_up(void) {
     zeus_handle_mouseup();
 }
 
+static char wasm_cursor[64];
+
+/* Copy the engine's CSS cursor name ("", "pointer", "text", …) into a
+   static buffer the loader can read and hand to canvas.style.cursor. */
+__attribute__((export_name("zeus_cursor_sync")))
+const char *zeus_cursor_sync(void) {
+    const char *name = zeus_cursor();
+    size_t n = name ? strlen(name) : 0;
+    if (n >= sizeof wasm_cursor) n = sizeof wasm_cursor - 1;
+    memcpy(wasm_cursor, name ? name : "", n);
+    wasm_cursor[n] = '\0';
+    return wasm_cursor;
+}
+
 __attribute__((export_name("zeus_scroll")))
 void zeus_scroll(int32_t x, int32_t y, int32_t dx, int32_t dy) {
     zeus_handle_scroll(x, y, dx, dy);
+}
+
+__attribute__((export_name("zeus_key_up")))
+void zeus_key_up(int32_t key, int32_t mods) {
+    zeus_handle_key_up((int)key, (int)mods);
 }
 
 __attribute__((export_name("zeus_key")))

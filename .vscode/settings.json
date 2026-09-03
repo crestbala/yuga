@@ -1,0 +1,17 @@
+{
+  "files.associations": {
+    "*.yuga": "yuga"
+  },
+  "editor.tokenColorCustomizations": {
+    "textMateRules": [
+      {
+        "scope": "keyword.control.async.yuga",
+        "settings": { "foreground": "#7C3AED" }
+      },
+      {
+        "scope": "keyword.control.await.yuga",
+        "settings": { "foreground": "#7C3AED" }
+      }
+    ]
+  }
+}

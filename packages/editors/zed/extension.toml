@@ -1,13 +1,13 @@
 id = "yuga"
 name = "Yuga"
-version = "0.1.11"
+version = "0.1.12"
 schema_version = 1
 authors = ["Yuga"]
 description = "Yuga language: syntax highlighting and diagnostics via yuga-lsp"
 
 [grammars.yuga]
 repository = "file:///Users/bala_mani/Documents/yuga/packages/tree-sitter-yuga"
-rev = "001fa358841116692f9a79d8c5ead0c7ea9caf46"
+rev = "43dd61ef3459ba571c9e15845c163d3f4a78d008"
 
 [language_servers.yuga-lsp]
 name = "Yuga LSP"

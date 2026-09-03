@@ -14,5 +14,7 @@ fn main() {
     let c = http.client(api.android_addr())
     let hello = api.decode_HelloResp(c.call(api.hello_rpc(), api.encode_HelloReq(HelloReq {})))
     let stats = api.decode_StatsResp(c.call(api.stats_rpc(), api.encode_StatsReq(StatsReq {})))
-    screen.Screen("API", "Android", stats.users, stats.jobs, stats.uptime, stats.load, hello.count).run()
+    zeus.App("Zeus", 640, 680, fn() {
+        screen.Screen("API", "Android", stats.users, stats.jobs, stats.uptime, stats.load, hello.count)
+    })
 }

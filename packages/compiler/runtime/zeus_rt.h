@@ -31,6 +31,12 @@ void yuga_zeus_open_window(yuga_str title, int64_t width, int64_t height);
 void yuga_zeus_raw_run(void);
 
 Signal yuga_zeus_signal(int64_t value);
+/* Signal slot allocation with free-list reuse (arena compaction). The int
+   form writes the int mirror slot; the zero form reserves a placeholder slot
+   for a typed payload the caller binds afterwards. */
+int64_t yuga_zeus_sig_alloc_int(int64_t value);
+int64_t yuga_zeus_sig_alloc_zero(void);
+void yuga_zeus_sig_free(int64_t id);
 void yuga_zeus_hook_begin(void);
 Signal yuga_zeus_hook_signal(int64_t value);
 int64_t yuga_zeus_get(Signal sig);
@@ -40,6 +46,7 @@ void yuga_zeus_inc(Signal sig, int64_t delta);
 void yuga_zeus_sig_bind(int64_t id, const void *src, int64_t n);
 void yuga_zeus_sig_load(int64_t id, void *dst, int64_t n);
 int64_t yuga_zeus_sig_changed(int64_t id, const void *src, int64_t n);
+int64_t yuga_zeus_sig_gen(int64_t id);
 Signal yuga_zeus_appearance(void);
 void yuga_zeus_theme(int64_t slot, int64_t light, int64_t dark);
 int64_t yuga_zeus_role(int64_t slot);
@@ -157,6 +164,10 @@ typedef struct {
                    int64_t rgb, int64_t radius, int64_t alpha);
     void (*text)(void *ctx, int64_t x, int64_t y, const char *s,
                  int64_t rgb, int64_t font);
+    /* Rotated text: `deg` clockwise on screen, pivot at the top-left of the
+       line box. NULL hosts fall back to horizontal `text`. */
+    void (*text_rot)(void *ctx, int64_t x, int64_t y, const char *s,
+                     int64_t rgb, int64_t font, int64_t deg);
     void (*save)(void *ctx);
     void (*clip)(void *ctx, int64_t x, int64_t y, int64_t w, int64_t h);
     void (*restore)(void *ctx);
@@ -178,6 +189,8 @@ void yuga_zeus_plat_fill(int64_t x, int64_t y, int64_t w, int64_t h, int64_t rgb
 void yuga_zeus_plat_fill_a(int64_t x, int64_t y, int64_t w, int64_t h, int64_t rgb,
                           int64_t radius, int64_t alpha);
 void yuga_zeus_plat_text(int64_t x, int64_t y, yuga_str s, int64_t rgb, int64_t font);
+void yuga_zeus_plat_text_rot(int64_t x, int64_t y, yuga_str s, int64_t rgb, int64_t font,
+                             int64_t deg);
 void yuga_zeus_plat_text_int(int64_t x, int64_t y, int64_t v, int64_t rgb, int64_t font);
 void yuga_zeus_plat_measure(yuga_str s, int64_t px, int64_t *w, int64_t *h);
 void yuga_zeus_plat_measure_int(int64_t v, int64_t px, int64_t *w, int64_t *h);
@@ -185,6 +198,8 @@ void yuga_zeus_plat_measure_wrap(yuga_str s, int64_t px, int64_t max_w, int64_t 
 void yuga_zeus_plat_text_wrap(int64_t x, int64_t y, yuga_str s, int64_t rgb, int64_t font,
                              int64_t max_w);
 void yuga_zeus_plat_set_window(yuga_str title, int64_t width, int64_t height);
+int64_t yuga_zeus_plat_view_width(void);
+int64_t yuga_zeus_plat_view_height(void);
 void yuga_zeus_plat_svg(int64_t x, int64_t y, int64_t w, int64_t h, yuga_str markup,
                        int64_t rgb, int64_t alpha);
 void yuga_zeus_plat_save(void);
@@ -206,6 +221,8 @@ void yuga_platform_plat_fill(int64_t x, int64_t y, int64_t w, int64_t h, int64_t
 void yuga_platform_plat_fill_a(int64_t x, int64_t y, int64_t w, int64_t h, int64_t rgb,
                                int64_t radius, int64_t alpha);
 void yuga_platform_plat_text(int64_t x, int64_t y, yuga_str s, int64_t rgb, int64_t font);
+void yuga_platform_plat_text_rot(int64_t x, int64_t y, yuga_str s, int64_t rgb, int64_t font,
+                                 int64_t deg);
 void yuga_platform_plat_text_int(int64_t x, int64_t y, int64_t v, int64_t rgb, int64_t font);
 void yuga_platform_plat_measure(yuga_str s, int64_t px, int64_t *w, int64_t *h);
 void yuga_platform_plat_measure_int(int64_t v, int64_t px, int64_t *w, int64_t *h);
@@ -214,6 +231,8 @@ void yuga_platform_plat_measure_wrap(yuga_str s, int64_t px, int64_t max_w, int6
 void yuga_platform_plat_text_wrap(int64_t x, int64_t y, yuga_str s, int64_t rgb, int64_t font,
                                   int64_t max_w);
 void yuga_platform_plat_set_window(yuga_str title, int64_t width, int64_t height);
+int64_t yuga_platform_plat_view_width(void);
+int64_t yuga_platform_plat_view_height(void);
 void yuga_platform_plat_svg(int64_t x, int64_t y, int64_t w, int64_t h, yuga_str markup,
                             int64_t rgb, int64_t alpha);
 void yuga_platform_plat_save(void);
@@ -231,7 +250,18 @@ yuga_str yuga_platform_plat_edit_text(int64_t slot);
 int64_t yuga_platform_plat_edit_set(int64_t slot, yuga_str text);
 int64_t yuga_platform_plat_intern_fn(yuga_fn handler);
 void yuga_platform_plat_invoke_fn(int64_t id);
+/* Reactive prop thunks: interned like handlers, called for their result. */
+int64_t yuga_platform_plat_intern_int_fn(yuga_fn thunk);
+int64_t yuga_platform_plat_invoke_int_fn(int64_t id);
+int64_t yuga_platform_plat_intern_bool_fn(yuga_fn thunk);
+int64_t yuga_platform_plat_invoke_bool_fn(int64_t id);
+int64_t yuga_platform_plat_intern_str_fn(yuga_fn thunk);
+yuga_str yuga_platform_plat_invoke_str_fn(int64_t id);
 void yuga_platform_plat_sig_bind_int(int64_t id, int64_t value);
+int64_t yuga_platform_plat_sig_gen(int64_t id);
+void yuga_platform_plat_sig_free(int64_t id);
+void yuga_platform_plat_edit_reset(int64_t slot);
+void yuga_platform_plat_intern_free(int64_t id);
 int64_t yuga_platform_plat_overlay_scroll(void);
 int64_t yuga_platform_plat_inset_top(void);
 int64_t yuga_platform_plat_inset_right(void);
@@ -242,12 +272,15 @@ int64_t yuga_platform_plat_inset_left(void);
 void yuga_zeus_engine_layout(int64_t width, int64_t height);
 void yuga_zeus_engine_paint(void);
 int64_t yuga_zeus_engine_step(void);
+/* ms until the next async timer is due (0 = none; -1 = a spawn waits). */
+int64_t yuga_zeus_engine_next_ms(void);
 int64_t yuga_zeus_engine_click(int64_t x, int64_t y);
 int64_t yuga_zeus_engine_scroll(int64_t x, int64_t y, int64_t dx, int64_t dy);
 int64_t yuga_zeus_engine_drag(int64_t x, int64_t y);
 int64_t yuga_zeus_engine_hover(int64_t x, int64_t y);
 void yuga_zeus_engine_mouseup(void);
 int64_t yuga_zeus_engine_over_button(void);
+yuga_str yuga_zeus_engine_cursor(void);
 void yuga_zeus_engine_key_apply(int64_t sig, int64_t mode, int64_t value, int64_t lo,
                                int64_t hi);
 void yuga_zeus_engine_fill_focus(void);
@@ -257,6 +290,7 @@ int64_t yuga_zeus_engine_focus_ctx(int64_t i);
 int64_t yuga_zeus_engine_focus_step(int64_t back);
 int64_t yuga_zeus_engine_focus_captures_text(void);
 int64_t yuga_zeus_engine_key(int64_t key);
+int64_t yuga_zeus_engine_key_up(int64_t key, int64_t mods);
 
 void zeus_layout(int64_t width, int64_t height);
 int zeus_step(float dt);
@@ -264,7 +298,11 @@ void zeus_paint(void *ctx, ZeusDraw draw);
 int zeus_handle_click(int64_t x, int64_t y);
 int zeus_handle_hover(int64_t x, int64_t y);
 int zeus_over_button(void);
+/** CSS cursor name under the pointer; "" or unknown = default arrow. */
+const char *zeus_cursor(void);
 int zeus_handle_key(int key);
+/** Key release. Hosts that deliver key-up call this; `on_key_up` fires. */
+int zeus_handle_key_up(int key, int mods);
 int zeus_handle_scroll(int64_t x, int64_t y, int64_t dx, int64_t dy);
 int zeus_handle_drag(int64_t x, int64_t y);
 void zeus_handle_mouseup(void);

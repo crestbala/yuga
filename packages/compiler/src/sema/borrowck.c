@@ -25,6 +25,10 @@ typedef struct Binding {
     int depth;
     char *borrow_of;
     int borrow_mut;
+    /* Places under this binding that were consumed field-wise
+       (`on_click = p.h`). Ownership is a static fact: no runtime zeroing. */
+    char **moved_paths;
+    int nmoved;
     struct Binding *next;
 } Binding;
 
@@ -119,6 +123,8 @@ static void pop_to_depth(int d) {
         binds = b->next;
         free(b->name);
         free(b->borrow_of);
+        for (int i = 0; i < b->nmoved; i++) free(b->moved_paths[i]);
+        free(b->moved_paths);
         free(b);
     }
 }
@@ -174,6 +180,21 @@ static int borrow_covers(const char *path) {
 }
 
 /** Is `path` readable, or does a live exclusive borrow cover it? */
+/** 1 if `path`, or a place containing it, was already consumed. */
+static int path_is_moved(Binding *v, const char *path) {
+    for (int i = 0; i < v->nmoved; i++)
+        if (paths_conflict(v->moved_paths[i], path)) return 1;
+    return 0;
+}
+
+/** Record `path` as consumed on `v`. */
+static void mark_path_moved(Binding *v, const char *path) {
+    if (path_is_moved(v, path)) return;
+    v->moved_paths = (char **)realloc(v->moved_paths, (size_t)(v->nmoved + 1) * sizeof(char *));
+    if (!v->moved_paths) return;
+    v->moved_paths[v->nmoved++] = yuga_dup(path);
+}
+
 static int check_use_path(const char *path, SourceLoc loc) {
     for (Borrow *b = borrows; b; b = b->next)
         if (b->is_mut && paths_conflict(b->path, path)) {
@@ -308,8 +329,14 @@ static int check_expr(AstNode *n, int as_move) {
                 yuga_error(n->loc, "use of moved value '%s'", rbuf);
                 errn = 1;
                 rc = 1;
+            } else if (v && path_is_moved(v, p)) {
+                yuga_error(n->loc, "use of moved value '%s'", p);
+                errn = 1;
+                rc = 1;
             } else {
                 rc = check_use_path(p, n->loc);
+                if (!rc && v && as_move && n->ty && !type_is_copy(n->ty))
+                    mark_path_moved(v, p);
             }
             free(p);
             return rc;

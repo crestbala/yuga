@@ -1,0 +1,225 @@
+# Zeus / Yuga — production roadmap
+
+Phase-by-phase plan for turning `std/zeus.yuga` + `std/kit.yuga` (+ `std/net`,
+`std/http`, the C runtime) into a stack you can build real products on —
+ecommerce tools, team chat (Slack/Teams-shaped), social apps.
+
+Related: this file is the living plan; the sharp-edge catalog it grew from
+(`zeus_kit_downsides.md`) and the API/spec docs were removed with the rest
+of `docs/` — the roadmap below is written to stand alone, and each phase
+re-states its own rationale. Status: tick phases off as they land, with
+their exit criteria as the definition of done.
+
+---
+
+## 1. Where the stack stands today
+
+| Layer | Today | Gap for real apps |
+|---|---|---|
+| UI core | Retained tree, per-prop thunks, arena recycling, headless layout/paint tests, DRAW goldens | list virtualization, scroll physics, IME/multiline, images |
+| Reactivity | `Signal<int>` scalars, `For` list rebuilds, reactive props (`width`, `position`, `grow`, `show`, …) | floats/dates in signals; appends rebuild whole lists |
+| Data plane | `#[proto]` codecs + unary gRPC-Web / h2c client **and** server, `Result<T>`, async `call_async` callback client | no bidirectional streaming, no TLS, no auth/session story |
+| Networking | `std/net`: **blocking** POSIX sockets (wasm: `fetch_rpc` only); Phase 1 async transport: timers + non-blocking connect/poll/send in `std:async` + `http.call_async` steppers | TLS, ws/SSE, streaming bodies |
+| Storage | `sys.read_file` / `write_file` (whole-file), env | KV/table store, structured persistence, fs tree, app-data paths |
+| Media | inline SVG only (paths, circles, `currentColor`) | raster images, gradients — the missing primitive |
+| Text | one weight per host, no selection, no IME on canvas | multilingual/emoji, rich text, multiline input |
+| Server | single-threaded Yuga accept loop (HTTP/1.1 + h2c) | concurrency model for chat-class servers |
+| Kit | ~50 shadcn widgets, palette tokens, goldens | monolith namespace, no DCE, fixed-pixel tuning |
+
+## 2. Already fixed (do not re-plan)
+
+Landmarks that are done and tested — the roadmap starts past them:
+
+- Arena recycling: `For`/`refit` rebuilds free nodes, signals, handlers, effects (`zeus_for_recycle.yuga`).
+- Lazy DatePicker: one 7×6 signal-driven grid, no rebuild on month/year change.
+- Row shrink-before-wrap; `grow = 1` is elastic by default (CSS `flex: 1`), `shrink` prop overrides.
+- Single following chart tooltip + cursor + band driven by one `act` signal.
+- Palette tokens; no bare hex left in kit chrome.
+- Headless layout tests + byte-exact DRAW goldens wired into `make test`.
+- Declarative props: `position`/`left`/`top`/`right`/`bottom`/`z_index`, `width`/`height` (all widgets incl. `Svg`), `grow`/`shrink`, `show` (bool thunk; signal shows win).
+- Language: default/optional trailing parameters (`press: fn() = __noop`), incl. the declaring-module binding fix.
+- Clean-exit tests (no trap-style failures in `compile_pass`).
+
+## 3. The data plane is gRPC — no REST/CRUD layer needed
+
+`#[proto]` structs give you schema + codecs; `http.app().rpc(...)` /
+`http.rpc_call` give unary calls over gRPC-Web (HTTP/1.1) and h2c, in pure
+Yuga, client and server, native and wasm. That covers catalog, carts,
+messages, presence payloads, sync — whatever the app is. Build on it:
+
+1. **RPC is the only data API, and gRPC/proto the only wire format.** New
+   endpoints = new proto structs + `app.rpc` / client calls. No JSON, no
+   form-urlencoded, no ad-hoc route bodies, no other wire format — not even
+   for interop. A `#[proto]` struct is the one way to describe data; a new
+   endpoint is never a new format.
+2. **No CRUD layer, ever.** No REST resources, no generic collection routes
+   (`/users`, `/items/{id}`, PUT/DELETE conventions), no ORM-ish tables.
+   State changes are named RPCs (`Cart.AddItem`, `Message.Send`), because
+   they carry intent, versioning, and auth at the method level.
+3. **What's missing is transport:**
+   - **SSE** (server → client push; trivial on the existing accept loop) for
+     notifications and coarse presence.
+   - **WebSocket** (client + server, native and wasm) for chat/social realtime.
+   - **Auth/session** convention at the RPC layer (token header, middleware fn).
+4. **Streaming later, not now.** Unary RPC + SSE covers v1 products; true
+   bidirectional streams can ride the WebSocket once it exists.
+
+## 4. Remaining downsides, ranked
+
+Severity is *for the target apps* (ecommerce / team chat / social), not for
+demos. Phase column points into §6.
+
+| # | Downside | Blocks | Effort | Phase |
+|---|---|---|---|---|
+| 1 | No raster image primitive (draw op + host decode) | product photos, avatars, feeds — every visual app | med-high (7-file pipeline) | 2 |
+| 2 | Single-line text, no IME on canvas hosts | chat input, search, forms beyond ASCII | high (host IME + multiline) | 3 |
+| 3 | `For` rebuilds the whole list per push (recycling yes, O(n) still) | message logs, activity feeds, 10k-row tables | medium (windowed rows) | 5 |
+| 4 | Blocking sockets; no async/timers in the runtime | any background I/O without freezing the UI | medium | 1 |
+| 5 | No realtime transport (ws/SSE) | chat/social presence, live updates | medium | 1b |
+| 6 | No scroll physics / overscroll / nested scrollers | feed feel, long pages | medium | 5b |
+| 7 | `Signal<int>` only (no float/date/bool scalar store) | smooth animation, timestamps, charts | small-med | 6b |
+| 8 | Kit monolith, no dead-code elimination | web bundle size, componentization | medium | 7 |
+| 9 | a11y = labels only; no focus ring, thin keyboard model | enterprise + compliance | ongoing | 7b |
+| 10 | Fixed-pixel tuning; no density/font scaling | devices, accessibility | small | 7c |
+| 11 | No TLS | anything beyond localhost | med | 6 |
+| 12 | No KV/persistence beyond whole-file read/write | drafts, caches, offline, cart | small-med | 4 |
+
+## 5. Architecture decisions (the reasoning to preserve)
+
+### 5.1 UI thread: single, forever
+`arena.nodes`, `sigs`, `track`, focus, edit buffers are global and painting is
+stateful; threading zeus would be a rewrite with no user-visible gain. The
+industry answer (Android/UIKit/Swing) is: background I/O, completion **on the
+one UI thread**. Keep it.
+
+### 5.2 Async = task pool + completion queue (C runtime), not language threads
+Yuga fns cannot run on arbitrary threads (globals, arenas). Shape:
+
+```yuga
+let c = http.client("127.0.0.1:8080")
+c.call_async("Identity.Me", "", fn(resp) {   // gRPC I/O runs off the UI thread
+    profile.set(decode_Me(resp))                // callback runs ON the UI thread
+})
+// Text("{{profile.get().name}}") updates. Nothing else moves.
+```
+
+The wire format is always proto over gRPC-Web — never JSON or an ad-hoc
+format, so the callback hands back `#[proto]` bytes `decode_Me` already
+understands.
+
+- C side: **Phase 1 shipped queues in Yuga with a minimal C seam** — monotonic
+  clock + blocking sleep (`yuga_rt.h`), non-blocking connect/poll/send
+  (`net.c`), wasm async-fetch slots (JS XHR → per-frame drain). Every host
+  frame calls `engine_layout`, which ticks the async world first (steppers,
+  spawns, due timers) and lays out over whatever signals changed. Hosts
+  sleep while idle and wake at the next deadline (`engine_next_ms`). A C
+  task pool stays an option for truly blocking syscalls (DNS, TLS) when
+  those appear.
+- Yuga side: `spawn(fn)` + completion callbacks suffice at first; `async`/
+  `await` sugar can be added later on top without changing the model.
+- Timers (`sleep`, `after(ms, fn)`, interval) ship with the same queue.
+
+### 5.3 Server: reactor, not threads
+One thread, non-blocking `net` (poll/select in C), resuming Yuga handlers on
+readiness. Thousands of concurrent connections, zero locks. This is the chat
+server story. Thread-per-connection in C *under* the API is a later option.
+
+### 5.4 Concurrency primitives
+- v1: **message passing only** (`channel<T>` between tasks and the UI loop) —
+  composes with signals, keeps the no-shared-mutable-state property.
+- No shared-memory threads in the language until a workload demands them
+  (they need a Send-like discipline; the runtime is not thread-safe by design).
+
+### 5.5 New primitives ride the existing pipeline
+Any draw primitive (image, gradient, rounded-text) travels
+`scene.yuga → platform.yuga → zeus_plat.c → zeus_rt.h → mac/iOS/wasm/android
+hosts` + both canvas loaders. Budget that blast radius per primitive; add
+decode (PNG/JPEG) in the hosts, never in Yuga.
+
+## 6. Phases
+
+Definition of done per phase = exit criteria, all verified by `make test`
+(headless runs) unless noted. Tick boxes as phases land.
+
+### Phase 1 — Async runtime, timers, non-blocking net  (foundation)
+- [x] Async on the one UI thread, queues in Yuga: `std/async.yuga` (spawn / after / interval / cancel / per-frame steps), a minimal C seam (clock + sleep in `yuga_rt.h`), hosts drain per frame via `engine_layout`'s tick (mac + wasm; mac sleeps idle and wakes at `engine_next_ms`).
+- [x] `after(ms, fn)` / `interval(ms, fn)` / `spawn` / `cancel` in std (feed signals; `async_timers.yuga`).
+- [x] Non-blocking transport: `net.tcp_nb_connect` / `tcp_poll` / `tcp_send` / `tcp_so_error` — the UI never blocks on sockets.
+- [x] First async-to-UI proof: `compile_pass` fake async op (`spawn`) completes, sets a signal, and a prop repaints through the headless pump (`zeus.pump`, no manual `engine_layout`).
+- [x] `http.call_async(c, name, body, fn(resp))` gRPC-Web callback client (native sockets via per-frame steppers; wasm async fetch slots) — same `#[proto]` contract as `call`, no JSON layer.
+- **Exit:** an app completes a gRPC round-trip while animating; headless test asserts completion → repaint without a manual `engine_layout`. **Green** (`zeus_async_rpc.yuga` runs a real child-process `Echo.Ping` server; wasm fetch path compiles, needs a browser to run).
+
+### Phase 1b — Realtime transport
+- [ ] SSE on the existing HTTP/1.1 server (server → client push).
+- [ ] WebSocket client (native + wasm) and server.
+- [ ] Auth/session convention: token header + an `app.before(fn)` middleware hook.
+- **Exit:** a headless loop test streams N events over SSE/ws and the UI
+  shows each (golden or probe assertions).
+
+### Phase 1c — JS-shaped `async fn` / `await` (language sugar)
+Callback APIs (`call_async`) are the runtime; this phase adds the syntax the
+apps read and write. `await` never blocks and never threads — it re-enters
+the one-thread async pump until the awaited mailbox fills (§5.2 model), so
+sequential code reads like JS and still never touches a socket on the UI
+thread.
+
+- [x] Grammar + sema: `async fn name(...)`, `await expr` (contextual keywords — parser desugars `await e` to `async.await_value(e)`; typecheck rejects `await` outside an `async fn` body or inside a closure, like JS).
+- [x] Awaitable surface v1: `Future<string>` mailboxes in `std:async` (`future_str` / `resolve` / `await_value` — pure Yuga, no C); `http.acall(c, name, body)` is the awaitable gRPC-Web call; awaiting pumps timers/spawns/socket steppers until `resolve`, then returns the value.
+- [x] Demo + tests: `examples/zeus/counter/macos/app.yuga` is `async fn main` with two awaited RPCs (`let raw = await c.acall(...)`) feeding the App; `compile_pass/async_await.yuga` (sequential awaits, sync call of an async fn, pre-resolved future); `compile_fail/async_await_ctx.yuga`.
+- **Exit:** sequential awaited values flow in order through the pump and repaint; awaits outside `async fn` are compile errors. **Green** — caveat: awaiting re-enters the pump on the UI thread, so an await inside an event handler pauses host repaint until it returns; init/startup awaits (the counter App) and headless flows are the sweet spot, callbacks stay the reactive path.
+- [ ] Follow-ups: widen `Future<T>` beyond string payloads; `async`/`await` highlighting in the tree-sitter/editor grammars; loop-and-branch-heavy bodies are already fine (no CPS split in this design) but want a stress test.
+
+### Phase 2 — Image primitive
+- [ ] New draw op kind (raster) through scene → platform → C → hosts + canvas loaders.
+- [ ] PNG decode in hosts (JPEG next); `zeus.Image(...)` widget + `SvgProps`-style props.
+- [ ] Network image + cache hook (`Image(url, cache_key)`) once Phase 1 exists.
+- **Exit:** a golden fixture with an image draw op; avatars/product shots render in gallery.
+
+### Phase 3 — Multiline text + IME (desktop first)
+- [ ] Multiline text input (kind 10 extension or a new kind): line breaks, cursor nav, selection.
+- [ ] IME composition on mac (and canvas/wasm at least ASCII+paste).
+- [ ] Kit: `TextArea` widget (shadcn-style chrome reusing `Input` tokens).
+- **Exit:** a chat-compose headless test (type, edit, bind signal) + golden.
+
+### Phase 4 — KV persistence
+- [ ] `std/kv.yuga` over the `yuga_sys_*` seam: `get/set/delete/list`, file-backed, atomic-ish.
+- [ ] App-data path helper per host (desktop: `~/Library/Application Support/...`; wasm: in-memory fallback).
+- **Exit:** a compile_pass test that round-trips rows across two "processes"
+  (reopen), plus gallery draft/autosave demo.
+
+### Phase 5 — Virtualized lists + scroll
+- [ ] Windowed `For` (render visible rows ± margin; recycle beyond the window).
+- [ ] Append/insert row ops that do not rebuild the whole list.
+- [ ] Scroll physics: momentum, overscroll clamp, `scroll_to` (signal-driven).
+- **Exit:** headless test: 10k-row feed stays under a node/effect budget while
+  scrolling (`arena_nodes()` bounded), items paint on demand.
+
+### Phase 6 — TLS + float/date signals
+- [ ] TLS on `net` (SecureTransport/OpenSSL; wasm keeps browser TLS).
+- [ ] `Signal<float>` / timestamp scalar store (sigs backend extends beyond `[]int`).
+- **Exit:** `https` client test (skipped when offline), float-driven animation prop test.
+
+### Phase 7 — Kit & a11y growth discipline
+- [ ] Kit namespace pass or per-widget opt-in (DCE) before the monolith doubles.
+- [ ] Focus ring painting + visible tab order on native hosts.
+- [ ] Density/font-scale tokens (kit reads a scale signal, not constants).
+- **Exit:** gallery unchanged visually at scale 1.0 (golden); a11y probe test asserts roles/focus order.
+
+### Phase 8 — Revisit only if demanded
+- [ ] Language threads + Send discipline + channels (CPU-bound workloads).
+- [ ] Rich text spans (bold/italic/inline color) once text is measured in-tree.
+
+---
+
+## 7. Cross-cutting notes
+
+- **Validation is the moat.** Every phase ships a headless test; the DRAW
+  goldens make visual regressions cheap to catch. Keep adding probe-style
+  tests (`engine_find_text`, `node_x/y`) per phase.
+- **Wasm parity** per phase where possible (net: `fetch`; ws exists in
+  browsers; images decode via canvas) — note deviations in the phase notes.
+- **Don't gold-plate.** Unary RPC + SSE + KV + images + multiline input
+  already clears "useful ecommerce tool" and most social-app shapes; ws +
+  virtualized lists clear chat. Ship those before streaming/bidi/rich text.
+- **Tracking:** tick a phase only when its exit criteria run green in
+  `make test` on this branch.

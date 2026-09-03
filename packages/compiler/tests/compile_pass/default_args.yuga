@@ -1,0 +1,50 @@
+// Trailing parameters may carry constant defaults (`name: T = expr`); a call
+// that leaves any suffix out is filled from them. Defaults resolve in the
+// module that declares the fn — `done` names this module's `__noop` even
+// though callers sit in `main`'s scope.
+
+import "std:fmt"
+import "std:sys"
+
+fn __noop() {
+    return
+}
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+let mut calls = 0
+
+fn greet(name: string = "world", n: int = 2, done: fn() = __noop) {
+    done()
+    let mut i = 0
+    while i < n {
+        calls = calls + 1
+        i = i + 1
+    }
+}
+
+const SCALE: int = 3
+
+fn scale(a: int, k: int = SCALE) -> int {
+    return a * k
+}
+
+fn main() {
+    // Full argument list; the trailing closure is the only non-default.
+    greet("ada", 1, fn() { calls = calls + 100 })
+    expect(calls == 101, "explicit args")
+    // Omit a suffix of the defaults: string, then int + fn together.
+    greet("bea")
+    expect(calls == 103, "string default omitted int+fn")
+    greet()
+    expect(calls == 105, "all defaults")
+    expect(scale(2) == 6, "const default")
+    expect(scale(2, 5) == 10, "override wins")
+    fmt.println("default args ok")
+}
