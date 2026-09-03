@@ -1,0 +1,4 @@
+// An `if` used as a value needs an `else` branch.
+fn main() {
+    let x = if 1 > 0 { 1 }
+}

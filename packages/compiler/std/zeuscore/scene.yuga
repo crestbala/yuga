@@ -41,6 +41,12 @@ fn text(x: int, y: int, s: string, rgb: int, font: int) {
     emit(2, x, y, 0, 0, rgb, 0, 255, font, s, 0)
 }
 
+/// Rotated text: `deg` is clockwise on screen, pivoted around the top-left
+/// of the (unrotated) line box — the same anchor as `text`.
+fn text_rot(x: int, y: int, s: string, rgb: int, font: int, deg: int) {
+    emit(9, x, y, deg, 0, rgb, 0, 255, font, s, 0)
+}
+
 fn text_int(x: int, y: int, v: int, rgb: int, font: int) {
     emit(3, x, y, 0, 0, rgb, 0, 255, font, "", v)
 }
@@ -87,6 +93,8 @@ fn present() {
             platform.plat_clip(d.x, d.y, d.w, d.h)
         } else if d.kind == 8 {
             platform.plat_restore()
+        } else if d.kind == 9 {
+            platform.plat_text_rot(d.x, d.y, d.text, d.rgb, d.font, d.w)
         }
     }
 }
@@ -98,20 +106,25 @@ fn prepaint() {
 
 fn paint_hover_wash(id: int) {
     let t = arena.hover_paint(id)
-    if t <= 0 {
-        return
+    if t > 0 {
+        let mut a = t * 48 / 100
+        if arena.hover_rgb() == 0 {
+            a = t * 22 / 100
+        }
+        fill_a(arena.draw_x(id), arena.draw_y(id), arena.nodes[id].w, arena.nodes[id].h, arena.hover_rgb(), arena.nodes[id].radius, a)
     }
-    fill_a(arena.draw_x(id), arena.draw_y(id), arena.nodes[id].w, arena.nodes[id].h, arena.hover_rgb(), arena.nodes[id].radius, t * 36 / 100)
 }
 
-fn paint_fill_box(id: int) {
+fn paint_fill_box(id: int, wash: int) {
     let mut x = arena.draw_x(id)
     let mut y = arena.draw_y(id)
     let mut w = arena.nodes[id].w
     let mut h = arena.nodes[id].h
     let a = arena.paint_alpha(id)
     if arena.nodes[id].bg < 0 {
-        paint_hover_wash(id)
+        if wash != 0 {
+            paint_hover_wash(id)
+        }
         return
     }
     let mut inner_r = arena.nodes[id].radius
@@ -136,7 +149,9 @@ fn paint_fill_box(id: int) {
     } else {
         fill(x, y, w, h, rgb, inner_r)
     }
-    paint_hover_wash(id)
+    if wash != 0 {
+        paint_hover_wash(id)
+    }
 }
 
 fn paint_input(id: int) {
@@ -162,6 +177,12 @@ fn paint_input(id: int) {
 fn paint_label(id: int) {
     let x = arena.draw_x(id) + arena.nodes[id].pad_l + arena.nodes[id].border_w
     let fg = arena.fg_of(id)
+    let rot = arena.nodes[id].text_rot
+    if rot != 0 {
+        text_rot(x, arena.draw_y(id) + arena.nodes[id].pad_t + arena.nodes[id].border_w,
+                 arena.nodes[id].text, fg, arena.nodes[id].font, rot)
+        return
+    }
     if arena.has_bound_num(id) != 0 {
         let y = arena.draw_y(id) + arena.nodes[id].pad_t + geometry.max2(arena.nodes[id].h - arena.nodes[id].pad_t - arena.nodes[id].pad_b - arena.nodes[id].th, 0) / 2
         text_int(x, y, arena.bound_num(id), fg, arena.nodes[id].font)
@@ -199,23 +220,22 @@ fn paint_button(id: int) {
 fn paint_scrollbar(id: int) {
     let ox = arena.draw_x(id)
     let oy = arena.draw_y(id)
-    let a = arena.bar_alpha(id)
-    if a <= 0 {
-        return
-    }
+    let rgb = arena.hover_rgb()
     if arena.bar_visible(id) != 0 {
         let tw = arena.bar_w()
         let tx = arena.bar_x(id, ox)
         let thh = arena.bar_thumb_h(id)
         let thy = arena.bar_thumb_y(id, oy)
-        fill_a(tx, thy, tw, thh, 0, tw / 2, a)
+        let track_h = geometry.max2(arena.nodes[id].h - 16, 8)
+        fill_a(tx, oy + 8, tw, track_h, rgb, tw / 2, 36)
+        fill_a(tx, thy, tw, thh, rgb, tw / 2, 180)
     }
     if arena.bar_visible_x(id) != 0 {
         let th = arena.bar_w()
         let ty = arena.bar_hy(id, oy)
         let thw = arena.bar_thumb_w(id)
         let tx = arena.bar_thumb_x(id, ox)
-        fill_a(tx, ty, thw, th, 0, th / 2, a)
+        fill_a(tx, ty, thw, th, rgb, th / 2, 180)
     }
 }
 
@@ -291,12 +311,12 @@ fn paint_node(id: int) {
         }
         paint_hover_wash(id)
     } else if k == 13 {
-        let mut th = 4
+        let mut th = 6
         if th > h {
             th = h
         }
         let ty = y + (h - th) / 2
-        let mut kd = 14
+        let mut kd = 18
         if kd > h {
             kd = h
         }
@@ -372,14 +392,11 @@ fn paint_node(id: int) {
     } else if k == 12 {
         svg(x, y, w, h, arena.nodes[id].text, arena.fg_of(id), arena.paint_alpha(id))
     } else {
-        if k == 10 {
-            if arena.focus_id == id {
-                if arena.nodes[id].fg >= 0 {
-                    arena.nodes[id].border_c = arena.nodes[id].fg
-                }
-            }
-        }
-        paint_fill_box(id)
+        // Text inputs paint flat: no hover/press wash, so clicking never
+        // greys the field — shadcn keeps the surface clear and the outline
+        // is the only affordance. Focus is drawn at paint time by the host
+        // theme (border_c was never reset, so no sticky mutation here).
+        paint_fill_box(id, if k == 10 { 0 } else { 1 })
     }
     if k == 3 {
         paint_label(id)
@@ -478,14 +495,14 @@ fn step() -> int {
             }
             let mut a = arena.nodes[i].hover_amt
             if a < target {
-                a = a + 12
+                a = a + 11
                 if a > 100 {
                     a = 100
                 }
                 dirty = 1
             }
             if a > target {
-                a = a - 12
+                a = a - 11
                 if a < 0 {
                     a = 0
                 }
@@ -548,7 +565,7 @@ fn step() -> int {
             if arena.want_show(i) != 0 {
                 let mut s = arena.nodes[i].show_amt
                 if s < 100 {
-                    s = s + 10
+                    s = s + 9
                     if s > 100 {
                         s = 100
                     }

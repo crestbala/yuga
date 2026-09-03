@@ -1,0 +1,8 @@
+fn f(n: int) -> int {
+    let n = 2
+    return n
+}
+
+fn main() {
+    let v = f(1)
+}

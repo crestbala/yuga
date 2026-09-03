@@ -4,15 +4,24 @@
 
 [
   "fn"
+  "async"
+  "await"
   "let"
+  "const"
   "mut"
   "struct"
+  "enum"
   "import"
   "if"
   "else"
   "for"
+  "while"
   "in"
   "return"
+  "break"
+  "continue"
+  "match"
+  "as"
 ] @keyword
 
 [
@@ -22,6 +31,7 @@
 
 (number) @number
 (string) @string
+(interpolation) @embedded
 (identifier) @variable
 
 (function_item
@@ -33,18 +43,37 @@
 (let_statement
   name: (identifier) @variable)
 
+(const_item
+  name: (identifier) @constant)
+
 (field_declaration
   name: (identifier) @property)
 
 (field_initializer
   name: (identifier) @property)
 
-(call_expression
-  function: (identifier) @function)
+(named_argument
+  name: (identifier) @property)
+
+(enum_item
+  name: (identifier) @type)
+
+(enum_variant
+  name: (identifier) @constant)
 
 (call_expression
   function: (field_expression
+    value: (identifier) @namespace
     field: (identifier) @function))
+
+(field_expression
+  field: (identifier) @property)
+
+((identifier) @type
+ (#match? @type "^[A-Z]"))
+
+(call_expression
+  function: (identifier) @function)
 
 (call_expression
   function: (path_expression
@@ -56,6 +85,13 @@
 (struct_literal
   type: (identifier) @type)
 
+(cast_expression
+  type: (_) @type)
+
+(generic_type
+  (identifier) @type)
+
+(fn_type) @type
 (reference_type) @type
 (box_type) @type
 (array_type) @type
@@ -84,7 +120,9 @@
   "||"
   ".."
   "->"
+  "=>"
   "::"
+  "|"
 ] @operator
 
 [

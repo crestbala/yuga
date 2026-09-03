@@ -1,0 +1,40 @@
+// The spec's Counter, as it compiles: trailing blocks for hierarchy,
+// `{{ }}` interpolation, a `fn()` closure handler, and a reactive label that
+// repaints on its own when the signal changes — no tree rebuild.
+import "std:fmt"
+import "std:sys"
+import "std:zeus"
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn Counter(count: Signal<int>) {
+    zeus.Box(align_direction = DIRECTION.Column, spacing = 8, padding = 16) {
+        zeus.Text("Count: {{count.get()}}")
+        zeus.Button("Increment", on_click = fn() => count.set(count.get() + 1))
+    }
+}
+
+fn main() {
+    let count = zeus.signal(0)
+    zeus.snapshot(320, 200, fn() -> Node {
+        zeus.Box(align_direction = DIRECTION.Column) {
+            Counter(count)
+        }
+    })
+    expect(zeus.draw_count() > 0, "counter painted")
+
+    // Only the label's own effect re-runs; the tree is untouched.
+    let before = zeus.draw_count()
+    count.set(41)
+    count.set(count.get() + 1)
+    zeus.engine_layout(320, 200)
+    zeus.engine_paint()
+    expect(zeus.draw_count() == before, "same draw count after set")
+    fmt.println("counter ok")
+}

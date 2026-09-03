@@ -60,11 +60,19 @@ void ast_free(AstNode *node) {
                 free((void *)node->as.strct.fields[i].name);
                 free((void *)node->as.strct.fields[i].doc);
                 ast_free(node->as.strct.fields[i].type);
+                ast_free(node->as.strct.fields[i].def);
             }
             free(node->as.strct.fields);
             for (size_t i = 0; i < node->as.strct.tparam_count; i++)
                 free((void *)node->as.strct.tparams[i]);
             free(node->as.strct.tparams);
+            break;
+        case AST_ENUM_DECL:
+            free((void *)node->as.enm.name);
+            for (size_t i = 0; i < node->as.enm.count; i++)
+                free((void *)node->as.enm.vnames[i]);
+            free(node->as.enm.vnames);
+            free(node->as.enm.vals);
             break;
         case AST_VAR_DECL:
             free((void *)node->as.var.name);
@@ -210,6 +218,15 @@ AstNode *ast_fn(const char *name, Param *params, size_t pc, AstNode *ret, AstNod
     n->as.fn.ret_type = ret;
     n->as.fn.body = body;
     return n;
+}
+
+AstNode *ast_enum(const char *name, const char **vnames, int64_t *vals, size_t n, SourceLoc loc) {
+    AstNode *e = ast_new(AST_ENUM_DECL, loc);
+    e->as.enm.name = name;
+    e->as.enm.vnames = vnames;
+    e->as.enm.vals = vals;
+    e->as.enm.count = n;
+    return e;
 }
 
 AstNode *ast_struct(const char *name, Field *fields, size_t fc, SourceLoc loc) {

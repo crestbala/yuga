@@ -8,9 +8,10 @@
 #   ./run.sh counter              the full-stack example (backend :8080 + web UI :5173)
 #   ./run.sh counter macos        ...as a native/ios/android client
 #
-# Names are the file/directory stem. `counter` is both a language example and
-# the full-stack Zeus example, so it is disambiguated as language/counter and
-# zeus/counter; a bare name that matches exactly one example works directly.
+# Names are the file/directory stem. A bare name that matches exactly one
+# example works directly. `counter` is both a language demo and the full-stack
+# Zeus app: `./run.sh counter` is the Zeus stack; the language file is
+# `./run.sh language/counter`. `zeus/counter` is an alias for the stack.
 #
 # GUI examples open a real window and servers block until Ctrl-C. To render one
 # frame and exit instead (what `make test` does), set ZEUS_HEADLESS=1 for Zeus
@@ -123,7 +124,7 @@ case $what in
   www|docs) exec "$HERE/www/run.sh" "$@" ;;
   language/*) run_language "${what#language/}" ;;
   repl|zeus/repl) run_repl_stack "$@" ;;
-  zeus/counter)  run_counter_stack "$@" ;;
+  counter|zeus/counter) run_counter_stack "$@" ;;
   zeus/*)     run_zeus_app "${what#zeus/}" "$@" ;;
 esac
 

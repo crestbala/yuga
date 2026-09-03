@@ -32,8 +32,10 @@ static const char **subst_names;
 static Type **subst_args;
 static size_t subst_n;
 static const char *cname_override;
-static AstNode *clos_nodes[256];
+/* Grows: one thunk per reactive prop adds up fast. */
+static AstNode **clos_nodes;
 static int nclos_nodes;
+static int clos_cap;
 static AstNode *clos_hoist_node[64];
 static int clos_hoist_tid[64];
 static int clos_hoist_n;
@@ -345,14 +347,32 @@ static int can_stack_clos_args(AstNode *n) {
 }
 
 /** Declare a stack env for `clos` and record it for emit of that node. */
+static int type_is_copy_vec(Type *t) {
+    return t && t->kind == TY_VEC && type_is_copy(t);
+}
+
+/** Copy a capture into a closure env; []T must retain the buffer. */
+static void emit_cap_set_ident(FILE *o, Type *ty, const char *dst_field, const char *src) {
+    if (type_is_copy_vec(ty)) {
+        fprintf(o, "%s = yuga_vec_retain(&", dst_field);
+        emit_ident_name(o, src);
+        fprintf(o, ")");
+    } else {
+        fprintf(o, "%s = ", dst_field);
+        emit_ident_name(o, src);
+    }
+}
+
+/** Declare a stack env for `clos` and record it for emit of that node. */
 static void hoist_capturing_clos(FILE *o, AstNode *clos) {
     if (!is_capturing_clos(clos) || clos_hoist_n >= 64) return;
     int tid = tmp_id++;
     int id = clos->as.fn.clos_id;
     fprintf(o, "struct yuga_env_%d _ce%d; ", id, tid);
     for (size_t i = 0; i < clos->as.fn.cap_count; i++) {
-        fprintf(o, "_ce%d.%s = ", tid, clos->as.fn.caps[i]);
-        emit_ident_name(o, clos->as.fn.caps[i]);
+        char dst[128];
+        snprintf(dst, sizeof dst, "_ce%d.%s", tid, clos->as.fn.caps[i]);
+        emit_cap_set_ident(o, clos->as.fn.cap_types[i], dst, clos->as.fn.caps[i]);
         fprintf(o, "; ");
     }
     clos_hoist_node[clos_hoist_n] = clos;
@@ -462,6 +482,11 @@ static const char *cname_for_call(AstNode *cal) {
     static char buf[256];
     if (!cal) return "unknown";
     if (cal->kind == AST_IDENT) {
+        /* Honor the binding typecheck recorded (a default cloned into another
+           module must not re-resolve to a same-named fn there). */
+        if (cal->as.ident.resolved && cal->as.ident.resolved->kind == AST_FN_DECL &&
+            cal->as.ident.resolved->as.fn.cname)
+            return cal->as.ident.resolved->as.fn.cname;
         if (cur_is_main_mod)
             snprintf(buf, sizeof buf, "yuga_%s", cal->as.ident.name);
         else
@@ -513,12 +538,47 @@ static void emit_fn_val_call(FILE *o, AstNode *n) {
 }
 
 /** Expression as a C rvalue (GNU statement-exprs for Box, closures, fn vals). */
+/** One arm of an `if` used as a value: run its statements, then assign the
+ *  trailing expression to the result temporary. */
+static void emit_if_branch(FILE *o, AstNode *blk, int id) {
+    fprintf(o, "{ ");
+    if (blk && blk->kind == AST_BLOCK) {
+        size_t c = blk->as.block.stmt_count;
+        for (size_t i = 0; i < c; i++) {
+            AstNode *st = blk->as.block.stmts[i];
+            if (i + 1 == c && st && st->kind == AST_EXPR_STMT) {
+                fprintf(o, "_iv%d = ", id);
+                emit_expr(o, st->as.expr_stmt.expr);
+                fprintf(o, "; ");
+                continue;
+            }
+            emit_stmt(o, st, 0);
+        }
+    }
+    fprintf(o, "} ");
+}
+
 static void emit_expr(FILE *o, AstNode *n) {
     if (!n) {
         fprintf(o, "0");
         return;
     }
     switch (n->kind) {
+        case AST_IF: {
+            /* value position: a statement expression with a result temporary */
+            int id = tmp_id++;
+            fprintf(o, "({ ");
+            emit_ctype(o, n->ty);
+            fprintf(o, " _iv%d; if (", id);
+            emit_cond(o, n->as.if_stmt.cond);
+            fprintf(o, ") ");
+            emit_if_branch(o, n->as.if_stmt.then_block, id);
+            fprintf(o, "else ");
+            emit_if_branch(o, n->as.if_stmt.else_block, id);
+            fprintf(o, "_iv%d; })", id);
+            break;
+        }
+
         case AST_NUMBER:
             fprintf(o, "%lld", (long long)n->as.lit.value);
             break;
@@ -618,27 +678,23 @@ static void emit_expr(FILE *o, AstNode *n) {
                 break;
             }
             if (n->as.call.sig_cell == 1 && n->as.call.arg_count == 1) {
-                fprintf(o, "({ yuga_arena_ensure(); ");
+                fprintf(o, "({ yuga_arena_ensure(); int64_t _sid = ");
                 if (n->as.call.args[0]->ty && n->as.call.args[0]->ty->kind == TY_INT) {
-                    fprintf(o, "yuga_vec_push(&yuga_arena_sigs, &({ ");
-                    emit_ctype(o, n->as.call.args[0]->ty);
-                    fprintf(o, " _sv = ");
+                    fprintf(o, "yuga_zeus_sig_alloc_int(");
                     emit_expr(o, n->as.call.args[0]);
-                    fprintf(o, "; _sv; }), sizeof(int64_t), ");
-                    emit_loc_args(o, n);
                     fprintf(o, "); ");
                 } else {
-                    fprintf(o, "int64_t _szero = 0; yuga_vec_push(&yuga_arena_sigs, &_szero, "
-                               "sizeof(int64_t), ");
-                    emit_loc_args(o, n);
-                    fprintf(o, "); ");
+                    fprintf(o, "yuga_zeus_sig_alloc_zero(); ");
                     emit_ctype(o, n->as.call.args[0]->ty);
                     fprintf(o, " _sv = ");
                     emit_expr(o, n->as.call.args[0]);
                     fprintf(o, "; ");
+                    if (type_is_copy_vec(n->as.call.args[0]->ty))
+                        fprintf(o, "{ yuga_vec _kept = yuga_vec_retain(&_sv); yuga_zeus_sig_bind(_sid, &_kept, sizeof(_kept)); } ");
+                    else
+                        fprintf(o, "yuga_zeus_sig_bind(_sid, &_sv, sizeof(_sv)); ");
                 }
-                fprintf(o, "int64_t _sid = yuga_arena_sigs.len - 1; yuga_zeus_sig_bind(_sid, &_sv, "
-                           "sizeof(_sv)); _sid; })");
+                fprintf(o, "_sid; })");
                 break;
             }
             if (n->as.call.sig_cell == 2 && n->as.call.arg_count == 1) {
@@ -646,7 +702,10 @@ static void emit_expr(FILE *o, AstNode *n) {
                 emit_ctype(o, n->ty);
                 fprintf(o, " _sv; yuga_zeus_sig_load(");
                 emit_expr(o, n->as.call.args[0]);
-                fprintf(o, ", &_sv, sizeof(_sv)); _sv; })");
+                fprintf(o, ", &_sv, sizeof(_sv)); ");
+                if (type_is_copy_vec(n->ty))
+                    fprintf(o, "_sv = yuga_vec_retain(&_sv); ");
+                fprintf(o, "_sv; })");
                 break;
             }
             if (n->as.call.sig_cell == 3 && n->as.call.arg_count == 2) {
@@ -657,6 +716,17 @@ static void emit_expr(FILE *o, AstNode *n) {
                     fprintf(o, ", ");
                     emit_expr(o, n->as.call.args[1]);
                     fprintf(o, "), 0)");
+                } else if (type_is_copy_vec(vt)) {
+                    fprintf(o, "({ yuga_vec _sv = ");
+                    emit_expr(o, n->as.call.args[1]);
+                    fprintf(o, "; int64_t _sid = ");
+                    emit_expr(o, n->as.call.args[0]);
+                    fprintf(o, "; if (yuga_zeus_sig_changed(_sid, &_sv, sizeof(_sv))) { "
+                               "yuga_vec _old; yuga_zeus_sig_load(_sid, &_old, sizeof(_old)); "
+                               "_old = yuga_vec_retain(&_old); "
+                               "yuga_vec _new = yuga_vec_retain(&_sv); "
+                               "yuga_zeus_sig_bind(_sid, &_new, sizeof(_new)); "
+                               "yuga_vec_drop(&_old); yuga_track_notify(_sid); } 0; })");
                 } else {
                     fprintf(o, "({ ");
                     emit_ctype(o, vt);
@@ -773,8 +843,9 @@ static void emit_expr(FILE *o, AstNode *n) {
             emit_loc_args(o, n);
             fprintf(o, "); ");
             for (size_t i = 0; i < n->as.fn.cap_count; i++) {
-                fprintf(o, "_ce%d->%s = ", tid, n->as.fn.caps[i]);
-                emit_ident_name(o, n->as.fn.caps[i]);
+                char dst[128];
+                snprintf(dst, sizeof dst, "_ce%d->%s", tid, n->as.fn.caps[i]);
+                emit_cap_set_ident(o, n->as.fn.cap_types[i], dst, n->as.fn.caps[i]);
                 fprintf(o, "; ");
             }
             fprintf(o, "(yuga_fn){(void *)yuga_clos_%d, _ce%d, sizeof(struct yuga_env_%d)}; })",
@@ -871,8 +942,11 @@ static void emit_stmt(FILE *o, AstNode *n, int ind) {
                 fprintf(o, "struct yuga_env_%d _ce%d;\n", id, tid);
                 for (size_t i = 0; i < cl->as.fn.cap_count; i++) {
                     indent(o, ind);
-                    fprintf(o, "_ce%d.%s = ", tid, cl->as.fn.caps[i]);
-                    emit_ident_name(o, cl->as.fn.caps[i]);
+                    {
+                        char dst[128];
+                        snprintf(dst, sizeof dst, "_ce%d.%s", tid, cl->as.fn.caps[i]);
+                        emit_cap_set_ident(o, cl->as.fn.cap_types[i], dst, cl->as.fn.caps[i]);
+                    }
                     fprintf(o, ";\n");
                 }
                 indent(o, ind);
@@ -1160,9 +1234,9 @@ static void emit_ir_place(FILE *o, const IrPlace *p) {
             fprintf(o, "%s", lv(p->local));
             break;
         case IR_PL_FIELD:
-            if (CF && CF->clos_id && p->base && p->base->kind == IR_PL_LOCAL &&
-                p->base->local == 0) {
-                fprintf(o, "((struct yuga_env_%d *)%s)->%s", CF->clos_id, lv(0),
+            if (CF && CF->clos_id && CF->env_local >= 0 && p->base &&
+                p->base->kind == IR_PL_LOCAL && p->base->local == CF->env_local) {
+                fprintf(o, "((struct yuga_env_%d *)%s)->%s", CF->clos_id, lv(CF->env_local),
                         p->field ? p->field : "?");
             } else if (is_ptrish_ty(p->base ? p->base->ty : NULL)) {
                 fprintf(o, "(");
@@ -1327,6 +1401,51 @@ static void emit_drop_place(FILE *o, const char *place, Type *t, int ind) {
     }
 }
 
+/* A callee drops its params at exit, yet call arguments share storage with
+ * the caller (assignment/capture retain; calls do not). Without a bump here,
+ * the first call with a vec argument frees the caller's buffer out from under
+ * it, and loops over the same data crash. Take one rc per nested vec the
+ * callee will drop; the callee's param drops then release exactly these. */
+static void emit_nested_keeps(FILE *o, const char *place, Type *t, int ind) {
+    if (!t || !type_needs_drop(t)) return;
+    if (t->kind == TY_VEC) {
+        indent(o, ind);
+        fprintf(o, "yuga_vec_retain(&%s);\n", place);
+        if (t->elem && type_needs_drop(t->elem)) {
+            char cn[256], ebuf[256];
+            format_ctype(cn, sizeof cn, t->elem);
+            indent(o, ind);
+            fprintf(o, "{ int64_t _di; for (_di = 0; _di < %s.len; _di++) {\n", place);
+            snprintf(ebuf, sizeof ebuf, "((%s *)%s.ptr)[_di]", cn, place);
+            emit_nested_keeps(o, ebuf, t->elem, ind + 1);
+            indent(o, ind);
+            fprintf(o, "} }\n");
+        }
+        return;
+    }
+    if (t->kind == TY_ARRAY) {
+        if (t->elem && type_needs_drop(t->elem)) {
+            indent(o, ind);
+            fprintf(o, "{ int64_t _ai; for (_ai = 0; _ai < %lld; _ai++) {\n",
+                    (long long)t->array_len);
+            char ebuf[256];
+            snprintf(ebuf, sizeof ebuf, "%s[_ai]", place);
+            emit_nested_keeps(o, ebuf, t->elem, ind + 1);
+            indent(o, ind);
+            fprintf(o, "} }\n");
+        }
+        return;
+    }
+    if (t->kind == TY_STRUCT) {
+        for (size_t i = 0; i < t->field_count; i++) {
+            if (!type_needs_drop(t->field_types[i])) continue;
+            char buf[256];
+            snprintf(buf, sizeof buf, "%s.%s", place, t->field_names[i]);
+            emit_nested_keeps(o, buf, t->field_types[i], ind);
+        }
+    }
+}
+
 static void emit_array_copy(FILE *o, int dst, int src, Type *t) {
     int64_t n = t && t->kind == TY_ARRAY ? t->array_len : 0;
     char dbuf[64], sbuf[64];
@@ -1379,6 +1498,14 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
                 else if (in->binop == TOK_SLASH_EQ) op = "/=";
                 emit_ir_place(o, in->place);
                 fprintf(o, " %s %s;\n", op, lv(in->a));
+            } else if (in->ty && in->ty->kind == TY_VEC && type_is_copy(in->ty)) {
+                fprintf(o, "{\n        yuga_vec _repl = ");
+                emit_ir_place(o, in->place);
+                fprintf(o, ";\n        ");
+                emit_ir_place(o, in->place);
+                fprintf(o, " = yuga_vec_retain(&%s);\n", lv(in->a));
+                emit_drop_place(o, "_repl", in->ty, 1);
+                fprintf(o, "    }\n");
             } else if (in->ty && type_needs_drop(in->ty) && in->ty->kind != TY_ARRAY) {
                 char cn[256];
                 format_ctype(cn, sizeof cn, in->ty);
@@ -1408,9 +1535,15 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
                 emit_ctype(o, ty);
                 fprintf(o, ")yuga_move_ptr((void **)&%s);\n", lv(in->a));
             } else if (ty && ty->kind == TY_PROC) {
-                fprintf(o, "%s = yuga_fn_move(&%s);\n", lv(in->dst), lv(in->a));
+                if (type_is_copy(ty))
+                    fprintf(o, "%s = %s;\n", lv(in->dst), lv(in->a));
+                else
+                    fprintf(o, "%s = yuga_fn_move(&%s);\n", lv(in->dst), lv(in->a));
             } else if (ty && ty->kind == TY_VEC) {
-                fprintf(o, "%s = yuga_vec_move(&%s);\n", lv(in->dst), lv(in->a));
+                if (type_is_copy(ty))
+                    fprintf(o, "%s = yuga_vec_retain(&%s);\n", lv(in->dst), lv(in->a));
+                else
+                    fprintf(o, "%s = yuga_vec_move(&%s);\n", lv(in->dst), lv(in->a));
             } else if (ty && ty->kind == TY_ARRAY) {
                 fprintf(o, "\n");
                 emit_array_copy(o, in->dst, in->a, ty);
@@ -1459,22 +1592,21 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
                 fprintf(o, "yuga_arena_ensure();\n");
                 indent(o, 1);
                 if (vt && vt->kind == TY_INT) {
-                    fprintf(o, "yuga_vec_push(&yuga_arena_sigs, &%s, sizeof(int64_t), ",
+                    /* Mirror slot + cell, reusing freed ids when possible. */
+                    fprintf(o, "%s = yuga_zeus_sig_alloc_int(%s);\n", lv(in->dst),
                             lv(in->args[0]));
-                    emit_ir_loc(o, in->loc);
-                    fprintf(o, ");\n");
                 } else {
-                    fprintf(o, "{ int64_t _szero = 0; yuga_vec_push(&yuga_arena_sigs, &_szero, "
-                               "sizeof(int64_t), ");
-                    emit_ir_loc(o, in->loc);
-                    fprintf(o, "); }\n");
+                    fprintf(o, "%s = yuga_zeus_sig_alloc_zero();\n", lv(in->dst));
                 }
                 indent(o, 1);
-                fprintf(o, "%s = yuga_arena_sigs.len - 1;\n", lv(in->dst));
-                indent(o, 1);
-                fprintf(o, "yuga_zeus_sig_bind(%s, &%s, sizeof(", lv(in->dst), lv(in->args[0]));
-                emit_ctype(o, vt);
-                fprintf(o, "));\n");
+                if (type_is_copy_vec(vt)) {
+                    fprintf(o, "{ yuga_vec _sigv = yuga_vec_retain(&%s); yuga_zeus_sig_bind(%s, &_sigv, sizeof(_sigv)); }\n",
+                            lv(in->args[0]), lv(in->dst));
+                } else {
+                    fprintf(o, "yuga_zeus_sig_bind(%s, &%s, sizeof(", lv(in->dst), lv(in->args[0]));
+                    emit_ctype(o, vt);
+                    fprintf(o, "));\n");
+                }
                 break;
             }
             if (in->op == IR_CALL && in->callee && strcmp(in->callee, "yuga_sig_load") == 0 &&
@@ -1482,6 +1614,10 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
                 fprintf(o, "yuga_zeus_sig_load(%s, &%s, sizeof(", lv(in->args[0]), lv(in->dst));
                 emit_ctype(o, in->ty);
                 fprintf(o, "));\n");
+                if (type_is_copy_vec(in->ty)) {
+                    indent(o, 1);
+                    fprintf(o, "%s = yuga_vec_retain(&%s);\n", lv(in->dst), lv(in->dst));
+                }
                 break;
             }
             if (in->op == IR_CALL && in->callee && strcmp(in->callee, "yuga_sig_store") == 0 &&
@@ -1492,6 +1628,19 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
                 if (vt && vt->kind == TY_INT) {
                     fprintf(o, "yuga_arena_store_sig(%s, %s);\n", lv(in->args[0]),
                             lv(in->args[1]));
+                } else if (type_is_copy_vec(vt)) {
+                    fprintf(o, "if (yuga_zeus_sig_changed(%s, &%s, sizeof(%s))) {\n",
+                            lv(in->args[0]), lv(in->args[1]), lv(in->args[1]));
+                    indent(o, 2);
+                    fprintf(o, "yuga_vec _old; yuga_zeus_sig_load(%s, &_old, sizeof(_old)); _old = yuga_vec_retain(&_old);\n",
+                            lv(in->args[0]));
+                    indent(o, 2);
+                    fprintf(o, "yuga_vec _new = yuga_vec_retain(&%s); yuga_zeus_sig_bind(%s, &_new, sizeof(_new));\n",
+                            lv(in->args[1]), lv(in->args[0]));
+                    indent(o, 2);
+                    fprintf(o, "yuga_vec_drop(&_old); yuga_track_notify(%s);\n", lv(in->args[0]));
+                    indent(o, 1);
+                    fprintf(o, "}\n");
                 } else {
                     fprintf(o, "if (yuga_zeus_sig_changed(%s, &%s, sizeof(", lv(in->args[0]),
                             lv(in->args[1]));
@@ -1530,6 +1679,46 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
                 fprintf(o, ");\n");
                 break;
             }
+            /* Vec/struct call args share storage with the caller, but the
+               callee drops its params on exit. Keep the shared storage alive
+               for the call so reuses (loops, repeated calls) stay intact. */
+            int nkeep = 0;
+            for (int k = 0; k < in->nargs; k++) {
+                Type *at = (in->args[k] >= 0 && in->args[k] < CF->nlocals)
+                               ? CF->locals[in->args[k]].ty
+                               : NULL;
+                if (in->op == IR_CALL_VAL && at == NULL) {
+                    Type *ft = (in->a >= 0 && in->a < CF->nlocals)
+                                   ? CF->locals[in->a].ty
+                                   : NULL;
+                    if (ft && ft->kind == TY_PROC && (size_t)k < ft->param_count)
+                        at = ft->params[k];
+                }
+                if (at && type_needs_drop(at) && at->kind != TY_BOX &&
+                    at->kind != TY_PROC) {
+                    nkeep++;
+                }
+            }
+            if (nkeep > 0) {
+                indent(o, 1);
+                fprintf(o, "{\n");
+                for (int k = 0; k < in->nargs; k++) {
+                    Type *at = (in->args[k] >= 0 && in->args[k] < CF->nlocals)
+                                   ? CF->locals[in->args[k]].ty
+                                   : NULL;
+                    if (in->op == IR_CALL_VAL && at == NULL) {
+                        Type *ft = (in->a >= 0 && in->a < CF->nlocals)
+                                       ? CF->locals[in->a].ty
+                                       : NULL;
+                        if (ft && ft->kind == TY_PROC && (size_t)k < ft->param_count)
+                            at = ft->params[k];
+                    }
+                    if (at && type_needs_drop(at) && at->kind != TY_BOX &&
+                        at->kind != TY_PROC)
+                        emit_nested_keeps(o, lv(in->args[k]), at, 2);
+                }
+                indent(o, 1);
+            }
             if (in->dst >= 0) fprintf(o, "%s = ", lv(in->dst));
             if (in->op == IR_CALL) {
                 fprintf(o, "%s(", in->callee ? in->callee : "unknown");
@@ -1554,6 +1743,8 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
                 for (int k = 0; k < in->nargs; k++) fprintf(o, ", %s", lv(in->args[k]));
                 fprintf(o, ");\n");
             }
+            if (nkeep > 0)
+                fprintf(o, "    }\n");
             break;
         }
         case IR_ALLOC: {
@@ -1654,8 +1845,12 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
                 fprintf(o, ");\n");
                 for (int k = 0; k < in->nargs; k++) {
                     const char *fnm = (cf && k < cf->ncaps && cf->caps[k]) ? cf->caps[k] : "f";
+                    Type *ct = (cf && k < cf->ncaps && cf->cap_types) ? cf->cap_types[k] : NULL;
                     indent(o, 2);
-                    fprintf(o, "_ce->%s = %s;\n", fnm, lv(in->args[k]));
+                    if (type_is_copy_vec(ct))
+                        fprintf(o, "_ce->%s = yuga_vec_retain(&%s);\n", fnm, lv(in->args[k]));
+                    else
+                        fprintf(o, "_ce->%s = %s;\n", fnm, lv(in->args[k]));
                 }
                 indent(o, 2);
                 fprintf(o, "%s = ((yuga_fn){(void *)%s, _ce, sizeof(struct yuga_env_%d)});\n",
@@ -1753,6 +1948,9 @@ static void emit_ir_fn_body(FILE *o, const IrFn *fn, int is_main) {
         if (fn->locals[i].is_param || fn->locals[i].is_global) continue;
         indent(o, 1);
         emit_var_decl_type(o, fn->locals[i].ty, lv(i));
+        /* SSA temps on un-taken branches are still dropped at return. */
+        if (type_needs_drop(fn->locals[i].ty))
+            fprintf(o, " = {0}");
         fprintf(o, ";\n");
     }
     for (int b = 0; b < fn->nblocks; b++) {
@@ -1812,7 +2010,12 @@ static int mods_use(YugaModule *mods, int nmods, const char *name) {
 static void collect_clos(AstNode *n) {
     if (!n) return;
     if (n->kind == AST_CLOSURE) {
-        if (nclos_nodes < 256) clos_nodes[nclos_nodes++] = n;
+        if (nclos_nodes >= clos_cap) {
+            clos_cap = clos_cap ? clos_cap * 2 : 256;
+            clos_nodes = (AstNode **)realloc(clos_nodes, (size_t)clos_cap * sizeof(AstNode *));
+            if (!clos_nodes) yuga_fatal("out of memory");
+        }
+        clos_nodes[nclos_nodes++] = n;
         collect_clos(n->as.fn.body);
         return;
     }

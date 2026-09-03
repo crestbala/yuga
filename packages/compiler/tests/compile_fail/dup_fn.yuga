@@ -1,0 +1,11 @@
+// A name defined twice in one module is an error at the second definition.
+fn helper() -> int {
+    return 1
+}
+
+fn helper() -> int {
+    return 2
+}
+
+fn main() {
+}

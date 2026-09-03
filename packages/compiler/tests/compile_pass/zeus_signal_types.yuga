@@ -1,9 +1,9 @@
 import "std:fmt"
+import "std:sys"
 import "std:zeus"
 
 fn fail() {
-    let z = 0
-    fmt.println(1 / z)
+    sys.exit(1)
 }
 
 fn expect(got: int, want: int) {

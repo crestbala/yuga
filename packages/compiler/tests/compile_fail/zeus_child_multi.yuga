@@ -1,5 +1,6 @@
 import "std:zeus"
 
 fn main() {
-    zeus.col().child(zeus.text("a"), zeus.text("b"))
+    let n = zeus.Box()
+    n.child(zeus.Text("a"), zeus.Text("b"))
 }

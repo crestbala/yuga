@@ -1,0 +1,58 @@
+// grow / shrink / show are declarative props: `grow = 1` absorbs leftover
+// main-axis space, `show = false` (or a signal-reading thunk) hides a node
+// from layout without rebuilding, and `If`-style signal shows still win.
+
+import "std:fmt"
+import "std:sys"
+import "std:zeus"
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn main() {
+    let flag = zeus.signal(0)
+    zeus.snapshot(300, 160, fn() -> Node {
+        zeus.Box(align_direction = DIRECTION.Column, spacing = 8) {
+            zeus.Box(align_direction = DIRECTION.Row, spacing = 4, a11y_label = "r1") {
+                zeus.Box(width = 60, height = 10, background = "#ff0000")
+                zeus.Box(grow = 1, height = 10, background = "#00ff00",
+                         a11y_label = "flexy")
+                zeus.Box(width = 40, height = 10, background = "#0000ff",
+                         a11y_label = "fixr")
+            }
+            // Static hide: out of flow, so the sibling below does not move.
+            zeus.Box(show = false, height = 30, a11y_label = "gone")
+            zeus.Box(height = 10, a11y_label = "after")
+            // Reactive hide follows the signal through the prop thunk.
+            zeus.Box(show = fn() -> bool { flag.get() != 0 }, height = 10,
+                     a11y_label = "tog")
+        }
+    })
+    let flexy = zeus.engine_find_text("flexy")
+    let fixr = zeus.engine_find_text("fixr")
+    let r1 = zeus.engine_find_text("r1")
+    let after = zeus.engine_find_text("after")
+    expect(flexy > 0 && fixr > 0 && r1 > 0 && after > 0, "nodes found")
+    expect(zeus.engine_find_text("gone") == 0, "static show=false hides")
+    expect(zeus.node_x(flexy) + zeus.node_w(flexy) == zeus.node_x(fixr) - 4,
+           "grow child absorbs leftover space")
+    expect(zeus.node_y(after) == zeus.node_y(r1) + zeus.node_h(r1) + 8,
+           "hidden box leaves no gap")
+    // Reactive: hidden at 0, shown after set, hidden again.
+    expect(zeus.engine_find_text("tog") == 0, "thunk hide at 0")
+    flag.set(1)
+    zeus.engine_layout(300, 160)
+    let tog = zeus.engine_find_text("tog")
+    expect(tog > 0, "thunk show after set")
+    expect(zeus.node_visible(tog) == 1, "node visible after set")
+    flag.set(0)
+    zeus.engine_layout(300, 160)
+    expect(zeus.engine_find_text("tog") == 0, "thunk hide after reset")
+    expect(zeus.node_visible(tog) == 0, "node hidden after reset")
+    fmt.println("grow show ok")
+}

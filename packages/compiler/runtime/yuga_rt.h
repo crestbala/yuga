@@ -12,6 +12,9 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/uio.h>
+#ifndef __wasm32__
+#include <time.h>
+#endif
 
 typedef struct {
     const char *ptr;
@@ -260,6 +263,21 @@ static inline yuga_vec yuga_vec_new(void) {
     return v;
 }
 
+static inline int64_t *yuga_vec_rc(void *ptr) {
+    return ptr ? ((int64_t *)ptr - 1) : NULL;
+}
+
+static inline yuga_vec yuga_vec_retain(const yuga_vec *src) {
+    yuga_vec v = yuga_vec_new();
+    if (!src) return v;
+    v = *src;
+    if (v.ptr) {
+        int64_t *rc = yuga_vec_rc(v.ptr);
+        (*rc)++;
+    }
+    return v;
+}
+
 static inline yuga_vec yuga_vec_move(yuga_vec *src) {
     yuga_vec v;
     v.ptr = NULL;
@@ -274,16 +292,45 @@ static inline yuga_vec yuga_vec_move(yuga_vec *src) {
     return v;
 }
 
+static inline void yuga_vec_unique(yuga_vec *v, size_t esz, const char *f, int l) {
+    int64_t *rc;
+    void *raw;
+    size_t bytes;
+    if (!v || !v->ptr) return;
+    rc = yuga_vec_rc(v->ptr);
+    if (*rc <= 1) return;
+    bytes = sizeof(int64_t) + (esz ? (size_t)v->cap * esz : 1);
+    raw = malloc(bytes);
+    if (!raw) yuga_panic(f, l, "out of memory");
+    *(int64_t *)raw = 1;
+    if (v->len > 0 && esz)
+        memcpy((char *)raw + sizeof(int64_t), v->ptr, (size_t)v->len * esz);
+    (*rc)--;
+    v->ptr = (char *)raw + sizeof(int64_t);
+}
+
 static inline void yuga_vec_reserve(yuga_vec *v, int64_t n, size_t esz, const char *f, int l) {
+    int64_t cap;
+    void *raw;
     if (!v || n <= v->cap) return;
-    int64_t cap = v->cap ? v->cap : 8;
+    yuga_vec_unique(v, esz, f, l);
+    cap = v->cap ? v->cap : 8;
     while (cap < n) {
         if (cap > INT64_MAX / 2) yuga_panic(f, l, "out of memory");
         cap *= 2;
     }
-    void *p = realloc(v->ptr, (esz ? (size_t)cap * esz : 1));
-    if (!p) yuga_panic(f, l, "out of memory");
-    v->ptr = p;
+    if (!v->ptr) {
+        raw = malloc(sizeof(int64_t) + (esz ? (size_t)cap * esz : 1));
+        if (!raw) yuga_panic(f, l, "out of memory");
+        *(int64_t *)raw = 1;
+        v->ptr = (char *)raw + sizeof(int64_t);
+        v->cap = cap;
+        return;
+    }
+    raw = realloc((char *)v->ptr - sizeof(int64_t),
+                  sizeof(int64_t) + (esz ? (size_t)cap * esz : 1));
+    if (!raw) yuga_panic(f, l, "out of memory");
+    v->ptr = (char *)raw + sizeof(int64_t);
     v->cap = cap;
 }
 
@@ -296,13 +343,27 @@ static inline void yuga_vec_push(yuga_vec *v, const void *elem, size_t esz, cons
 
 static inline void yuga_vec_pop(yuga_vec *v, void *out, size_t esz, const char *f, int l) {
     if (!v || v->len <= 0) yuga_panic(f, l, "pop from empty array");
+    yuga_vec_unique(v, esz, f, l);
     v->len--;
     if (esz && out) memcpy(out, (char *)v->ptr + (size_t)v->len * esz, esz);
 }
 
 static inline void yuga_vec_drop(yuga_vec *v) {
+    int64_t *rc;
     if (!v) return;
-    free(v->ptr);
+    if (!v->ptr) {
+        v->len = 0;
+        v->cap = 0;
+        return;
+    }
+    rc = yuga_vec_rc(v->ptr);
+    if (--(*rc) > 0) {
+        v->ptr = NULL;
+        v->len = 0;
+        v->cap = 0;
+        return;
+    }
+    free(rc);
     v->ptr = NULL;
     v->len = 0;
     v->cap = 0;
@@ -328,6 +389,46 @@ static inline void yuga_fn_drop(yuga_fn *f) {
     f->env = NULL;
     f->fn = NULL;
 }
+
+/* `{{ }}` interpolation. Each piece is converted to a yuga_str and the
+   pieces are concatenated left to right. The result is heap-allocated with a
+   trailing NUL and, like yuga_string_from_bytes, is never freed — the
+   language has no string ownership story to hook into yet. */
+static inline yuga_str yuga_str_concat(yuga_str a, yuga_str b) {
+    int64_t an = a.len > 0 ? a.len : 0;
+    int64_t bn = b.len > 0 ? b.len : 0;
+    if (!an) { if (bn) return b; return (yuga_str){ .ptr = "", .len = 0 }; }
+    if (!bn) return a;
+    char *p = (char *)yuga_new((size_t)(an + bn) + 1, "str_concat", 0);
+    if (a.ptr) memcpy(p, a.ptr, (size_t)an);
+    if (b.ptr) memcpy(p + an, b.ptr, (size_t)bn);
+    p[an + bn] = 0;
+    return (yuga_str){ .ptr = p, .len = an + bn };
+}
+
+static inline yuga_str yuga_str_of_int(int64_t v) {
+    char buf[24];
+    yuga_str s = yuga_fmt_itoa(buf, v);
+    char *p = (char *)yuga_new((size_t)s.len + 1, "str_of_int", 0);
+    memcpy(p, s.ptr, (size_t)s.len);
+    p[s.len] = 0;
+    return (yuga_str){ .ptr = p, .len = s.len };
+}
+
+static inline yuga_str yuga_str_of_float(double v) {
+    char buf[64];
+    yuga_str s = yuga_fmt_ftoa(buf, v);
+    char *p = (char *)yuga_new((size_t)s.len + 1, "str_of_float", 0);
+    memcpy(p, s.ptr, (size_t)s.len);
+    p[s.len] = 0;
+    return (yuga_str){ .ptr = p, .len = s.len };
+}
+
+static inline yuga_str yuga_str_of_bool(bool v) {
+    return v ? (yuga_str){ .ptr = "true", .len = 4 } : (yuga_str){ .ptr = "false", .len = 5 };
+}
+
+static inline yuga_str yuga_str_of_string(yuga_str s) { return s; }
 
 /* Takes ownership of `b` (IR_CALL steals []int). Trailing NUL for C hosts. */
 static inline yuga_str yuga_string_from_bytes(yuga_vec b) {
@@ -494,6 +595,33 @@ static inline yuga_str yuga_sys_read_file(yuga_str path) {
     fclose(f);
     p[n] = 0;
     return (yuga_str){p, (int64_t)n};
+}
+#endif
+
+/* --- async: std/async.yuga (clock + sleep). All timers/queues live in Yuga; ---
+   --- the C seam is only a monotonic clock and a blocking sleep.        --- */
+#ifdef __wasm32__
+__attribute__((import_module("zeus"), import_name("now_ms")))
+int64_t zeus_js_now_ms(void);
+static inline int64_t yuga_async_now_ms(void) { return zeus_js_now_ms(); }
+static inline void yuga_async_sleep(int64_t ms) {
+    int64_t t0 = yuga_async_now_ms();
+    while (yuga_async_now_ms() - t0 < ms) {
+    }
+}
+#else
+static inline int64_t yuga_async_now_ms(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+    return (int64_t)ts.tv_sec * 1000 + (int64_t)(ts.tv_nsec / 1000000);
+}
+static inline void yuga_async_sleep(int64_t ms) {
+    struct timespec req;
+    if (ms <= 0) return;
+    req.tv_sec = (time_t)(ms / 1000);
+    req.tv_nsec = (long)(ms % 1000) * 1000000L;
+    while (nanosleep(&req, &req) != 0 && errno == EINTR) {
+    }
 }
 #endif
 

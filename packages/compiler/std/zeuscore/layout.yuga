@@ -415,15 +415,19 @@ fn layout_flex_row(id: int) {
         let c = arena.nodes[id].kids[i]
         arena.szbuf[i] = 0
         if arena.skip_flow(c) == 0 {
-            let avail = iw - arena.nodes[c].m_l - arena.nodes[c].m_r
-            arena.szbuf[i] = geometry.fit_avail(arena.sized_w(c, iw, 1), avail)
+            arena.szbuf[i] = row_child_w(id, c, iw)
             fixed = fixed + arena.szbuf[i] + arena.nodes[c].m_l + arena.nodes[c].m_r
         }
     }
     let mut extra = iw - fixed
     if extra < 0 {
-        layout_flex_row_wrap(id)
-        return
+        // Rows shrink before they wrap: flexible children (grow = 1) narrow
+        // to keep the row on one line. What they cannot absorb still wraps.
+        extra = row_flex_absorb(id, nk, extra)
+        if extra < 0 {
+            layout_flex_row_wrap(id)
+            return
+        }
     }
     extra = flex_grow_shrink(id, extra, 1)
     for i in 0..nk {
@@ -488,22 +492,142 @@ fn is_flex_row(id: int) -> int {
     return 0
 }
 
+/// Width a flow child wants on the row's main axis, measured the same way in
+/// every pass (layout pre-pass, wrap measurement).
+fn row_child_w(id: int, c: int, iw: int) -> int {
+    let avail = iw - arena.nodes[c].m_l - arena.nodes[c].m_r
+    return geometry.fit_avail(arena.sized_w(c, iw, 1), avail)
+}
+
+/// A row child may give up main-axis width to keep the row on one line:
+/// flexible children (no explicit width) that are allowed to shrink. These
+/// are exactly the children `grow = 1` marks as elastic (with `shrink = 1`
+/// where the widget default of 0 would refuse to narrow).
+fn row_can_absorb(c: int) -> int {
+    if arena.axis_frozen(c, 1) != 0 {
+        return 0
+    }
+    if arena.nodes[c].grow <= 0 {
+        return 0
+    }
+    if arena.nodes[c].shrink <= 0 {
+        return 0
+    }
+    return 1
+}
+
+/// Absorb a main-axis deficit (`extra < 0`) by narrowing flexible children,
+/// never below `min_w`. Returns the leftover deficit (still negative) when
+/// the children cannot take it all — the caller wraps those instead.
+fn row_flex_absorb(id: int, nk: int, extra: int) -> int {
+    let need = -extra
+    let mut cap = 0
+    for i in 0..nk {
+        let c = arena.nodes[id].kids[i]
+        if arena.skip_flow(c) == 0 {
+            if row_can_absorb(c) != 0 {
+                let mut floor = 0
+                if arena.nodes[c].min_w >= 0 {
+                    floor = arena.nodes[c].min_w
+                }
+                let room = arena.szbuf[i] - floor
+                if room > 0 {
+                    cap = cap + room
+                }
+            }
+        }
+    }
+    if cap <= 0 {
+        return extra
+    }
+    if cap < need {
+        return extra
+    }
+    let mut left = need
+    let mut last = -1
+    for i in 0..nk {
+        let c = arena.nodes[id].kids[i]
+        if arena.skip_flow(c) == 0 {
+            if row_can_absorb(c) != 0 {
+                let mut floor = 0
+                if arena.nodes[c].min_w >= 0 {
+                    floor = arena.nodes[c].min_w
+                }
+                let room = arena.szbuf[i] - floor
+                if room > 0 {
+                    let cut = need * room / cap
+                    arena.szbuf[i] = arena.szbuf[i] - cut
+                    left = left - cut
+                    last = i
+                }
+            }
+        }
+    }
+    if last >= 0 {
+        arena.szbuf[last] = arena.szbuf[last] - left
+    }
+    return 0
+}
+
 /// Height a row needs when children wrap at `outer_w` (includes padding).
 fn wrap_row_h(id: int, outer_w: int) -> int {
     let nk = arena.nodes[id].kids.len
     let iw = geometry.max2(outer_w - arena.box_pad_x(id), 0)
     let gx = arena.gap_x(id)
     let gy = arena.gap_y(id)
-    let mut x = 0
+    // If the flexible children can absorb the overflow, the row stays on one
+    // line — mirror layout_flex_row's shrink decision so column parents give
+    // the row exactly the height it will occupy.
+    let mut accw = 0
+    let mut nflow = 0
+    let mut cap = 0
     let mut line_h = 0
+    for i in 0..nk {
+        let c = arena.nodes[id].kids[i]
+        if arena.skip_flow(c) == 0 {
+            let cw = row_child_w(id, c, iw)
+            let span = cw + arena.nodes[c].m_l + arena.nodes[c].m_r
+            if nflow > 0 {
+                accw = accw + gx
+            }
+            accw = accw + span
+            nflow = nflow + 1
+            let ch = arena.sized_h(c, line_h, cw)
+            let mh = ch + arena.nodes[c].m_t + arena.nodes[c].m_b
+            if mh > line_h {
+                line_h = mh
+            }
+            if row_can_absorb(c) != 0 {
+                let mut floor = 0
+                if arena.nodes[c].min_w >= 0 {
+                    floor = arena.nodes[c].min_w
+                }
+                let room = cw - floor
+                if room > 0 {
+                    cap = cap + room
+                }
+            }
+        }
+    }
+    if accw > iw {
+        if cap >= accw - iw {
+            let mut total = line_h + arena.box_pad_y(id)
+            if arena.nodes[id].eh >= 0 {
+                if total < arena.nodes[id].eh {
+                    total = arena.nodes[id].eh
+                }
+            }
+            return arena.clamp_h(id, total)
+        }
+    }
+    let mut x = 0
     let mut total = 0
     let mut first = 1
     let mut nline = 0
     for i in 0..nk {
         let c = arena.nodes[id].kids[i]
         if arena.skip_flow(c) == 0 {
-            let avail = iw - arena.nodes[c].m_l - arena.nodes[c].m_r
-            let cw = geometry.fit_avail(arena.sized_w(c, iw, 1), avail)
+            let cw = row_child_w(id, c, iw)
             let ch = arena.sized_h(c, line_h, cw)
             let span = cw + arena.nodes[c].m_l + arena.nodes[c].m_r
             if first == 0 {
@@ -881,6 +1005,10 @@ fn layout_overlays(id: int) {
         if arena.want_show(c) != 0 {
             if arena.nodes[c].kind == 9 {
                 layout_node(c, 0, 0, arena.win_w, arena.win_h)
+                arena.nodes[c].x = 0
+                arena.nodes[c].y = 0
+                arena.nodes[c].w = arena.win_w
+                arena.nodes[c].h = arena.win_h
             }
             layout_overlays(c)
         }

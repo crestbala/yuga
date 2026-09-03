@@ -7,6 +7,23 @@
 /// Connect to `host`:`port`. Returns a fd, or `-1`.
 fn tcp_connect(host: string, port: int) -> int {}
 
+/// Non-blocking connect for the async transport: returns a non-blocking fd
+/// that is connected or connecting in the background, or `-1` on immediate
+/// failure. Poll it writable, then `tcp_so_error` says whether it connected.
+fn tcp_nb_connect(host: string, port: int) -> int {}
+
+/// Poll one fd. `want`: 1 = readable, 2 = writable. `ms`: timeout, `0` =
+/// immediate. Returns 1 when ready (EOF and failed connects included), 0 on
+/// timeout, `-1` on error.
+fn tcp_poll(fd: int, want: int, ms: int) -> int {}
+
+/// One non-blocking send of `data[off..]`: bytes written (> 0), `0` when the
+/// socket would block (poll writable, then resume), `-1` on error.
+fn tcp_send(fd: int, data: string, off: int) -> int {}
+
+/// Socket error after a non-blocking connect polled writable: 0 = connected.
+fn tcp_so_error(fd: int) -> int {}
+
 /// Write `data`. Returns bytes written, or `-1`.
 fn tcp_write(fd: int, data: string) -> int {}
 
@@ -31,3 +48,15 @@ fn tcp_peek(fd: int, max: int) -> string {}
 
 /// Same-origin gRPC-Web POST (wasm). Native returns empty.
 fn fetch_rpc(path: string, body: string) -> string {}
+
+/// Start an async gRPC-Web POST (wasm; native returns `-1`): the XHR runs in
+/// JS and the response lands in the next frame's `tick`. At most four in
+/// flight; `-1` when busy or native. Poll `fetch_ready`, then `fetch_take`.
+fn fetch_issue(path: string, body: string) -> int {}
+
+/// Number of completed async fetches waiting for `fetch_take` (wasm; native 0).
+fn fetch_ready() -> int {}
+
+/// Take one completed async fetch response (ownership moves). Empty on error
+/// or when nothing is ready.
+fn fetch_take() -> string {}

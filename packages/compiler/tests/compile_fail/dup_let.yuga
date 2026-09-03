@@ -1,0 +1,5 @@
+// Two `let x` in one scope collide; so does a `let` shadowing a parameter.
+fn main() {
+    let x = 1
+    let x = 2
+}

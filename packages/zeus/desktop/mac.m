@@ -92,6 +92,21 @@ static void mac_text(void *ctx, int64_t x, int64_t y, const char *s,
     [str drawAtPoint:NSMakePoint((CGFloat)x, (CGFloat)y) withAttributes:zeus_attrs(rgb, font)];
 }
 
+/* Rotated text around the top-left corner of the line box. AppKit angles are
+   CCW in its y-up frame, so negate: engine degrees are clockwise on screen. */
+static void mac_text_rot(void *ctx, int64_t x, int64_t y, const char *s,
+                         int64_t rgb, int64_t font, int64_t deg) {
+    (void)ctx;
+    NSString *str = s ? [NSString stringWithUTF8String:s] : @"";
+    [NSGraphicsContext saveGraphicsState];
+    NSAffineTransform *t = [NSAffineTransform transform];
+    [t translateXBy:(CGFloat)x yBy:(CGFloat)y];
+    [t rotateByDegrees:-(CGFloat)deg];
+    [t concat];
+    [str drawAtPoint:NSZeroPoint withAttributes:zeus_attrs(rgb, font)];
+    [NSGraphicsContext restoreGraphicsState];
+}
+
 static void mac_save(void *ctx) {
     (void)ctx;
     [NSGraphicsContext saveGraphicsState];
@@ -577,6 +592,31 @@ static void mac_redraw(void) {
     [g_view setNeedsDisplay:YES];
 }
 
+/* CSS cursor name (from `cursor = "pointer"` props) → AppKit cursor.
+ * Names are the CSS values; shapes AppKit cannot draw fall back to the
+ * arrow. Web hosts can set `style.cursor` directly with the same string. */
+static NSCursor *zeus_cursor_for(const char *name) {
+    if (!name || !*name || strcmp(name, "default") == 0)
+        return [NSCursor arrowCursor];
+    if (strcmp(name, "pointer") == 0) return [NSCursor pointingHandCursor];
+    if (strcmp(name, "text") == 0) return [NSCursor IBeamCursor];
+    if (strcmp(name, "crosshair") == 0) return [NSCursor crosshairCursor];
+    if (strcmp(name, "not-allowed") == 0 || strcmp(name, "no-drop") == 0)
+        return [NSCursor operationNotAllowedCursor];
+    if (strcmp(name, "grab") == 0 || strcmp(name, "move") == 0)
+        return [NSCursor openHandCursor];
+    if (strcmp(name, "grabbing") == 0) return [NSCursor closedHandCursor];
+    if (strcmp(name, "col-resize") == 0 || strcmp(name, "e-resize") == 0 ||
+        strcmp(name, "w-resize") == 0 || strcmp(name, "ew-resize") == 0)
+        return [NSCursor resizeLeftRightCursor];
+    if (strcmp(name, "row-resize") == 0 || strcmp(name, "n-resize") == 0 ||
+        strcmp(name, "s-resize") == 0 || strcmp(name, "ns-resize") == 0)
+        return [NSCursor resizeUpDownCursor];
+    /* wait, help, cell, copy, alias, context-menu, progress, vertical-text,
+       zoom-in/out, diagonal resizes, all-scroll: no AppKit shape → arrow. */
+    return [NSCursor arrowCursor];
+}
+
 @interface ZeusView : NSView {
     NSTrackingArea *track;
 }
@@ -621,6 +661,7 @@ static void mac_redraw(void) {
         d.fill = mac_fill;
         d.fill_a = mac_fill_a;
         d.text = mac_text;
+        d.text_rot = mac_text_rot;
         d.save = mac_save;
         d.clip = mac_clip;
         d.restore = mac_restore;
@@ -632,6 +673,19 @@ static void mac_redraw(void) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [v setNeedsDisplay:YES];
             });
+        } else if (g_view) {
+            /* Idle: sleep until the next async deadline instead of drawing
+               at 60 fps. -1 = a spawn is waiting, draw a frame soon. */
+            int64_t due = yuga_zeus_engine_next_ms();
+            if (due) {
+                NSView *v = g_view;
+                double delay = (due < 0) ? 0.0 : ((double)due / 1000.0);
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                             (int64_t)(delay * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{
+                    [v setNeedsDisplay:YES];
+                });
+            }
         }
     }
 }
@@ -639,17 +693,14 @@ static void mac_redraw(void) {
 - (void)mouseMoved:(NSEvent *)event {
     NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
     int dirty = zeus_handle_hover((int64_t)p.x, (int64_t)p.y);
-    if (zeus_over_button())
-        [[NSCursor pointingHandCursor] set];
-    else
-        [[NSCursor arrowCursor] set];
+    [zeus_cursor_for(zeus_cursor()) set];
     if (dirty) [self setNeedsDisplay:YES];
 }
 
 - (void)mouseExited:(NSEvent *)event {
     (void)event;
     if (zeus_handle_hover(-1, -1)) [self setNeedsDisplay:YES];
-    [[NSCursor arrowCursor] set];
+    [zeus_cursor_for(0) set];
 }
 
 - (void)mouseDown:(NSEvent *)event {
@@ -736,6 +787,39 @@ static void mac_redraw(void) {
         [self setNeedsDisplay:YES];
     else
         [super keyDown:event];
+}
+
+- (void)keyUp:(NSEvent *)event {
+    int key = 0;
+    unsigned short code = [event keyCode];
+    if (code == 53) key = 27;
+    else if (code == 51) key = 8;
+    else if (code == 36) key = 13;
+    else if (code == 123) key = 1000;
+    else if (code == 124) key = 1001;
+    else if (code == 126) key = 1002;
+    else if (code == 125) key = 1003;
+    else if (code == 116) key = 1004;
+    else if (code == 121) key = 1005;
+    else {
+        NSString *chars = [event charactersIgnoringModifiers];
+        if ([chars length] > 0) {
+            unichar c = [chars characterAtIndex:0];
+            if (c >= 'A' && c <= 'Z') c = c + 32;
+            if (c >= 32 && c < 127) key = (int)c;
+        }
+    }
+    NSEventModifierFlags f = [event modifierFlags];
+    int mods = 0;
+    if (f & NSEventModifierFlagShift) mods |= ZEUS_MOD_SHIFT;
+    if (f & NSEventModifierFlagControl) mods |= ZEUS_MOD_CTRL;
+    if (f & NSEventModifierFlagOption) mods |= ZEUS_MOD_ALT;
+    if (f & NSEventModifierFlagCommand) mods |= ZEUS_MOD_CMD;
+    if (code == 48) key = ZEUS_K_TAB;
+    if (key && zeus_handle_key_up(key, mods))
+        [self setNeedsDisplay:YES];
+    else
+        [super keyUp:event];
 }
 @end
 

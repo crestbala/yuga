@@ -4,8 +4,8 @@
  * Full document sync, plus incremental contentChanges when a client sends them.
  * didOpen/didChange recompile the editor buffer (never a stale on-disk file)
  * and publish diagnostics (correct file URI, token span). Hover,
- * go-to-definition, and completion (modules, methods, locals) read the last
- * session's typed AST.
+ * go-to-definition, completion (modules, methods, locals, keywords), and
+ * semantic tokens (syntax highlighting) read the last session's typed AST.
  */
 #include "compile.h"
 #include "sema/type.h"
@@ -811,9 +811,32 @@ static void add_mod_members(Completions *c, YugaModule *m, const char *prefix, T
         } else if (!recv && d->kind == AST_VAR_DECL && d->as.var.name) {
             add_comp_d(c, d->as.var.name, d->ty ? type_name(d->ty) : "", 6, prefix, d->doc);
         } else if (!recv && d->kind == AST_STRUCT_DECL && d->as.strct.name) {
-            add_comp_d(c, d->as.strct.name, "struct", 7, prefix, d->doc);
+            add_comp_d(c, d->as.strct.name, "struct", 22, prefix, d->doc);
+        } else if (!recv && d->kind == AST_ENUM_DECL && d->as.enm.name) {
+            add_comp_d(c, d->as.enm.name, "enum", 13, prefix, d->doc);
         }
     }
+}
+
+static AstNode *find_enum_decl(const char *name) {
+    if (!name) return NULL;
+    for (int i = 0; i < Gsess.nmods; i++) {
+        AstNode *p = Gsess.mods[i].ast;
+        if (!p) continue;
+        for (size_t d = 0; d < p->as.program.decl_count; d++) {
+            AstNode *n = p->as.program.decls[d];
+            if (n && n->kind == AST_ENUM_DECL && n->as.enm.name &&
+                strcmp(n->as.enm.name, name) == 0)
+                return n;
+        }
+    }
+    return NULL;
+}
+
+static void add_enum_variants(Completions *c, AstNode *en, const char *prefix) {
+    if (!en || en->kind != AST_ENUM_DECL) return;
+    for (size_t i = 0; i < en->as.enm.count; i++)
+        add_comp(c, en->as.enm.vnames[i], en->as.enm.name, 20, prefix);
 }
 
 static void add_struct_fields(Completions *c, Type *t, const char *prefix) {
@@ -1010,6 +1033,10 @@ static void handle_completion(const char *msg, const char *id) {
             const char *alias = recv->as.ident.name;
             add_mod_members(&c, mod_by_alias(alias), prefix, NULL);
         } else {
+            const char *en_name = NULL;
+            if (recv && recv->kind == AST_IDENT) en_name = recv->as.ident.name;
+            else if (recv && recv->kind == AST_FIELD) en_name = recv->as.access.field;
+            add_enum_variants(&c, find_enum_decl(en_name), prefix);
             Type *ty = recv && recv->ty ? recv->ty : NULL;
             add_struct_fields(&c, ty, prefix);
             if (ty) {
@@ -1039,6 +1066,29 @@ static void handle_completion(const char *msg, const char *id) {
         }
         add_comp(&c, "true", "bool", 21, prefix);
         add_comp(&c, "false", "bool", 21, prefix);
+        add_comp(&c, "fn", "keyword", 14, prefix);
+        add_comp(&c, "async", "keyword", 14, prefix);
+        add_comp(&c, "await", "keyword", 14, prefix);
+        add_comp(&c, "let", "keyword", 14, prefix);
+        add_comp(&c, "const", "keyword", 14, prefix);
+        add_comp(&c, "mut", "keyword", 14, prefix);
+        add_comp(&c, "struct", "keyword", 14, prefix);
+        add_comp(&c, "enum", "keyword", 14, prefix);
+        add_comp(&c, "import", "keyword", 14, prefix);
+        add_comp(&c, "if", "keyword", 14, prefix);
+        add_comp(&c, "else", "keyword", 14, prefix);
+        add_comp(&c, "for", "keyword", 14, prefix);
+        add_comp(&c, "while", "keyword", 14, prefix);
+        add_comp(&c, "in", "keyword", 14, prefix);
+        add_comp(&c, "return", "keyword", 14, prefix);
+        add_comp(&c, "break", "keyword", 14, prefix);
+        add_comp(&c, "continue", "keyword", 14, prefix);
+        add_comp(&c, "match", "keyword", 14, prefix);
+        add_comp(&c, "as", "keyword", 14, prefix);
+        add_comp(&c, "int", "type", 25, prefix);
+        add_comp(&c, "float", "type", 25, prefix);
+        add_comp(&c, "bool", "type", 25, prefix);
+        add_comp(&c, "string", "type", 25, prefix);
     }
     send_completions(id, &c);
     completions_free(&c);
@@ -1112,6 +1162,74 @@ static void handle_definition(const char *msg, const char *id) {
     send_raw(out);
 }
 
+/* --- Open documents ------------------------------------------------------
+   yuga-lsp compiles one document at a time (the session is single-module),
+   but clients keep many buffers open and can re-open one already tracked
+   (a "redundant" didOpen after a client or server restart). Every open
+   buffer is stored here; the doc a request names is compiled lazily, and a
+   repeat didOpen of the current buffer is a no-op when the text is
+   unchanged. */
+typedef struct DocBuf {
+    char *uri;
+    char *path;
+    char *text;
+    struct DocBuf *next;
+} DocBuf;
+
+static DocBuf *Gdocs;
+
+static DocBuf *doc_find(const char *uri) {
+    DocBuf *d;
+    for (d = Gdocs; d; d = d->next)
+        if (strcmp(d->uri, uri) == 0) return d;
+    return NULL;
+}
+
+static void doc_put(const char *uri, const char *path, const char *text) {
+    DocBuf *d = doc_find(uri);
+    if (!d) {
+        d = (DocBuf *)calloc(1, sizeof *d);
+        d->uri = yuga_dup(uri);
+        d->next = Gdocs;
+        Gdocs = d;
+    }
+    free(d->path);
+    d->path = yuga_dup(path ? path : "");
+    free(d->text);
+    d->text = yuga_dup(text ? text : "");
+}
+
+static void doc_drop(const char *uri) {
+    DocBuf **pp = &Gdocs;
+    while (*pp) {
+        DocBuf *d = *pp;
+        if (strcmp(d->uri, uri) == 0) {
+            *pp = d->next;
+            free(d->uri);
+            free(d->path);
+            free(d->text);
+            free(d);
+            return;
+        }
+        pp = &d->next;
+    }
+}
+
+static void doc_free_all(void) {
+    while (Gdocs) doc_drop(Gdocs->uri);
+}
+
+/* Compile the stored buffer for `uri` when it is not already the compiled
+   one — requests (hover, definition, completion, semantic tokens) name a
+   uri, and the session must be showing that doc's program. */
+static void doc_activate(const char *uri) {
+    DocBuf *d;
+    if (!uri || !uri[0]) return;
+    if (Ghave && Guri && strcmp(Guri, uri) == 0) return;
+    d = doc_find(uri);
+    if (d) compile_buffer(d->uri, d->path, d->text);
+}
+
 static void handle_doc(const char *msg, const char *method) {
     const char *td = find_key(msg, "textDocument");
     char *uri = NULL;
@@ -1126,15 +1244,25 @@ static void handle_doc(const char *msg, const char *method) {
             const char *textp = find_key(ch, "text");
             text = parse_json_string(textp);
             /* A `range` key before `text` is a real incremental edit. One that
-               appears after is almost certainly the word "range" inside source. */
-            if (range && textp && range < textp && Gtext) {
+               appears after is almost certainly the word "range" inside source.
+               Apply it to this document's buffer: the compiled one when this
+               doc is active, otherwise its stored open-buffer text. */
+            const char *base = NULL;
+            if (range && textp && range < textp) {
+                if (Guri && strcmp(Guri, uri) == 0) base = Gtext;
+                if (!base) {
+                    DocBuf *k = doc_find(uri);
+                    if (k) base = k->text;
+                }
+            }
+            if (range && textp && range < textp && base) {
                 const char *start = find_key(range, "start");
                 const char *end = find_key(range, "end");
                 int sl = parse_json_int(find_key(start ? start : range, "line"));
                 int sc = parse_json_int(find_key(start ? start : range, "character"));
                 int el = parse_json_int(find_key(end ? end : range, "line"));
                 int ec = parse_json_int(find_key(end ? end : range, "character"));
-                char *next = replace_range(Gtext, sl, sc, el, ec, text ? text : "");
+                char *next = replace_range(base, sl, sc, el, ec, text ? text : "");
                 free(text);
                 text = next;
             }
@@ -1149,6 +1277,7 @@ static void handle_doc(const char *msg, const char *method) {
     }
     char *path = uri_to_path(uri);
     if (strcmp(method, "textDocument/didClose") == 0) {
+        doc_drop(uri);
         if (path) {
             /* clear squiggles for this buffer */
             char *saved_uri = Guri, *saved_path = Gpath;
@@ -1185,21 +1314,431 @@ static void handle_doc(const char *msg, const char *method) {
         Guri && strcmp(Guri, uri) == 0)
         text = yuga_dup(Gtext);
     if (!text && path) {
-        FILE *f = fopen(path, "rb");
-        if (f) {
-            fseek(f, 0, SEEK_END);
-            long sz = ftell(f);
-            rewind(f);
-            text = (char *)malloc((size_t)sz + 1);
-            size_t nr = fread(text, 1, (size_t)sz, f);
-            text[nr] = '\0';
-            fclose(f);
+        DocBuf *known = doc_find(uri);
+        if (known && known->text && known->text[0]) {
+            /* editing a stored buffer with no payload: keep editor content */
+            text = yuga_dup(known->text);
+        } else {
+            FILE *f = fopen(path, "rb");
+            if (f) {
+                fseek(f, 0, SEEK_END);
+                long sz = ftell(f);
+                rewind(f);
+                text = (char *)malloc((size_t)sz + 1);
+                size_t nr = fread(text, 1, (size_t)sz, f);
+                text[nr] = '\0';
+                fclose(f);
+            }
         }
     }
-    if (path && text) compile_buffer(uri, path, text);
+    if (path && text) {
+        doc_put(uri, path, text);
+        /* The compiled doc is the one the client is looking at. A didOpen
+           for another buffer just stores it; the request that names it
+           activates it. A repeat didOpen of the current buffer with the
+           same text (redundant open) does not recompile or re-publish. */
+        if (!Guri || strcmp(Guri, uri) == 0) {
+            int same = Ghave && Gtext && strcmp(Gtext, text) == 0;
+            if (!same) compile_buffer(uri, path, text);
+        }
+    }
     free(path);
     free(uri);
     free(text);
+}
+
+/* Semantic token types advertised in initialize. Indices must match. */
+enum {
+    ST_NAMESPACE = 0,
+    ST_TYPE,
+    ST_ENUM,
+    ST_STRUCT,
+    ST_PARAMETER,
+    ST_VARIABLE,
+    ST_PROPERTY,
+    ST_ENUM_MEMBER,
+    ST_FUNCTION,
+    ST_KEYWORD,
+    ST_COMMENT,
+    ST_STRING,
+    ST_NUMBER,
+    ST_OPERATOR,
+    ST_MODIFIER,
+    ST_PUNCTUATION
+};
+
+typedef struct {
+    int line, col, len, type;
+} SemTok;
+
+typedef struct {
+    SemTok *v;
+    int n, cap;
+} SemToks;
+
+static void st_push(SemToks *s, int line, int col, int len, int type) {
+    if (len <= 0) return;
+    if (s->n >= s->cap) {
+        s->cap = s->cap ? s->cap * 2 : 256;
+        s->v = (SemTok *)realloc(s->v, (size_t)s->cap * sizeof(SemTok));
+    }
+    s->v[s->n].line = line;
+    s->v[s->n].col = col;
+    s->v[s->n].len = len;
+    s->v[s->n].type = type;
+    s->n++;
+}
+
+static void st_bytes(SemToks *s, const char *src, const char *start, int len, int type) {
+    if (!src || !start || len <= 0) return;
+    int line = 0, col = 0;
+    const unsigned char *q = (const unsigned char *)src;
+    const unsigned char *end0 = (const unsigned char *)start;
+    while (q < end0) {
+        if (*q == '\n') {
+            line++;
+            col = 0;
+            q++;
+            continue;
+        }
+        if (*q < 0x80) {
+            q++;
+            col++;
+        } else if ((*q & 0xE0) == 0xC0 && q + 1 < end0) {
+            q += 2;
+            col++;
+        } else if ((*q & 0xF0) == 0xE0 && q + 2 < end0) {
+            q += 3;
+            col++;
+        } else if ((*q & 0xF8) == 0xF0 && q + 3 < end0) {
+            q += 4;
+            col += 2;
+        } else {
+            q++;
+            col++;
+        }
+    }
+    int run = 0, rl = line, rc = col, u16 = 0;
+    for (int i = 0; i < len; i++) {
+        unsigned char ch = (unsigned char)start[i];
+        if (start[i] == '\n') {
+            if (run > 0) st_push(s, rl, rc, u16, type);
+            line++;
+            col = 0;
+            run = 0;
+            u16 = 0;
+            rl = line;
+            rc = 0;
+            continue;
+        }
+        if (run == 0) {
+            rl = line;
+            rc = col;
+            u16 = 0;
+        }
+        run++;
+        if (ch < 0x80) {
+            col++;
+            u16++;
+        } else if ((ch & 0xC0) != 0x80) {
+            /* UTF-8 lead: BMP is 1 UTF-16 unit, astral is 2. */
+            if ((ch & 0xF8) == 0xF0) {
+                col += 2;
+                u16 += 2;
+            } else {
+                col++;
+                u16++;
+            }
+        }
+    }
+    if (run > 0) st_push(s, rl, rc, u16, type);
+}
+
+static void st_scan_gap(SemToks *s, const char *src, const char *from, const char *to) {
+    if (!from || !to || from >= to) return;
+    const char *p = from;
+    while (p < to) {
+        if (*p == '/' && p + 1 < to && p[1] == '/') {
+            const char *start = p;
+            while (p < to && *p != '\n') p++;
+            st_bytes(s, src, start, (int)(p - start), ST_COMMENT);
+            continue;
+        }
+        if (*p == '/' && p + 1 < to && p[1] == '*') {
+            const char *start = p;
+            p += 2;
+            while (p + 1 < to && !(*p == '*' && p[1] == '/')) p++;
+            if (p + 1 < to) p += 2;
+            else p = to;
+            st_bytes(s, src, start, (int)(p - start), ST_COMMENT);
+            continue;
+        }
+        p++;
+    }
+}
+
+static int st_is_type_name(const char *s, int n) {
+    static const char *names[] = {"int", "float", "bool", "string", "Box", NULL};
+    for (int i = 0; names[i]; i++) {
+        int m = (int)strlen(names[i]);
+        if (n == m && strncmp(s, names[i], (size_t)n) == 0) return 1;
+    }
+    return 0;
+}
+
+static int st_is_punct(TokenKind k) {
+    switch (k) {
+        case TOK_LPAREN:
+        case TOK_RPAREN:
+        case TOK_LBRACE:
+        case TOK_RBRACE:
+        case TOK_LBRACKET:
+        case TOK_RBRACKET:
+        case TOK_COMMA:
+        case TOK_DOT:
+        case TOK_COLON:
+        case TOK_SEMICOLON:
+        case TOK_COLON_COLON:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static int st_is_keyword_tok(TokenKind k) {
+    switch (k) {
+        case TOK_FN:
+        case TOK_LET:
+        case TOK_CONST:
+        case TOK_STRUCT:
+        case TOK_ENUM:
+        case TOK_IMPORT:
+        case TOK_IF:
+        case TOK_ELSE:
+        case TOK_FOR:
+        case TOK_WHILE:
+        case TOK_IN:
+        case TOK_RETURN:
+        case TOK_BREAK:
+        case TOK_CONTINUE:
+        case TOK_MATCH:
+        case TOK_AS:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static int st_pascal(Token t) {
+    return t.kind == TOK_IDENT && t.len > 0 && t.start[0] >= 'A' && t.start[0] <= 'Z';
+}
+
+static TokenKind st_at(Token *ts, int n, int i) {
+    if (i < 0 || i >= n) return TOK_EOF;
+    return ts[i].kind;
+}
+
+#define ST_MAX_MOD 48
+static char st_mods[ST_MAX_MOD][64];
+static int st_nmods;
+
+static void st_add_mod(const char *s, int n) {
+    if (st_nmods >= ST_MAX_MOD || n <= 0 || n >= 63) return;
+    for (int i = 0; i < st_nmods; i++) {
+        if ((int)strlen(st_mods[i]) == n && strncmp(st_mods[i], s, (size_t)n) == 0)
+            return;
+    }
+    memcpy(st_mods[st_nmods], s, (size_t)n);
+    st_mods[st_nmods][n] = 0;
+    st_nmods++;
+}
+
+static int st_is_mod(Token t) {
+    for (int i = 0; i < st_nmods; i++) {
+        int m = (int)strlen(st_mods[i]);
+        if (t.len == m && strncmp(t.start, st_mods[i], (size_t)m) == 0) return 1;
+    }
+    return 0;
+}
+
+static void st_mod_from_import(Token str) {
+    if (str.kind != TOK_STRING || str.len < 3) return;
+    const char *s = str.start + 1;
+    int n = str.len - 2;
+    const char *stem = s;
+    for (int i = 0; i < n; i++) {
+        if (s[i] == '/' || s[i] == ':') stem = s + i + 1;
+    }
+    int len = (int)((s + n) - stem);
+    if (len > 5 && strncmp(stem + len - 5, ".yuga", 5) == 0) len -= 5;
+    st_add_mod(stem, len);
+}
+
+static int st_tok_is(Token t, const char *s) {
+    size_t n = strlen(s);
+    return t.kind == TOK_IDENT && (size_t)t.len == n && strncmp(t.start, s, n) == 0;
+}
+
+static int st_prev_ends_value(TokenKind k) {
+    switch (k) {
+        case TOK_IDENT:
+        case TOK_NUMBER:
+        case TOK_FLOAT:
+        case TOK_STRING:
+        case TOK_TRUE:
+        case TOK_FALSE:
+        case TOK_RPAREN:
+        case TOK_RBRACKET:
+        case TOK_DOT:
+        case TOK_COLON_COLON:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static int st_ident_kind(Token *ts, int n, int i, int paren) {
+    Token t = ts[i];
+    TokenKind prev = st_at(ts, n, i - 1);
+    TokenKind next = st_at(ts, n, i + 1);
+    int after_dot = (prev == TOK_DOT || prev == TOK_COLON_COLON);
+
+    /* Contextual keywords: `async fn` (decl position) and expression-leading
+       `await`. After a value/dot they are ordinary identifiers. */
+    if (st_tok_is(t, "async") && next == TOK_FN) return ST_KEYWORD;
+    if (st_tok_is(t, "await") && !st_prev_ends_value(prev)) return ST_KEYWORD;
+
+    if (prev == TOK_FN) return ST_FUNCTION;
+    if (prev == TOK_ENUM) return ST_ENUM;
+    if (prev == TOK_STRUCT) return ST_STRUCT;
+    if (prev == TOK_LET || prev == TOK_CONST || prev == TOK_MUT) return ST_VARIABLE;
+    if (prev == TOK_COLON || prev == TOK_ARROW) return ST_TYPE;
+    if (st_is_type_name(t.start, t.len)) return ST_TYPE;
+
+    if (after_dot) {
+        if (next == TOK_LPAREN) return ST_FUNCTION;
+        if (next == TOK_DOT) return ST_ENUM;
+        if (st_pascal(t)) return ST_ENUM_MEMBER;
+        return ST_PROPERTY;
+    }
+
+    if (next == TOK_COLON) return paren > 0 ? ST_PARAMETER : ST_PROPERTY;
+    if (next == TOK_EQ && prev != TOK_LET && prev != TOK_CONST && prev != TOK_MUT) {
+        if (paren > 0) return ST_PROPERTY;
+    }
+    if (next == TOK_LT || next == TOK_DOT) {
+        if (st_is_mod(t)) return ST_NAMESPACE;
+        if (st_pascal(t)) return next == TOK_LT ? ST_STRUCT : ST_ENUM;
+    }
+    if (st_is_mod(t) && next == TOK_DOT) return ST_NAMESPACE;
+    if (next == TOK_LPAREN) return ST_FUNCTION;
+    if (st_pascal(t)) return ST_FUNCTION;
+    return ST_VARIABLE;
+}
+
+static int st_tok_kind(Token *ts, int n, int i, int paren) {
+    Token t = ts[i];
+    if (st_is_keyword_tok(t.kind)) return ST_KEYWORD;
+    if (t.kind == TOK_MUT) return ST_MODIFIER;
+    if (t.kind == TOK_TRUE || t.kind == TOK_FALSE) return ST_ENUM_MEMBER;
+    if (t.kind == TOK_NUMBER || t.kind == TOK_FLOAT) return ST_NUMBER;
+    if (t.kind == TOK_STRING) return ST_STRING;
+    if (t.kind == TOK_DOC || t.kind == TOK_MOD_DOC) return ST_COMMENT;
+    if (t.kind == TOK_IDENT) return st_ident_kind(ts, n, i, paren);
+    return ST_OPERATOR;
+}
+
+static int st_cmp(const void *a, const void *b) {
+    const SemTok *x = (const SemTok *)a, *y = (const SemTok *)b;
+    if (x->line != y->line) return x->line - y->line;
+    return x->col - y->col;
+}
+
+static void handle_semantic_tokens(const char *msg, const char *id) {
+    char *uri = extract_uri(msg);
+    const char *src = src_for_uri(uri);
+    free(uri);
+    SemToks toks;
+    memset(&toks, 0, sizeof toks);
+    st_nmods = 0;
+    st_add_mod("fmt", 3);
+    st_add_mod("async", 5);
+    st_add_mod("zeus", 4);
+    st_add_mod("kit", 3);
+    st_add_mod("http", 4);
+    st_add_mod("sys", 3);
+    st_add_mod("net", 3);
+    st_add_mod("maya", 4);
+    if (src && src[0]) {
+        Token *ts = NULL;
+        int ntok = 0, tcap = 0;
+        Lexer lx;
+        lexer_init(&lx, src, "");
+        const char *prev_end = src;
+        TokenKind prevk = TOK_EOF;
+        for (;;) {
+            Token t = lexer_next(&lx);
+            if (t.kind == TOK_EOF) {
+                st_scan_gap(&toks, src, prev_end, src + strlen(src));
+                break;
+            }
+            st_scan_gap(&toks, src, prev_end, t.start);
+            if (prevk == TOK_IMPORT && t.kind == TOK_STRING) st_mod_from_import(t);
+            if (ntok >= tcap) {
+                tcap = tcap ? tcap * 2 : 256;
+                ts = (Token *)realloc(ts, (size_t)tcap * sizeof(Token));
+            }
+            ts[ntok++] = t;
+            prevk = t.kind;
+            prev_end = t.start + t.len;
+        }
+        int paren = 0;
+        for (int i = 0; i < ntok; i++) {
+            TokenKind k = ts[i].kind;
+            if (k == TOK_LPAREN) paren++;
+            if (k == TOK_RPAREN && paren > 0) paren--;
+            if (k == TOK_UNKNOWN) continue;
+            int ty;
+            if (st_is_punct(k)) ty = ST_PUNCTUATION;
+            else ty = st_tok_kind(ts, ntok, i, paren);
+            st_bytes(&toks, src, ts[i].start, ts[i].len, ty);
+        }
+        free(ts);
+        if (toks.n > 1)
+            qsort(toks.v, (size_t)toks.n, sizeof(SemTok), st_cmp);
+    }
+    size_t cap = 64 + (size_t)toks.n * 24;
+    char *body = (char *)malloc(cap);
+    if (!body) {
+        send_null_result(id);
+        free(toks.v);
+        return;
+    }
+    size_t n = (size_t)snprintf(body, cap,
+                                "{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"data\":[",
+                                id ? id : "null");
+    int pl = 0, pc = 0;
+    for (int i = 0; i < toks.n; i++) {
+        int dl = toks.v[i].line - pl;
+        int dc = dl == 0 ? toks.v[i].col - pc : toks.v[i].col;
+        char item[80];
+        int m = snprintf(item, sizeof item, "%s%d,%d,%d,%d,0", i ? "," : "", dl, dc,
+                         toks.v[i].len, toks.v[i].type);
+        if (n + (size_t)m + 8 >= cap) {
+            cap = cap * 2 + (size_t)m + 32;
+            char *nb = (char *)realloc(body, cap);
+            if (!nb) break;
+            body = nb;
+        }
+        memcpy(body + n, item, (size_t)m);
+        n += (size_t)m;
+        pl = toks.v[i].line;
+        pc = toks.v[i].col;
+    }
+    memcpy(body + n, "]}}", 4);
+    send_raw(body);
+    free(body);
+    free(toks.v);
 }
 
 static void handle(const char *msg) {
@@ -1211,13 +1750,20 @@ static void handle(const char *msg) {
     }
 
     if (strcmp(method, "initialize") == 0) {
-        char out[800];
+        char out[1600];
         snprintf(out, sizeof out,
                  "{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{"
                  "\"capabilities\":{\"textDocumentSync\":1,"
                  "\"hoverProvider\":true,\"definitionProvider\":true,"
-                 "\"completionProvider\":{\"triggerCharacters\":[\".\"]}},"
-                 "\"serverInfo\":{\"name\":\"yuga-lsp\",\"version\":\"0.3\"}}}",
+                 "\"completionProvider\":{\"triggerCharacters\":[\".\"]},"
+                 "\"semanticTokensProvider\":{\"legend\":{"
+                 "\"tokenTypes\":[\"namespace\",\"type\",\"enum\",\"struct\","
+                 "\"parameter\",\"variable\",\"property\",\"enumMember\","
+                 "\"function\",\"keyword\",\"comment\",\"string\",\"number\","
+                 "\"operator\",\"modifier\",\"punctuation\"],"
+                 "\"tokenModifiers\":[\"declaration\"]},"
+                 "\"full\":true,\"range\":false}},"
+                 "\"serverInfo\":{\"name\":\"yuga-lsp\",\"version\":\"0.4\"}}}",
                  id ? id : "null");
         send_raw(out);
     } else if (strcmp(method, "initialized") == 0) {
@@ -1230,6 +1776,7 @@ static void handle(const char *msg) {
     } else if (strcmp(method, "exit") == 0) {
         free(method);
         free(id);
+        doc_free_all();
         yuga_session_free(&Gsess);
         free(Guri);
         free(Gpath);
@@ -1241,11 +1788,25 @@ static void handle(const char *msg) {
                strcmp(method, "textDocument/didClose") == 0) {
         handle_doc(msg, method);
     } else if (strcmp(method, "textDocument/hover") == 0) {
+        char *u = extract_uri(msg);
+        doc_activate(u);
+        free(u);
         handle_hover(msg, id);
     } else if (strcmp(method, "textDocument/definition") == 0) {
+        char *u = extract_uri(msg);
+        doc_activate(u);
+        free(u);
         handle_definition(msg, id);
     } else if (strcmp(method, "textDocument/completion") == 0) {
+        char *u = extract_uri(msg);
+        doc_activate(u);
+        free(u);
         handle_completion(msg, id);
+    } else if (strcmp(method, "textDocument/semanticTokens/full") == 0) {
+        char *u = extract_uri(msg);
+        doc_activate(u);
+        free(u);
+        handle_semantic_tokens(msg, id);
     } else if (id && method[0] != '$') {
         char out[256];
         snprintf(out, sizeof out,
@@ -1270,6 +1831,7 @@ int main(void) {
         handle(msg);
         free(msg);
     }
+    doc_free_all();
     yuga_session_free(&Gsess);
     free(Guri);
     free(Gpath);

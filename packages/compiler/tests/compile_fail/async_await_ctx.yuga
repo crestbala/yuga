@@ -1,0 +1,9 @@
+// `await` is only legal inside an `async fn` — like JS, a plain fn must not
+// suspend. The sugar desugars to a call, so the diagnostic is expected here.
+
+import "std:async"
+
+fn main() {
+    let f = async.future_str()
+    let v = await f
+}

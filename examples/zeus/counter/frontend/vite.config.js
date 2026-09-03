@@ -10,7 +10,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "../../../..");
 const yugac = resolve(repo, "bin/yugac");
 const buildDir = resolve(here, "build");
-const loader = resolve(here, "../../../web/loader.js");
+const loader = resolve(repo, "packages/zeus/web/loader.js");
 const app = resolve(here, "app.yuga");
 
 function wipeBuild() {
@@ -63,11 +63,12 @@ export default defineConfig({
       configureServer(server) {
         const watch = [
           here,
+          resolve(here, ".."),
           resolve(here, "../backend"),
-          resolve(here, "../../../lib"),
-          resolve(repo, "std"),
-          resolve(repo, "runtime"),
-          resolve(here, "../../../web"),
+          resolve(repo, "packages/zeus/lib"),
+          resolve(repo, "packages/compiler/std"),
+          resolve(repo, "packages/compiler/runtime"),
+          resolve(repo, "packages/zeus/web"),
         ];
         for (const p of watch) {
           if (existsSync(p)) server.watcher.add(p);

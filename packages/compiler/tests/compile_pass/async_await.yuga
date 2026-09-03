@@ -1,0 +1,62 @@
+// Phase 1c: `async fn` + `await` sugar (JS-shaped). `await` never blocks and
+// never threads: it re-enters the one-thread async pump until the future
+// resolves, so sequential async code reads like JS.
+
+import "std:async"
+import "std:fmt"
+import "std:sys"
+
+let mut ok: int = 0
+
+/// One simulated async op: a future filled on the next pump tick, awaited
+/// for its value — the shape a gRPC round trip takes (`http.acall`).
+async fn fetch_value(tag: int) -> string {
+    let f = async.future_str()
+    async.spawn(|| { async.resolve(f, tag_str(tag)) })
+    let v = await f
+    return v
+}
+
+fn tag_str(tag: int) -> string {
+    if tag == 1 {
+        return "one"
+    }
+    return "two"
+}
+
+/// Sequential awaits: the second only starts after the first completed.
+async fn run() {
+    let f1 = async.future_str()
+    async.spawn(|| { async.resolve(f1, "one") })
+    let a = await f1
+    let f2 = async.future_str()
+    async.spawn(|| { async.resolve(f2, "two") })
+    let b = await f2
+    if fmt.eq(a, "one") && fmt.eq(b, "two") {
+        ok = 1
+    }
+}
+
+fn main() {
+    run()
+    if ok != 1 {
+        fmt.println("FAIL await chain")
+        sys.exit(1)
+    }
+    // An async fn called from sync code still returns its value: awaits
+    // inside it pump until done, then the value flows back normally.
+    let v = fetch_value(2)
+    if !fmt.eq(v, "two") {
+        fmt.println("FAIL sync call of async fn")
+        sys.exit(1)
+    }
+    // A future resolved before awaiting returns immediately.
+    let pre = async.future_str()
+    async.resolve(pre, "pre")
+    let w = async.await_value(pre)
+    if !fmt.eq(w, "pre") {
+        fmt.println("FAIL pre-resolved future")
+        sys.exit(1)
+    }
+    fmt.println("async await ok")
+}

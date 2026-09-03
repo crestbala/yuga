@@ -644,6 +644,9 @@ int main(int argc, char **argv) {
         else
             snprintf(binpath, sizeof binpath, "%s/build/%s", srcdir, stem);
         snprintf(cpath, sizeof cpath, "/tmp/yuga_%s_XXXXXX", stem);
+        const char *tmpdir = getenv("TMPDIR");
+        if (tmpdir && tmpdir[0])
+            snprintf(cpath, sizeof cpath, "%s/yuga_%s_XXXXXX", tmpdir, stem);
         int fd = mkstemp(cpath);
         if (fd < 0) {
             fprintf(stderr, "error: cannot create temp C file\n");

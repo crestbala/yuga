@@ -48,6 +48,9 @@ struct UiNode {
     show_sig: int,
     show_mode: int,
     show_val: int,
+    /// Declarative `show` prop result (0 hidden / 1 visible); consulted when
+    /// no `show_sig` is bound. Signal shows (`show` / `show_eq` / `If`) win.
+    show_on: int,
     hover_sig: int,
     x: int,
     y: int,
@@ -103,6 +106,22 @@ struct UiNode {
     tween: int,
     enter_fade: int,
     show_amt: int,
+    down_fn: int,
+    up_fn: int,
+    kdown_fn: int,
+    kup_fn: int,
+    kpress_fn: int,
+    edit_sig: int,
+    bind_fn: int,
+    safe: int,
+    list_fn: int,
+    list_gen: int,
+    a11y_label: string,
+    a11y_role: string,
+    /// CSS cursor shown while the pointer is over this node ("" = default).
+    cursor: string,
+    /// Clockwise-on-screen degrees for text nodes (0 = horizontal).
+    text_rot: int,
 }
 
 let mut nodes: []UiNode = []UiNode {}
@@ -130,11 +149,35 @@ let mut drag_bar: int = 0
 let mut pulse_t: int = 0
 let mut ptr_x: int = 0
 let mut ptr_y: int = 0
+/// Staged input payload. The engine invokes argument-less interned handlers,
+/// so `MouseEvent` / `KeyEvent` are read from here by `current_mouse()` /
+/// `current_key()` inside the handler.
+let mut ev_x: int = 0
+let mut ev_y: int = 0
+let mut ev_button: int = 0
+let mut ev_key: int = 0
+let mut ev_mods: int = 0
+let mut down_id: int = 0
 let mut paint_skip_z: int = 1
 let mut safe_t: int = 0
 let mut safe_r: int = 0
 let mut safe_b: int = 0
 let mut safe_l: int = 0
+
+// --- rebuild-scope bookkeeping ---
+// `For` / `refit` hosts rebuild their subtree from a builder. Anything the
+// builder allocates — signals (`sig_new`) and interned handlers (recorded via
+// `record_intern`) — is owned by the host node for as long as the build
+// stands; tearing the host down (rebuild or drop) frees those ids and makes
+// them recyclable, so streaming lists do not grow the arena.
+// `scope_node` is the host whose builder is currently running (0 = none).
+let mut scope_node: int = 0
+let mut rec_sid: []int = []int {}
+let mut rec_owner: []int = []int {}
+let mut rec_fid: []int = []int {}
+let mut rec_fowner: []int = []int {}
+/// Freed node ids, recycled by `alloc_node`.
+let mut free_nodes: []int = []int {}
 
 fn blank_node() -> UiNode {
     return UiNode {
@@ -144,7 +187,7 @@ fn blank_node() -> UiNode {
         min_w: -1, max_w: -1, min_h: -1, max_h: -1, w_pct: 100, h_pct: -1,
         text: "", bind_sig: 0, click_sig: 0, click_mode: 0, click_set: 0,
         click2_sig: 0, click2_mode: 0, click2_set: 0,
-        show_sig: 0, show_mode: 0, show_val: 0, hover_sig: 0,
+        show_sig: 0, show_mode: 0, show_val: 0, show_on: 1, hover_sig: 0,
         x: 0, y: 0, w: 0, h: 0, iw: 0, ih: 0, nid: 0, pos: 0, overflow: 0,
         opacity: 100, span: 1, grid_cols: 0, grid_min: 0,
         m_t: 0, m_r: 0, m_b: 0, m_l: 0, border_w: 0, border_c: -1,
@@ -155,6 +198,9 @@ fn blank_node() -> UiNode {
         aw: 0, ah: 0, bar_t: 0, parent: 0, key_ctx: 0, focusable: 0, capture_text: 0, edit_slot: -1,
         click_fn: 0, ui_size: 1, ui_look: 1, restyle_fn: 0,
         hover_fade: 0, hover_amt: 0, tween: -1, enter_fade: 0, show_amt: 0,
+        down_fn: 0, up_fn: 0, kdown_fn: 0, kup_fn: 0, kpress_fn: 0, edit_sig: 0, bind_fn: 0,
+        safe: 0, list_fn: 0, list_gen: 0,
+        a11y_label: "", a11y_role: "", cursor: "", text_rot: 0,
     }
 }
 
@@ -171,17 +217,110 @@ fn ensure() {
     }
 }
 
-let mut scroll_save: []int = []int {}
-let mut scroll_save_x: []int = []int {}
+/// Enter a rebuild scope: allocations from now on are owned by `nid`.
+/// Returns the previous scope so the caller can restore it after the build.
+fn scope_begin(nid: int) -> int {
+    let prev = scope_node
+    scope_node = nid
+    return prev
+}
 
-fn snapshot_scroll() {
-    scroll_save = []int {}
-    scroll_save_x = []int {}
-    let n = nodes.len
-    for i in 0..n {
-        push(scroll_save, nodes[i].scroll_y)
-        push(scroll_save_x, nodes[i].scroll_x)
+fn scope_end(prev: int) {
+    scope_node = prev
+}
+
+/// An interned handler was created under a rebuild scope (or for `owner`):
+/// record it so teardown can release its captured env.
+fn record_intern(id: int, owner: int) {
+    if id <= 0 {
+        return
     }
+    if owner > 0 {
+        push(rec_fid, id)
+        push(rec_fowner, owner)
+    }
+}
+
+/// Free every signal a node's rebuilds allocated, in one pass over the
+/// record lists (records are per build scope, so an id has one owner).
+fn release_sigs(nid: int) {
+    let n = rec_owner.len
+    if n == 0 {
+        return
+    }
+    let mut keep_sid = []int {}
+    let mut keep_owner = []int {}
+    for i in 0..n {
+        if rec_owner[i] == nid {
+            let sid = rec_sid[i]
+            platform.plat_sig_free(sid)
+            track.drop_sig(sid)
+        } else {
+            push(keep_sid, rec_sid[i])
+            push(keep_owner, rec_owner[i])
+        }
+    }
+    rec_sid = keep_sid
+    rec_owner = keep_owner
+}
+
+/// Free every interned handler a node's rebuilds created, in one pass.
+fn release_fns(nid: int) {
+    let n = rec_fowner.len
+    if n == 0 {
+        return
+    }
+    let mut keep_fid = []int {}
+    let mut keep_owner = []int {}
+    for i in 0..n {
+        if rec_fowner[i] == nid {
+            platform.plat_intern_free(rec_fid[i])
+        } else {
+            push(keep_fid, rec_fid[i])
+            push(keep_owner, rec_fowner[i])
+        }
+    }
+    rec_fid = keep_fid
+    rec_fowner = keep_owner
+}
+
+/// Tear down a node: free its subtree (sigs, interned handlers, effects) and
+/// recycle the slot. Freed slots are blanked so global scans (hover, cursor,
+/// refresh lists) treat them as empty.
+fn free_node(id: int) {
+    if id <= 0 {
+        return
+    }
+    if id >= nodes.len {
+        return
+    }
+    if nodes[id].kind == 0 {
+        return
+    }
+    drop_children(id)
+    if nodes[id].list_fn > 0 {
+        release_sigs(id)
+        release_fns(id)
+    }
+    track.free_node_effects(id)
+    if focus_id == id {
+        focus_id = 0
+    }
+    if down_id == id {
+        down_id = 0
+    }
+    if drag_id == id {
+        drag_id = 0
+        drag_bar = 0
+    }
+    if nodes[id].kind == 10 {
+        if nodes[id].edit_slot >= 0 {
+            platform.plat_edit_reset(nodes[id].edit_slot)
+        }
+    }
+    nodes[id].kids = []int {}
+    nodes[id] = blank_node()
+    push(free_nodes, id)
 }
 
 fn reset_tree() {
@@ -193,6 +332,25 @@ fn reset_tree() {
     paint_sx = 0
     drag_id = 0
     drag_bar = 0
+    scope_node = 0
+    rec_sid = []int {}
+    rec_owner = []int {}
+    rec_fid = []int {}
+    rec_fowner = []int {}
+    free_nodes = []int {}
+}
+
+let mut scroll_save: []int = []int {}
+let mut scroll_save_x: []int = []int {}
+
+fn snapshot_scroll() {
+    scroll_save = []int {}
+    scroll_save_x = []int {}
+    let n = nodes.len
+    for i in 0..n {
+        push(scroll_save, nodes[i].scroll_y)
+        push(scroll_save_x, nodes[i].scroll_x)
+    }
 }
 
 fn restore_scroll() {
@@ -210,6 +368,16 @@ fn restore_scroll() {
 }
 
 fn drop_children(id: int) {
+    if id <= 0 {
+        return
+    }
+    if id >= nodes.len {
+        return
+    }
+    let n = nodes[id].kids.len
+    for i in 0..n {
+        free_node(nodes[id].kids[i])
+    }
     nodes[id].kids = []int {}
 }
 
@@ -230,6 +398,14 @@ fn store_sig(id: int, value: int) {
 
 fn alloc_node(kind: int) -> int {
     ensure()
+    if free_nodes.len > 0 {
+        let id = free_nodes[free_nodes.len - 1]
+        pop(free_nodes)
+        nodes[id] = blank_node()
+        nodes[id].kind = kind
+        nodes[id].nid = id
+        return id
+    }
     let mut n = blank_node()
     n.kind = kind
     n.nid = nodes.len
@@ -330,30 +506,37 @@ fn gap_y(id: int) -> int {
     }
     return nodes[id].gap
 }
+fn inset_here(id: int) -> int {
+    if id == root_id {
+        return 1
+    }
+    return nodes[id].safe
+}
+
 fn content_x(id: int) -> int {
     let mut x = nodes[id].x + nodes[id].pad_l + nodes[id].border_w
-    if id == root_id {
+    if inset_here(id) != 0 {
         x = x + safe_l
     }
     return x
 }
 fn content_y(id: int) -> int {
     let mut y = nodes[id].y + nodes[id].pad_t + nodes[id].border_w
-    if id == root_id {
+    if inset_here(id) != 0 {
         y = y + safe_t
     }
     return y
 }
 fn inner_w(id: int) -> int {
     let mut extra = 0
-    if id == root_id {
+    if inset_here(id) != 0 {
         extra = safe_l + safe_r
     }
     return geometry.max2(nodes[id].w - box_pad_x(id) - extra, 0)
 }
 fn inner_h(id: int) -> int {
     let mut extra = 0
-    if id == root_id {
+    if inset_here(id) != 0 {
         extra = safe_t + safe_b
     }
     return geometry.max2(nodes[id].h - box_pad_y(id) - extra, 0)
@@ -549,7 +732,9 @@ fn want_show(id: int) -> int {
         return 0
     }
     if nodes[id].show_sig <= 0 {
-        return 1
+        /* No signal bound: the declarative `show` prop decides (or the
+           default, visible). */
+        return nodes[id].show_on
     }
     if nodes[id].show_sig >= sigs.len {
         return 1
@@ -620,6 +805,9 @@ fn hover_rgb() -> int {
 
 fn is_hot(id: int) -> int {
     if want_show(id) == 0 {
+        return 0
+    }
+    if nodes[id].hover_fade < 0 {
         return 0
     }
     let k = nodes[id].kind
@@ -823,19 +1011,16 @@ fn bar_visible_x(id: int) -> int {
 }
 
 fn bar_alpha(id: int) -> int {
-    if platform.plat_overlay_scroll() != 0 {
-        return 0
-    }
     if bar_visible(id) == 0 {
         if bar_visible_x(id) == 0 {
             return 0
         }
     }
-    return 150
+    return 170
 }
 
 fn bar_w() -> int {
-    return 7
+    return 6
 }
 
 fn bar_x(id: int, ox: int) -> int {

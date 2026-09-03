@@ -7,12 +7,16 @@ fn plat_headless() -> int {}
 fn plat_fill(x: int, y: int, w: int, h: int, rgb: int, radius: int) {}
 fn plat_fill_a(x: int, y: int, w: int, h: int, rgb: int, radius: int, alpha: int) {}
 fn plat_text(x: int, y: int, s: string, rgb: int, font: int) {}
+fn plat_text_rot(x: int, y: int, s: string, rgb: int, font: int, deg: int) {}
 fn plat_text_int(x: int, y: int, v: int, rgb: int, font: int) {}
 fn plat_measure(s: string, px: int, w: &mut int, h: &mut int) {}
 fn plat_measure_int(v: int, px: int, w: &mut int, h: &mut int) {}
 fn plat_measure_wrap(s: string, px: int, max_w: int, w: &mut int, h: &mut int) {}
 fn plat_text_wrap(x: int, y: int, s: string, rgb: int, font: int, max_w: int) {}
 fn plat_set_window(title: string, width: int, height: int) {}
+/// Host view size in points (browser canvas or native content view).
+fn plat_view_width() -> int {}
+fn plat_view_height() -> int {}
 fn plat_svg(x: int, y: int, w: int, h: int, markup: string, rgb: int, alpha: int) {}
 fn plat_save() {}
 fn plat_clip(x: int, y: int, w: int, h: int) {}
@@ -29,7 +33,25 @@ fn plat_edit_text(slot: int) -> string {}
 fn plat_edit_set(slot: int, text: string) -> int {}
 fn plat_intern_fn(handler: fn()) -> int {}
 fn plat_invoke_fn(id: int) {}
+/// Reactive props are thunks. Interning one yields an int id, which a plain
+/// `||` effect closure can capture (a `fn` value is not Copy and cannot be).
+fn plat_intern_int_fn(thunk: fn() -> int) -> int {}
+fn plat_invoke_int_fn(id: int) -> int {}
+fn plat_intern_bool_fn(thunk: fn() -> bool) -> int {}
+fn plat_invoke_bool_fn(id: int) -> int {}
+fn plat_intern_str_fn(thunk: fn() -> string) -> int {}
+fn plat_invoke_str_fn(id: int) -> string {}
 fn plat_sig_bind_int(id: int, value: int) {}
+fn plat_sig_gen(id: int) -> int {}
+/// Free a signal slot: release its cell, zero its int mirror, and make the
+/// id reusable. No-op for ids that are already free.
+fn plat_sig_free(id: int) {}
+/// Drop the text buffer of an edit slot so a rebuilt input never shows a
+/// dead input's contents.
+fn plat_edit_reset(slot: int) {}
+/// Free an interned handler/thunk: release its captured env and make the id
+/// reusable. No-op for ids that are already free.
+fn plat_intern_free(id: int) {}
 fn plat_overlay_scroll() -> int {}
 fn plat_inset_top() -> int {}
 fn plat_inset_right() -> int {}

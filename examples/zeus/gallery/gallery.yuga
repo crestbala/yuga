@@ -1,0 +1,411 @@
+// Catalog screens. Components mirror the shadcn/ui catalogue (default zinc
+// theme): every row here demos one `std:kit` widget with its SVG icons.
+// Dark restyles the whole palette via `zeus.appearance()`.
+import "std:zeus"
+import "std:kit"
+
+fn Navbar(page: Signal<int>) {
+    kit.Column(0) {
+        zeus.Box(align_direction = DIRECTION.Row, spacing = SPACE.Md,
+                 align_items = ALIGN.Center, height = kit.BAR) {
+            zeus.Box(width = 22, height = 22, radius = 6, background = kit.ink())
+            zeus.Text("Zeus", color = kit.ink(), font = kit.FONT_TITLE)
+            kit.NavTab("Foundations", page, 0)
+            kit.NavTab("Components", page, 1)
+            kit.NavTab("Patterns", page, 2)
+            kit.Grow()
+            zeus.Text("Dark", color = kit.mute(), font = kit.FONT_CONTROL)
+            kit.Switch(zeus.appearance())
+        }
+        kit.Separator()
+    }
+}
+
+fn ProjectCard() {
+    let ticks = zeus.signal(0)
+    kit.Card() {
+        kit.Row(SPACE.Sm) {
+            kit.Title("Project card")
+            kit.Grow()
+            kit.Badge("In progress", kit.TINT.Ok)
+        }
+        kit.Body("A card with a title, supporting copy, and a footer of actions. Shadcn chrome: rounded-xl, hairline border, white surface.")
+        kit.Row(SPACE.Sm) {
+            kit.Button("Cancel", kit.LOOK.Outline, kit.SIZE.Md, fn() => ticks.set(ticks.get() + 1))
+            kit.Button("Save", kit.LOOK.Solid, kit.SIZE.Md, fn() => ticks.set(ticks.get() + 1))
+            kit.Grow()
+            zeus.Text("{{ticks.get()}}", color = kit.mute(), font = kit.FONT_CAPTION)
+        }
+    }
+}
+
+fn Foundations() {
+    kit.Breadcrumbs("Zeus", "Examples", "Gallery")
+    kit.Column(SPACE.Exs) {
+        kit.Display("Build interfaces with Zeus")
+        kit.Body("Zinc tokens, neutral primary, and lucide SVG icons. Dark inverts every token that reads appearance.")
+    }
+    kit.Row(SPACE.Sm) {
+        kit.Chip("Stable", kit.TINT.Ok)
+        kit.Chip("Canvas2D", kit.TINT.Ink)
+        kit.Badge("kit", kit.TINT.Mute)
+        kit.Kbd("⌘K")
+    }
+    kit.Alert("Heads up", "Signals update on click. Hover and press are engine fades — no DOM.")
+    kit.AlertDestructive("Session expired", "Sign back in to keep syncing. Your drafts are saved locally.")
+    ProjectCard()
+}
+
+fn ButtonScale() {
+    kit.SectionHeader("Actions", "Buttons",
+        "The six shadcn variants across three sizes. Primary is the neutral ink fill; it inverts with appearance.")
+    kit.Card() {
+        kit.Overline("Primary · Secondary · Outline · Ghost · Destructive · Link")
+        kit.Note("small")
+        kit.RowWrap(SPACE.Sm) {
+            kit.Button("Solid", kit.LOOK.Solid, kit.SIZE.Sm)
+            kit.Button("Soft", kit.LOOK.Soft, kit.SIZE.Sm)
+            kit.Button("Outline", kit.LOOK.Outline, kit.SIZE.Sm)
+            kit.Button("Ghost", kit.LOOK.Ghost, kit.SIZE.Sm)
+            kit.Button("Danger", kit.LOOK.Danger, kit.SIZE.Sm)
+            kit.Button("Link", kit.LOOK.Link, kit.SIZE.Sm)
+        }
+        kit.Note("medium")
+        kit.RowWrap(SPACE.Sm) {
+            kit.Button("Solid", kit.LOOK.Solid, kit.SIZE.Md)
+            kit.Button("Soft", kit.LOOK.Soft, kit.SIZE.Md)
+            kit.Button("Outline", kit.LOOK.Outline, kit.SIZE.Md)
+            kit.Button("Ghost", kit.LOOK.Ghost, kit.SIZE.Md)
+            kit.Button("Danger", kit.LOOK.Danger, kit.SIZE.Md)
+            kit.Button("Link", kit.LOOK.Link, kit.SIZE.Md)
+        }
+        kit.Note("large")
+        kit.RowWrap(SPACE.Sm) {
+            kit.Button("Solid", kit.LOOK.Solid, kit.SIZE.Lg)
+            kit.Button("Soft", kit.LOOK.Soft, kit.SIZE.Lg)
+            kit.Button("Outline", kit.LOOK.Outline, kit.SIZE.Lg)
+            kit.Button("Ghost", kit.LOOK.Ghost, kit.SIZE.Lg)
+            kit.Button("Danger", kit.LOOK.Danger, kit.SIZE.Lg)
+            kit.Button("Link", kit.LOOK.Link, kit.SIZE.Lg)
+        }
+        kit.Note("icon — square, 16px lucide glyphs in every look")
+        kit.RowWrap(SPACE.Sm) {
+            kit.IconButton(kit.IC_PLUS, kit.LOOK.Solid, kit.SIZE.Sm, "Add")
+            kit.IconButton(kit.IC_MINUS, kit.LOOK.Soft, kit.SIZE.Md, "Remove")
+            kit.IconButton(kit.IC_X, kit.LOOK.Outline, kit.SIZE.Md, "Close")
+            kit.IconButton(kit.IC_CHEV_LEFT, kit.LOOK.Ghost, kit.SIZE.Md, "Back")
+            kit.IconButton(kit.IC_ALERT_CIRCLE, kit.LOOK.Danger, kit.SIZE.Lg, "Warn")
+        }
+    }
+}
+
+fn DisplayRow() {
+    kit.SectionTitle("Display", "Chips, badges, keys")
+    kit.Card() {
+        kit.Note("chips")
+        kit.Row(SPACE.Sm) {
+            kit.Chip("Iris", kit.TINT.Ink)
+            kit.Chip("Live", kit.TINT.Ok)
+            kit.Chip("Quiet", kit.TINT.Mute)
+            kit.Chip("Faint", kit.TINT.Dim)
+            kit.Chip("Alert", kit.TINT.Danger)
+        }
+        kit.Note("badges")
+        kit.Row(SPACE.Sm) {
+            kit.Badge("secondary", kit.TINT.Mute)
+            kit.Badge("default", kit.TINT.Ink)
+            kit.Badge("success", kit.TINT.Ok)
+            kit.Badge("outline", kit.TINT.Dim)
+            kit.Badge("destructive", kit.TINT.Danger)
+        }
+        kit.Note("kbd")
+        kit.Row(SPACE.Sm) {
+            kit.Kbd("Esc")
+            kit.Kbd("⌘S")
+            kit.Kbd("Ctrl K")
+        }
+    }
+}
+
+fn Field(name: Signal<string>) {
+    kit.SectionHeader("Forms", "Input",
+        "A label + input pair, shadcn style: h-9, rounded-md, hairline border.")
+    kit.Card() {
+        kit.Field("Name", name, "Your name")
+        zeus.Text(if name.get().len < 3 { "Name must be at least 3 characters." } else { "" },
+                  color = kit.danger(), font = kit.FONT_CONTROL)
+        kit.Button("Submit", kit.LOOK.Solid, kit.SIZE.Md, fn() => name.set(name.get()))
+    }
+}
+
+fn DateSection() {
+    let year = zeus.signal(2026)
+    let month = zeus.signal(10)
+    let day = zeus.signal(17)
+    kit.SectionHeader("Forms", "Date picker",
+        "Input-like trigger with a calendar icon; the sheet floats above the page, so the scroller cannot clip it.")
+    kit.Card() {
+        kit.DatePicker(year, month, day)
+    }
+}
+
+fn Choice() {
+    let tab = zeus.signal(0)
+    let size = zeus.signal(1)
+    let mode = zeus.signal(1)
+    let group = zeus.signal(0)
+    kit.SectionHeader("Choice", "Tabs, select, radio, toggle",
+        "A muted tray for tabs, a dropdown for sizes, radio dots for one pick, and an accent-pressed toggle group.")
+    kit.Card() {
+        kit.Note("tabs — active trigger is the card surface")
+        kit.Tabs(tab, []string { "One", "Two", "Three" })
+        kit.Note("select — the menu floats below the trigger")
+        kit.Select(size, []string { "Small", "Medium", "Large" })
+        kit.Note("radio group — filled dot on the picked row")
+        kit.RadioGroup(mode, []string { "Default", "Comfortable", "Compact" })
+        kit.Note("toggle group — muted fill when pressed")
+        kit.ToggleGroup(group, []string { "Bold", "Italic", "Underline" })
+        kit.Note("toggle — borderless until pressed")
+        let blink = zeus.signal(1)
+        kit.Toggle("Blink cursor", blink)
+    }
+}
+
+fn Controls() {
+    let on = zeus.signal(1)
+    let notes = zeus.signal(0)
+    let vol = zeus.signal(42)
+    kit.SectionHeader("Controls", "Switch, check, slider, toggle",
+        "The switch eases onto its track; drag the slider thumb or use the arrow keys. Progress echoes the value.")
+    kit.Card() {
+        kit.Row(SPACE.Md) {
+            kit.Switch(on)
+            zeus.Text(if on.get() == 1 { "On" } else { "Off" }, color = kit.ink(), font = kit.FONT_BODY)
+            kit.Grow()
+            kit.Checkbox("Notify me", notes)
+        }
+        kit.Note("volume  {{vol.get()}}%")
+        kit.Slider(vol)
+        kit.Progress(vol)
+    }
+}
+
+fn People() {
+    kit.SectionTitle("People", "Avatars and stats")
+    kit.Row(SPACE.Md) {
+        kit.Card() {
+            kit.User("AP", "Ada Park", "Operator")
+            kit.User("BL", "Bea Liu", "Editor")
+            kit.Row(SPACE.Xs) {
+                kit.Avatar("AP", 32)
+                kit.Avatar("BL", 40)
+                kit.Avatar("CD", 48)
+            }
+        }
+        kit.Stat("Uptime", "99.9%", kit.TINT.Ok)
+        kit.Stat("Errors", "2", kit.TINT.Danger)
+    }
+}
+
+fn Data() {
+    let page = zeus.signal(3)
+    kit.SectionTitle("Data", "Table and pagination")
+    kit.Card() {
+        kit.TableHead("Name", "Role", "Status")
+        kit.TableRow("Ada", "Operator", "Active")
+        kit.TableRow("Bea", "Editor", "Away")
+        kit.TableRow("Cal", "Viewer", "Active")
+    }
+    kit.Note("Pagination — {{page.get()}} / 5 · ghost pages, outline current")
+    kit.Pagination(page, 5)
+}
+
+fn Components() {
+    let name = zeus.signal("")
+    DateSection()
+    ButtonScale()
+    DisplayRow()
+    Field(name)
+    Choice()
+    Controls()
+    People()
+    Data()
+}
+
+fn NameRow(i: int, name: string) {
+    kit.Row(SPACE.Sm) {
+        kit.Pip(kit.mute(), 6)
+        kit.Body(name)
+    }
+}
+
+fn LiveList(names: Signal<[]string>) {
+    kit.SectionHeader("Lists", "Growing rows",
+        "zeus.For rebuilds this column when you push_item.")
+    kit.Card() {
+        zeus.For(names, NameRow)
+        kit.Row(SPACE.Sm) {
+            kit.Button("Add row", kit.LOOK.Solid, kit.SIZE.Md, fn() {
+                zeus.push_item(names, "Row")
+            })
+            kit.Button("Remove", kit.LOOK.Ghost, kit.SIZE.Md, fn() {
+                zeus.pop_item(names)
+            })
+        }
+    }
+}
+
+fn Cards() {
+    kit.SectionTitle("Surfaces", "Cards")
+    zeus.Grid(config = GridConfig(columns = 3, gap = SPACE.Md)) {
+        kit.Card() { kit.Pip(kit.accent(), 8) kit.Title("Small") kit.Body("Neutral primary on paper.") }
+        kit.Card() { kit.Pip(kit.ok(), 8) kit.Title("Medium") kit.Body("Rounded-xl is the card radius.") }
+        kit.Card() { kit.Pip(kit.danger(), 8) kit.Title("Large") kit.Body("Badges and caps mark status.") }
+    }
+}
+
+fn Skeletons() {
+    kit.SectionHeader("Feedback", "Skeleton",
+        "Placeholder fills while content loads. Radius matches the shape it replaces.")
+    kit.Card() {
+        kit.Row(SPACE.Md) {
+            kit.Skeleton(40, 40, 20)
+            kit.Column(SPACE.Exs) {
+                kit.Skeleton(220, 14, 7)
+                kit.Skeleton(160, 14, 7)
+            }
+        }
+    }
+}
+
+fn Overlays() {
+    let open = zeus.signal(0)
+    let ask = zeus.signal(0)
+    kit.SectionTitle("Overlay", "Dialog and alert dialog")
+    kit.Row(SPACE.Sm) {
+        kit.Button("Dialog", kit.LOOK.Solid, kit.SIZE.Md, fn() => open.set(1))
+        kit.Button("Alert dialog", kit.LOOK.Outline, kit.SIZE.Md, fn() => ask.set(1))
+    }
+    kit.Body("Dialog has a corner X; alert dialog does not. Cancel is ghost or outline; the destructive action closes.")
+    kit.Dialog(open) {
+        kit.Title("Share the link?")
+        kit.Body("Anyone with the link can view this project. You can revoke access later.")
+        kit.Row(SPACE.Sm) {
+            kit.Grow()
+            kit.Button("Cancel", kit.LOOK.Ghost, kit.SIZE.Md, fn() => open.set(0))
+            kit.Button("Share", kit.LOOK.Solid, kit.SIZE.Md, fn() => open.set(0))
+        }
+    }
+    kit.AlertDialog(ask) {
+        kit.Title("Discard changes?")
+        kit.Body("This cannot be undone. The working tree keeps whatever you have not saved.")
+        kit.Row(SPACE.Sm) {
+            kit.Grow()
+            kit.Button("Cancel", kit.LOOK.Outline, kit.SIZE.Md, fn() => ask.set(0))
+            kit.Button("Discard", kit.LOOK.Danger, kit.SIZE.Md, fn() => ask.set(0))
+        }
+    }
+}
+
+// --- Charts (Patterns page): shadcn chart cards over `std:kit` plots ---
+
+let mut chart_labs: []string = []string {}
+let mut chart_series: []string = []string {}
+let mut chart_vals: []int = []int {}
+
+fn ChartCards() {
+    if chart_labs.len == 0 {
+        push(chart_labs, "Jan")
+        push(chart_labs, "Feb")
+        push(chart_labs, "Mar")
+        push(chart_labs, "Apr")
+        push(chart_labs, "May")
+        push(chart_labs, "Jun")
+        push(chart_labs, "Jul")
+        push(chart_labs, "Aug")
+        push(chart_labs, "Sep")
+        push(chart_labs, "Oct")
+        push(chart_labs, "Nov")
+        push(chart_labs, "Dec")
+        push(chart_series, "Desktop")
+        push(chart_series, "Mobile")
+        push(chart_vals, 186)
+        push(chart_vals, 82)
+        push(chart_vals, 305)
+        push(chart_vals, 134)
+        push(chart_vals, 237)
+        push(chart_vals, 290)
+        push(chart_vals, 73)
+        push(chart_vals, 226)
+        push(chart_vals, 209)
+        push(chart_vals, 91)
+        push(chart_vals, 214)
+        push(chart_vals, 240)
+        push(chart_vals, 130)
+        push(chart_vals, 170)
+        push(chart_vals, 160)
+        push(chart_vals, 210)
+        push(chart_vals, 180)
+        push(chart_vals, 150)
+        push(chart_vals, 230)
+        push(chart_vals, 190)
+        push(chart_vals, 250)
+        push(chart_vals, 220)
+        push(chart_vals, 170)
+        push(chart_vals, 260)
+    }
+    kit.SectionHeader("Data", "Charts",
+        "Hover a column or a point: the floating tooltip lists every series value, like the recharts cursor. The plot re-fits its card on window resize.")
+    kit.Card() {
+        kit.Title("Bar chart · Total visitors")
+        kit.Body("Desktop and mobile sessions by month, grouped per category.")
+        kit.BarChart(chart_labs, chart_series, chart_vals, 850, 216)
+    }
+    kit.Card() {
+        kit.Title("Line chart · Trend")
+        kit.Body("Straight segments with a dot on every data point; the stroke follows the series color.")
+        kit.LineChart(chart_labs, chart_series, chart_vals, 850, 216)
+    }
+    kit.Card() {
+        kit.Title("Area chart · Volume")
+        kit.Body("A tinted wash under the line; the fill restyles with the appearance.")
+        kit.AreaChart(chart_labs, chart_series, chart_vals, 850, 216)
+    }
+}
+
+fn Patterns() {
+    let names = zeus.signal([]string {})
+    zeus.push_item(names, "Ada")
+    zeus.push_item(names, "Bea")
+    LiveList(names)
+    Cards()
+    ChartCards()
+    Skeletons()
+    Overlays()
+}
+
+fn Kit() {
+    let page = zeus.signal(1)
+
+    kit.Page() {
+        Navbar(page)
+        let foundations = kit.Column(kit.SECTION) {
+            Foundations()
+        }
+        zeus.show_eq(foundations, page, 0)
+        let components = kit.Column(kit.SECTION) {
+            Components()
+        }
+        zeus.show_eq(components, page, 1)
+        let patterns = kit.Column(kit.SECTION) {
+            Patterns()
+        }
+        zeus.show_eq(patterns, page, 2)
+    }
+}
+
+fn main() {
+    zeus.App("Zeus Kit", 960, 860, fn() {
+        Kit()
+    })
+}

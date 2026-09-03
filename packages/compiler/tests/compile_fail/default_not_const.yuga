@@ -1,0 +1,8 @@
+// Defaults are data, not computation: no arithmetic expressions.
+fn f(k: int = 1 + 2) -> int {
+    return k
+}
+
+fn main() {
+    f()
+}

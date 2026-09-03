@@ -1,0 +1,21 @@
+// DRAW-list golden: the lazy calendar picker with its panel open — one 7x6
+// grid, dynamic month label, live year, selected day. Keep this file free of
+// prints: stdout is the golden.
+
+import "std:kit"
+import "std:zeus"
+
+fn main() {
+    let y = zeus.signal(2026)
+    let m = zeus.signal(9)
+    let d = zeus.signal(15)
+    zeus.snapshot(400, 420, fn() -> Node {
+        kit.Page() {
+            kit.DatePicker(y, m, d)
+        }
+    })
+    zeus.engine_click_text("Pick a date")
+    zeus.engine_layout(400, 420)
+    zeus.engine_paint()
+    zeus.dump()
+}

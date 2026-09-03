@@ -1,0 +1,60 @@
+// Payload-carrying events. A handler is written `fn(e: MouseEvent) => ...`;
+// the engine invokes it with no arguments, so the parameter is lowered to a
+// `let e = current_mouse()` reading the staged payload.
+import "std:fmt"
+import "std:sys"
+import "std:zeus"
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn CanvasWidget(status: Signal<string>) {
+    zeus.Box(
+        style = BoxStyle(width = 300, height = 200, background = "#1e1e2e"),
+        on_mouse_down = fn(e: MouseEvent) => status.set("Pressed button {{e.button}} at {{e.x}}"),
+        on_mouse_up = fn(e: MouseEvent) => status.set("Released mouse")
+    ) {
+        zeus.Box(align_direction = DIRECTION.Column, padding = 16) {
+            zeus.Text(status.get())
+        }
+    }
+}
+
+fn CommandPalette(text: Signal<string>) {
+    zeus.Input(
+        bind = text,
+        placeholder = "type a command",
+        on_key_down = fn(e: KeyEvent) {
+            if e.ctrl {
+                if e.key == Key.K {
+                    fmt.println("Shortcut triggered!")
+                }
+            }
+        },
+        on_key_up = fn(e: KeyEvent) => fmt.println("up", e.key),
+        on_key_press = fn(e: KeyEvent) => fmt.println("press", e.key)
+    )
+}
+
+fn main() {
+    let status = zeus.signal("Idle")
+    let text = zeus.signal("")
+    zeus.snapshot(320, 260, fn() -> Node {
+        zeus.Box(align_direction = DIRECTION.Column) {
+            CanvasWidget(status)
+            CommandPalette(text)
+        }
+    })
+    // A node carrying only a pointer handler is hit-testable, and children
+    // are tried first — that doubles as event bubbling.
+    zeus.engine_click(10, 10)
+    expect(status.get() == "Pressed button 0 at 10", "mouse down payload")
+    zeus.engine_mouseup()
+    expect(status.get() == "Released mouse", "mouse up")
+    fmt.println("events ok")
+}

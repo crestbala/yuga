@@ -16,6 +16,9 @@
     let mem = null;
     let stopped = false;
     let raf = 0;
+    /* Instance exports; imports that finish asynchronously (fetch_rpc_async)
+       call back into these once `boot` has instantiated the module. */
+    let exp = null;
     const ac = new AbortController();
     const signal = ac.signal;
 
@@ -256,6 +259,8 @@
       },
     },
     zeus: {
+      /* Monotonic milliseconds (std:async `now_ms`). i64: return a BigInt. */
+      now_ms: () => BigInt(Math.floor(performance.now())),
       write: (p, n) => {
         const t = bytes(p, n);
         if (opts.onWrite) opts.onWrite(t);
@@ -264,6 +269,8 @@
       panic: (p, n) => {
         throw new Error(bytes(p, n) || cstr(p) || "zeus panic");
       },
+      view_w: () => Math.max(1, Math.round(canvas.clientWidth || window.innerWidth || 1)),
+      view_h: () => Math.max(1, Math.round(canvas.clientHeight || window.innerHeight || 1)),
       fill: (x, y, w, h, color, r) => {
         ctx.fillStyle = rgb(color);
         roundRect(x, y, w, h, r);
@@ -280,6 +287,20 @@
         setFont(px);
         ctx.textBaseline = "alphabetic";
         ctx.fillText(s, snapX(x), snapY(y + box.ascent));
+      },
+      /* Rotated text, clockwise around the top-left of the line box. */
+      text_rot: (x, y, ptr, color, font, deg) => {
+        const s = cstr(ptr);
+        const px = font > 0 ? font : 13;
+        const box = lineBox(px);
+        ctx.fillStyle = rgb(color);
+        setFont(px);
+        ctx.textBaseline = "alphabetic";
+        ctx.save();
+        ctx.translate(snapX(x), snapY(y + box.ascent));
+        ctx.rotate((deg * Math.PI) / 180);
+        ctx.fillText(s, 0, 0);
+        ctx.restore();
       },
       measure: (ptr, px, wPtr, hPtr) => {
         const s = cstr(ptr);
@@ -359,6 +380,45 @@
         }
         ctx.restore();
       },
+      fetch_rpc_async: (pathPtr, pathLen, bodyPtr, bodyLen, outPtr, cap, handle) => {
+        try {
+          const path = bytes(pathPtr, pathLen) || "/";
+          const body =
+            bodyLen > 0 ? u8().slice(bodyPtr, bodyPtr + bodyLen) : new Uint8Array(0);
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", path, true);
+          /* Binary-safe response: each byte as a Latin-1 code unit. */
+          xhr.overrideMimeType("text/plain; charset=x-user-defined");
+          xhr.setRequestHeader("Content-Type", "application/grpc-web+proto");
+          xhr.setRequestHeader("Accept", "application/grpc-web+proto");
+          xhr.onload = () => {
+            if (xhr.status !== 200) {
+              if (exp && exp.zeus_fetch_done) exp.zeus_fetch_done(handle, -1);
+              return;
+            }
+            try {
+              const t = xhr.responseText || "";
+              const n = Math.min(t.length, Math.max(cap, 0));
+              const dst = u8();
+              for (let i = 0; i < n; i++) dst[outPtr + i] = t.charCodeAt(i) & 0xff;
+              if (exp && exp.zeus_fetch_done) exp.zeus_fetch_done(handle, n);
+            } catch (e) {
+              if (exp && exp.zeus_fetch_done) exp.zeus_fetch_done(handle, -1);
+            }
+          };
+          xhr.onerror = () => {
+            if (exp && exp.zeus_fetch_done) exp.zeus_fetch_done(handle, -1);
+          };
+          xhr.onabort = () => {
+            if (exp && exp.zeus_fetch_done) exp.zeus_fetch_done(handle, -1);
+          };
+          xhr.send(body);
+          return 0;
+        } catch (e) {
+          console.warn("fetch_rpc_async", e);
+          return -1;
+        }
+      },
       fetch_rpc: (pathPtr, pathLen, bodyPtr, bodyLen, outPtr, cap) => {
         try {
           const path = bytes(pathPtr, pathLen) || "/";
@@ -395,7 +455,7 @@
     function boot(wasmBuffer) {
       return WebAssembly.instantiate(wasmBuffer, imports).then((r) => {
         if (stopped) return;
-        const exp = r.instance.exports;
+        exp = r.instance.exports;
         mem = exp.memory;
         const sz = sizeCanvas();
         exp.zeus_start();
@@ -435,6 +495,8 @@
           (e) => {
             const p = layoutPoint(e.clientX, e.clientY);
             exp.zeus_pointer_move(p.x, p.y);
+            const cp = exp.zeus_cursor_sync ? exp.zeus_cursor_sync() : 0;
+            canvas.style.cursor = cstr(cp) || "default";
           },
           { signal }
         );
@@ -469,6 +531,29 @@
             if (e.key === "ArrowDown") key = 1003;
             exp.zeus_key(key, mods);
             if (e.key === "Tab") e.preventDefault();
+          },
+          { signal }
+        );
+        window.addEventListener(
+          "keyup",
+          (e) => {
+            const tag = (document.activeElement && document.activeElement.tagName) || "";
+            if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return;
+            let mods = 0;
+            if (e.shiftKey) mods |= 1;
+            if (e.ctrlKey) mods |= 2;
+            if (e.altKey) mods |= 4;
+            if (e.metaKey) mods |= 8;
+            let key = e.key.length === 1 ? e.key.charCodeAt(0) : 0;
+            if (e.key === "Enter") key = 13;
+            if (e.key === "Tab") key = 9;
+            if (e.key === "Backspace") key = 8;
+            if (e.key === "Escape") key = 27;
+            if (e.key === "ArrowLeft") key = 1000;
+            if (e.key === "ArrowRight") key = 1001;
+            if (e.key === "ArrowUp") key = 1002;
+            if (e.key === "ArrowDown") key = 1003;
+            if (exp.zeus_key_up) exp.zeus_key_up(key, mods);
           },
           { signal }
         );

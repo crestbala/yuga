@@ -8,6 +8,10 @@
 #endif
 
 int64_t yuga_net_tcp_connect(yuga_str host, int64_t port);
+int64_t yuga_net_tcp_nb_connect(yuga_str host, int64_t port);
+int64_t yuga_net_tcp_poll(int64_t fd, int64_t want, int64_t ms);
+int64_t yuga_net_tcp_send(int64_t fd, yuga_str data, int64_t off);
+int64_t yuga_net_tcp_so_error(int64_t fd);
 int64_t yuga_net_tcp_write(int64_t fd, yuga_str data);
 yuga_str yuga_net_tcp_read(int64_t fd, int64_t max);
 void yuga_net_tcp_close(int64_t fd);
@@ -16,5 +20,8 @@ int64_t yuga_net_tcp_accept(int64_t fd);
 int64_t yuga_net_tcp_bound_port(int64_t fd);
 yuga_str yuga_net_tcp_peek(int64_t fd, int64_t max);
 yuga_str yuga_net_fetch_rpc(yuga_str path, yuga_str body);
+int64_t yuga_net_fetch_issue(yuga_str path, yuga_str body);
+int64_t yuga_net_fetch_ready(void);
+yuga_str yuga_net_fetch_take(void);
 
 #endif

@@ -62,8 +62,9 @@ Owned ──&mut─► MutBorrowed ──end──► Owned
 Owned ──scope exit──► Dropped   (free boxes / []T / closures)
 ```
 
-`Box<T>`, `[]T`, and capturing `fn` values are not Copy. They move, and they
-are freed when the owner drops.
+`Box<T>` is not Copy. `[]T` is Copy when `T` is Copy (refcounted buffer,
+copy-on-write on `push`). `fn` values are Copy handles. They are freed when
+the last owner drops (vectors) or interned for the process (handlers).
 
 ## Repository map
 
@@ -77,12 +78,12 @@ yuga/
       tests/        compile_pass / compile_fail / golden (fixtures w/ .expected)
     zeus/           UI kit + hosts: desktop/ Cocoa, ios/ UIKit, android/ Canvas, web/ Canvas2D
     tree-sitter-yuga/  grammar
-    editors/        editor integrations (Zed extension)
+    editors/        editor integrations (Zed, Cursor/VS Code)
   examples/
     language/       standalone demo .yuga programs (not test fixtures)
     zeus/           zeus apps (dashboard, kit) + full-stack counter example
   bin/yugac       the compiler
-  bin/yuga-lsp    editor diagnostics / hover (incl. doc comments) / go-to-def
+  bin/yuga-lsp    editor diagnostics / hover (incl. doc comments) / go-to-def / completion / semantic tokens
 ```
 
 Std modules today: `fmt` (print), `zeus` (UI), `http`, `maya` (tiny 3D).
@@ -153,7 +154,7 @@ has no `wasm32` target; use Homebrew LLVM and `YUGA_WASM_CC`. See
 `--target ios` builds an iOS Simulator `.app`. Zeus still paints its own
 theme (fill / text / clip / SVG). UIKit is only the window and touch
 host — not buttons, navigation bars, or iOS semantic colors. The
-dashboard is a full-screen canvas; `theme.Page` size is ignored. Needs
+dashboard is a full-screen canvas; `zeus.App` size is ignored. Needs
 Xcode. Device signing is out of scope.
 
 `--target android` writes a Gradle project that links a JNI Canvas host
@@ -215,7 +216,8 @@ fn main() {
 }
 ```
 
-`[]T` is a growable owning vector (`push` / `pop` / `.len`). Index traps unless
+`[]T` is a growable vector (`push` / `pop` / `.len`). Copy when `T` is Copy
+(refcount on the buffer; `push` copy-on-writes if shared). Index traps unless
 the compiler proved the index in range. `struct Pair<T> { a: T, b: T }` is
 monomorphized; `Pair { a: 1, b: 2 }` infers `Pair<int>`.
 
@@ -263,7 +265,7 @@ fn main() {
 
 Method call `node.w(32)` looks up `w` in the current file, then in imported
 modules, and rewrites to `zeus.w(node, 32)` when `w` lives in `zeus`. That is why
-`import "std:zeus"` is enough for chaining.
+`import "std:zeus"` is enough for widgets and trailing blocks.
 
 ### 5. Closures
 
@@ -274,10 +276,10 @@ fn main() {
 }
 ```
 
-Captures must be Copy. The `fn` value owns a heap env and drops like `Box<T>`.
-It may be returned or stored. Zeus intern (`plat_intern_fn`) memcpy's that
-env using `env_size`, so a click or `.styled` handler still sees captured
-`Signal`s after the `fn` field that was interned is dropped.
+Captures must be Copy. `fn` values are Copy handles (shared env). They may be
+returned or stored. Zeus intern (`plat_intern_fn`) memcpy's that env using
+`env_size`, so a click handler still sees captured `Signal`s after the stack
+frame that created the closure is gone.
 
 ### Use cases
 

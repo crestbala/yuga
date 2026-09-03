@@ -24,6 +24,9 @@ LSP     := $(BINDIR)/yuga-lsp
 
 PASS    := $(sort $(wildcard $(TESTDIR)/compile_pass/*.yuga))
 FAIL    := $(sort $(wildcard $(TESTDIR)/compile_fail/*.yuga))
+# Headless DRAW-list goldens: a fixture's stdout must match its .txt byte
+# for byte (deterministic default metrics; see zeus_plat.c measure_default).
+GOLDRAW := $(sort $(wildcard $(TESTDIR)/draw_golden/*.yuga))
 GOLDEN  := $(TESTDIR)/golden
 LANGEX  := examples/language
 ZEUSEX  := examples/zeus
@@ -35,7 +38,7 @@ ZEUSAPPS := $(foreach d,$(wildcard $(ZEUSEX)/*),$(wildcard $(d)/$(notdir $(d)).y
 EXAMPLES:= $(sort $(filter-out $(LANGEX)/oob.yuga,\
              $(wildcard $(GOLDEN)/*.yuga) $(wildcard $(LANGEX)/*.yuga) $(ZEUSAPPS)))
 
-.PHONY: all clean test mkdirs lsp grammar zed-grammar
+.PHONY: all clean test mkdirs lsp grammar zed-grammar install-editor
 
 all: mkdirs $(TARGET) $(LSP)
 
@@ -57,6 +60,9 @@ zed-grammar:
 	  sed -i '' "s/^rev = \".*\"/rev = \"$$rev\"/" packages/editors/zed/extension.toml; \
 	  echo "zed grammar rev $$rev"
 	@rm -rf packages/editors/zed/grammars
+
+install-editor:
+	@python3 packages/editors/vscode/install.py
 
 mkdirs:
 	@mkdir -p $(OBJDIR) $(OBJDIR)/sema $(BINDIR) $(TESTDIR)/tmp $(EXBUILD)
@@ -140,6 +146,20 @@ test: all
 	    echo "FAIL ir golden $$stem"; cat $(TESTDIR)/tmp/golden_$$stem.diff; err=1; \
 	  else \
 	    echo "ok   ir golden $$stem"; \
+	  fi; \
+	done; \
+	for g in $(GOLDRAW); do \
+	  stem=$$(basename $$g .yuga); \
+	  if ! ./$(TARGET) $$g -o $(TESTDIR)/tmp/dg_$$stem >$(TESTDIR)/tmp/dg_$$stem.log 2>&1; then \
+	    echo "FAIL compile $$g"; cat $(TESTDIR)/tmp/dg_$$stem.log; err=1; continue; \
+	  fi; \
+	  if ! $(TESTDIR)/tmp/dg_$$stem >$(TESTDIR)/tmp/dg_$$stem.out 2>&1; then \
+	    echo "FAIL run $$g"; err=1; continue; \
+	  fi; \
+	  if ! diff -u $(TESTDIR)/draw_golden/$$stem.txt $(TESTDIR)/tmp/dg_$$stem.out >$(TESTDIR)/tmp/dg_$$stem.diff; then \
+	    echo "FAIL draw golden $$stem"; cat $(TESTDIR)/tmp/dg_$$stem.diff; err=1; \
+	  else \
+	    echo "ok   draw golden $$stem"; \
 	  fi; \
 	done; \
 	if ! python3 $(TESTDIR)/lsp_smoke.py; then err=1; fi; \

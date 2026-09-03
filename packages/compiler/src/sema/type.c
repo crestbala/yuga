@@ -114,10 +114,11 @@ int type_is_copy(const Type *t) {
         t->kind == TY_VOID)
         return 1;
     if (t->kind == TY_PARAM) return 1;
-    /* fn values may own a heap env; they move, like Box. */
+    /* fn values are Copy handles (shared env). */
+    if (t->kind == TY_PROC) return 1;
     if (t->kind == TY_PTR && !t->is_mut) return 1;
     if (t->kind == TY_ARRAY) return type_is_copy(t->elem);
-    if (t->kind == TY_VEC) return 0;
+    if (t->kind == TY_VEC) return type_is_copy(t->elem);
     if (t->kind == TY_STRUCT) {
         for (size_t i = 0; i < t->field_count; i++)
             if (!type_is_copy(t->field_types[i])) return 0;
@@ -147,7 +148,7 @@ int type_can_hold_fn(const Type *t) {
 
 int type_needs_drop(const Type *t) {
     if (!t) return 0;
-    if (t->kind == TY_BOX || t->kind == TY_VEC || t->kind == TY_PROC) return 1;
+    if (t->kind == TY_BOX || t->kind == TY_VEC) return 1;
     if (t->kind == TY_ARRAY) return type_needs_drop(t->elem);
     if (t->kind == TY_STRUCT) {
         for (size_t i = 0; i < t->field_count; i++)

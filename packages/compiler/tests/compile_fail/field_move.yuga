@@ -1,0 +1,18 @@
+// A consumed non-Copy field records the moved path on the binding; a later
+// read of that same field is an error. Ownership is a static fact.
+import "std:fmt"
+
+struct Props {
+    item: Box<int>,
+    label: string,
+}
+
+fn take(b: Box<int>) {
+}
+
+fn main() {
+    let p = Props { item: Box::new(1), label: "a" }
+    take(p.item)
+    fmt.println(p.label)
+    take(p.item)
+}

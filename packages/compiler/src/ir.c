@@ -47,6 +47,12 @@ static const char *fn_cname_in(YugaModule *m, const char *name) {
 static const char *resolve_callee(AstNode *cal) {
     if (!cal) return NULL;
     if (cal->kind == AST_IDENT) {
+        /* The binding typecheck recorded (a default like `= __noop` is
+           resolved in the fn's own module, whatever module the call
+           appears in); fall back to a name search only when unbound. */
+        if (cal->as.ident.resolved && cal->as.ident.resolved->kind == AST_FN_DECL &&
+            cal->as.ident.resolved->as.fn.cname)
+            return cal->as.ident.resolved->as.fn.cname;
         const char *c = fn_cname_in(&Gmods[Gcur], cal->as.ident.name);
         if (c) return c;
         for (int i = 0; i < Gnmods; i++) {
@@ -536,9 +542,49 @@ static int lower_call(AstNode *n) {
 }
 
 /** Lower an expression, returning the local holding its value. */
+/** One arm of an `if` used as a value: its statements run, and its trailing
+ *  expression is moved into `dst`. */
+static void lower_block_value(AstNode *blk, int dst, Type *ty) {
+    if (!blk || blk->kind != AST_BLOCK) return;
+    sdepth++;
+    size_t c = blk->as.block.stmt_count;
+    for (size_t i = 0; i < c; i++) {
+        AstNode *st = blk->as.block.stmts[i];
+        if (i + 1 == c && st && st->kind == AST_EXPR_STMT) {
+            int v = lower_expr(st->as.expr_stmt.expr);
+            if (v >= 0 && !block_closed()) {
+                IrInst *m = emit(IR_MOVE, st->loc);
+                m->dst = dst;
+                m->a = v;
+                m->ty = ir_subst(ty);
+            }
+            break;
+        }
+        lower_stmt(st);
+        if (block_closed()) break;
+    }
+    scope_pop_to(sdepth - 1);
+    sdepth--;
+}
+
 static int lower_expr(AstNode *n) {
     if (!n) return -1;
     switch (n->kind) {
+        case AST_IF: {
+            /* value position: both arms write the same result local */
+            int d = new_local(n->ty, NULL, 0);
+            int c = lower_expr(n->as.if_stmt.cond);
+            int bt = new_block(), be = new_block(), join = new_block();
+            term_br(c, bt, be);
+            CUR = bt;
+            lower_block_value(n->as.if_stmt.then_block, d, n->ty);
+            term_jmp(join);
+            CUR = be;
+            lower_block_value(n->as.if_stmt.else_block, d, n->ty);
+            term_jmp(join);
+            CUR = join;
+            return d;
+        }
         case AST_NUMBER: {
             int d = new_local(n->ty, NULL, 0);
             IrInst *i = emit(IR_CONST_INT, n->loc);
@@ -1074,13 +1120,24 @@ static void lower_stmt(AstNode *n) {
 
 /* --- driver ------------------------------------------------------------- */
 
-static AstNode *clos_nodes[256];
+/* Every reactive prop is a thunk, so a real app has thousands of closures;
+   this list grows rather than capping. */
+static AstNode **clos_nodes;
+static int *clos_mods;
 static int nclos_nodes;
+static int clos_cap;
 
 static void collect_clos(AstNode *n) {
     if (!n) return;
     if (n->kind == AST_CLOSURE) {
-        if (nclos_nodes < 256) clos_nodes[nclos_nodes++] = n;
+        if (nclos_nodes >= clos_cap) {
+            clos_cap = clos_cap ? clos_cap * 2 : 256;
+            clos_nodes = (AstNode **)realloc(clos_nodes, (size_t)clos_cap * sizeof(AstNode *));
+            clos_mods = (int *)realloc(clos_mods, (size_t)clos_cap * sizeof(int));
+            if (!clos_nodes || !clos_mods) yuga_fatal("out of memory");
+        }
+        clos_mods[nclos_nodes] = Gcur;
+        clos_nodes[nclos_nodes++] = n;
         collect_clos(n->as.fn.body);
         return;
     }
@@ -1221,6 +1278,7 @@ static void lower_closure(IrModule *m, AstNode *d) {
     F->sig = ir_subst(d->ty);
     F->lowered = 1;
     F->clos_id = d->as.fn.clos_id;
+    F->env_local = -1;
     F->caps = d->as.fn.caps;
     F->cap_types = d->as.fn.cap_types;
     F->ncaps = (int)d->as.fn.cap_count;
@@ -1229,9 +1287,11 @@ static void lower_closure(IrModule *m, AstNode *d) {
     sdepth = 0;
     nloop = 0;
     CUR = new_block();
-    bind_module_globals();
-
+    /* `_env` is allocated first so it stays a known local even when the
+       module has globals; codegen casts it to the env struct. */
     int env = new_local(type_ptr(ty_void(), 1), "_env", 1);
+    F->env_local = env;
+    bind_module_globals();
     Type *ft = d->ty;
     for (size_t k = 0; k < d->as.fn.param_count; k++) {
         Type *pt = (ft && k < ft->param_count) ? ft->params[k] : NULL;
@@ -1254,6 +1314,8 @@ static void lower_closure(IrModule *m, AstNode *d) {
         ld->dst = id;
         ld->place = fp;
         ld->ty = ct;
+        /* Caps live in the env; the local is an alias. */
+        F->locals[id].needs_drop = 0;
     }
 
     lower_stmt(d->as.fn.body);
@@ -1273,6 +1335,7 @@ static void lower_fn(IrModule *m, AstNode *d) {
     F->name = d->as.fn.name;
     F->sig = ir_subst(d->ty);
     F->lowered = 1;
+    F->env_local = -1;
     F->is_main = Gcur == 0 && !cname_override && d->as.fn.name && strcmp(d->as.fn.name, "main") == 0;
 
     scopes = NULL;
@@ -1300,8 +1363,15 @@ IrModule *ir_lower(YugaModule *mods, int nmods) {
     Gmods = mods;
     Gnmods = nmods;
     nclos_nodes = 0;
-    for (int i = 0; i < nmods; i++) collect_clos(mods[i].ast);
-    for (int i = 0; i < nclos_nodes; i++) lower_closure(m, clos_nodes[i]);
+    for (int i = 0; i < nmods; i++) {
+        Gcur = i;
+        collect_clos(mods[i].ast);
+    }
+    /* A closure's module globals are its own, not the entry module's. */
+    for (int i = 0; i < nclos_nodes; i++) {
+        Gcur = clos_mods[i];
+        lower_closure(m, clos_nodes[i]);
+    }
     for (int i = 0; i < nmods; i++) {
         AstNode *p = mods[i].ast;
         if (!p) continue;

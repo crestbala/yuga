@@ -27,7 +27,7 @@ fn of(id: int) -> PageResp {
         return pack(
             "Types",
             "Scalars, heap types, arrays, generics, and function types.",
-            "int is int64_t; + - * trap on overflow. float is double. bool is true / false. string is {ptr, len} UTF-8, Copy. Box<T> via Box::new. []T is a growable array (push / pop / .len). [N]T is a fixed array. &T / &mut T are borrows. fn(T) -> R is a function type.\n\nHex ints: 0xff. wrapping_add and friends when you need wrap instead of trap.",
+            "int is int64_t; + - * trap on overflow. float is double. bool is true / false. string is {ptr, len} UTF-8, Copy. Box<T> via Box::new (moves). []T is a growable array (push / pop / .len); Copy when T is Copy (refcount, copy-on-write on push). [N]T is a fixed array. &T / &mut T are borrows. fn(T) -> R is a Copy handle.\n\nHex ints: 0xff. wrapping_add and friends when you need wrap instead of trap.",
             "import \"std:fmt\"\n\nfn sum(xs: &[]int) -> int {\n    let mut s = 0\n    for i in 0..xs.len {\n        s += xs[i]\n    }\n    return s\n}\n\nfn main() {\n    let mut v = []int {}\n    push(v, 10)\n    v.push(20)\n    fmt.println(\"sum:\", sum(v))\n}"
         )
     }
@@ -35,7 +35,7 @@ fn of(id: int) -> PageResp {
         return pack(
             "Ownership",
             "Rust-like ownership without lifetime syntax. Copy types duplicate; everything else moves.",
-            "Copy: int, float, bool, string, [N]T if T is Copy, &T, structs of Copy fields. Not Copy: Box<T>, []T, fn(...), &mut T.\n\n&T shared, &mut T exclusive. Auto-borrow: passing an owned place to a &T / &mut T param inserts the borrow. Stored borrows last until the binding leaves scope (not NLL).",
+            "Copy: int, float, bool, string, fn(...), [N]T if T is Copy, []T if T is Copy, &T, structs of Copy fields. Not Copy: Box<T>, &mut T, []T / structs with a non-Copy field.\n\n&T shared, &mut T exclusive. Auto-borrow: passing an owned place to a &T / &mut T param inserts the borrow. Stored borrows last until the binding leaves scope (not NLL).",
             "fn increment(c: &mut Counter) {\n    c.count += 1\n}\n\nfn greet(c: &Counter) {\n    fmt.println(\"hello,\", c.name)\n}\n\nfn main() {\n    let mut c = Counter { name: \"tick\", count: 0 }\n    increment(&mut c)\n    increment(c)\n    greet(c)\n}"
         )
     }
@@ -51,15 +51,15 @@ fn of(id: int) -> PageResp {
         return pack(
             "Modules",
             "Quoted imports only. No glob imports. Symbols are always name.symbol.",
-            "import \"std:foo\" loads packages/compiler/std/foo.yuga. Relative import \"rel/path.yuga\" is from the importing file; the module name is the file stem.\n\nMethod rewrite: n.pad(8) is zeus.pad(n, 8). Cycles are errors. Do not name an entry file ui.yuga if it also imports the kit module ui.",
-            "import \"std:zeus\"\nimport \"../packages/zeus/lib/ui.yuga\"\n\nfn main() {\n    ui.Card().child(zeus.text(\"Hello\")).run()\n}"
+            "import \"std:foo\" loads packages/compiler/std/foo.yuga. Relative import \"rel/path.yuga\" is from the importing file; the module name is the file stem.\n\nCycles are errors. UI children are trailing blocks on Box / Text, not chained .child calls.",
+            "import \"std:zeus\"\n\nfn main() {\n    zeus.App(\"Hello\", 400, 240, fn() {\n        zeus.Box(padding = 16) {\n            zeus.Text(\"Hello\")\n        }\n    })\n}"
         )
     }
     if id == 7 {
         return pack(
             "Libraries",
             "Language libraries live in packages/compiler/std/. Import with import \"std:name\".",
-            "std:fmt — stdout, not printf. std:zeus — UI Node tree and Signal<T>. std:http — unary RPC, #[proto], gRPC-Web and h2c. std:maya — 3D/2D, integer world units. std:sys — env, files, exec (native). std:net — TCP; used by http, not a typical app import.\n\nZeus kit widgets live in packages/zeus/lib/ (relative import).",
+            "std:fmt — stdout, not printf. std:zeus — UI Node tree and Signal<T>. std:kit — shared look (Card, Button, Dialog, Navbar, For lists). std:http — unary RPC, #[proto], gRPC-Web and h2c. std:maya — 3D/2D, integer world units. std:sys — env, files, exec (native). std:net — TCP; used by http, not a typical app import.\n\nImport std:kit; do not copy the gallery.",
             "import \"std:fmt\"\n\nfn main() {\n    fmt.println(\"hello, yuga\")\n}"
         )
     }
@@ -75,8 +75,8 @@ fn of(id: int) -> PageResp {
         return pack(
             "zeus",
             "UI toolkit. Native Cocoa and WASM/Canvas2D run the same source. Backend is a --target flag, not an import.",
-            "A component is fn(Props) -> Node. Signal<T> is a Copy handle; T must be Copy. Read and write with sig.get() and sig.set(v). n.on_click(handler) is the click API.\n\nMethods chain: n.pad(8) is zeus.pad(n, 8). .child(n) takes one node; .children(a, b, c) takes several. .each(items, |i, item| node) maps a []T. Kit: import lib/ui.yuga. ZEUS_HEADLESS=1 layouts once and exits.",
-            "import \"std:zeus\"\n\nfn main() {\n    let n = zeus.signal(0)\n    zeus.col().pad(16).gap(8).children(\n        zeus.text(\"Count\").font(22),\n        zeus.label(\"\").bind(n).font(28),\n        zeus.row().gap(8).children(\n            zeus.button(\"-\").on_click(|| { n.set(n.get() - 1) }),\n            zeus.button(\"+\").on_click(|| { n.set(n.get() + 1) }),\n        ),\n    ).run()\n}"
+            "A component is a fn. Hierarchy is a trailing block. Signal<T> is a Copy handle; T must be Copy (including []U when U is Copy). Read and write with sig.get() and sig.set(v). zeus.For + push_item grow a list after launch. Button(on_click = fn() => ...) is the click API.\n\nzeus.App builds the tree once. Text(\"{{n.get()}}\") re-paints when the signal changes. Same source on Cocoa, iOS, Android, and wasm Canvas2D (no HTML DOM). ZEUS_HEADLESS=1 layouts once and exits.",
+            "import \"std:zeus\"\n\nfn main() {\n    let n = zeus.signal(0)\n    zeus.App(\"Count\", 320, 200, fn() {\n        zeus.Box(align_direction = DIRECTION.Column, padding = 16, spacing = 8) {\n            zeus.Text(\"Count\", font = 22)\n            zeus.Text(\"{{n.get()}}\", font = 28)\n            zeus.Box(align_direction = DIRECTION.Row, spacing = 8) {\n                zeus.Button(\"-\", on_click = fn() => n.set(n.get() - 1))\n                zeus.Button(\"+\", on_click = fn() => n.set(n.get() + 1))\n            }\n        }\n    })\n}"
         )
     }
     if id == 10 {
@@ -115,7 +115,7 @@ fn of(id: int) -> PageResp {
         return pack(
             "Platforms",
             "Same Yuga source; the host is a --target flag. Zeus paints its own theme everywhere.",
-            "native (default) — macOS Cocoa window, not AppKit widgets. wasm / wasm32 — Canvas2D, needs wasm32 clang. ios — Simulator, Xcode. android — Gradle + JNI Canvas, density-independent pixels.\n\nCLI and std:http servers are native binaries. ZEUS_HEADLESS=1 / MAYA_HEADLESS=1 for one frame (make test).",
+            "native (default) — macOS Cocoa window, not AppKit widgets. wasm / wasm32 — Canvas2D in the browser (no HTML DOM widgets). ios — Simulator, Xcode. android — Gradle + JNI Canvas, density-independent pixels.\n\nCLI and std:http servers are native binaries. ZEUS_HEADLESS=1 / MAYA_HEADLESS=1 for one frame (make test).",
             "./bin/yugac --target=native --run app.yuga\n./bin/yugac --target=wasm32 -o app.wasm app.yuga\n./bin/yugac --target=ios --run examples/zeus/dashboard/dashboard.yuga"
         )
     }
@@ -123,8 +123,8 @@ fn of(id: int) -> PageResp {
         return pack(
             "Examples",
             "./run.sh with no arguments lists everything. It builds yugac if needed.",
-            "Language: minimal, counter, http_server, solar, studio, oob (expected trap).\nZeus: kit, dashboard, counter (full-stack :8080 + :5173), repl (playground :5174).\nDocs: ./run.sh www — this UI on :5175, Docs.Page on :8082.\n\ncounter is both a language example and a Zeus app; use language/counter or zeus/counter.",
-            "./run.sh\n./run.sh dashboard\n./run.sh dashboard wasm32\n./run.sh zeus/counter\n./run.sh repl\n./run.sh www"
+            "Language: minimal, counter, http_server, solar, studio, oob (expected trap).\nZeus: gallery, dashboard, counter (full-stack :8080 + :5173). Same UI on Canvas2D wasm and native.\nDocs: ./run.sh www — this UI on :5175, Docs.Page on :8082.\n\ncounter is both a language example and a Zeus app; use language/counter or zeus/counter.",
+            "./run.sh\n./run.sh gallery\n./run.sh gallery wasm32\n./run.sh dashboard\n./run.sh zeus/counter\n./run.sh www"
         )
     }
     return pack(
