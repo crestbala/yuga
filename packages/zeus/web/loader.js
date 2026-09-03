@@ -19,6 +19,10 @@
     /* Instance exports; imports that finish asynchronously (fetch_rpc_async)
        call back into these once `boot` has instantiated the module. */
     let exp = null;
+    /* Browser WebSockets (wasm `http.ws_open`): the socket and an inbound
+       message queue live here per slot; wasm polls and copies out. */
+    let wsSlots = new Array(8).fill(null);
+    const te = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
     const ac = new AbortController();
     const signal = ac.signal;
 
@@ -261,6 +265,56 @@
     zeus: {
       /* Monotonic milliseconds (std:async `now_ms`). i64: return a BigInt. */
       now_ms: () => BigInt(Math.floor(performance.now())),
+      /* WebSocket bridge: open one same-origin socket; inbound text messages
+         queue in JS until wasm drains them per frame. */
+      ws_open: (urlPtr, urlLen, slot) => {
+        try {
+          if (slot < 0 || slot >= wsSlots.length) return -1;
+          const url = bytes(urlPtr, urlLen);
+          if (!url) return -1;
+          const sock = new WebSocket(url);
+          wsSlots[slot] = { sock: sock, queue: [] };
+          sock.onmessage = (ev) => {
+            const q = wsSlots[slot] ? wsSlots[slot].queue : null;
+            if (!q) return;
+            q.push(String(ev.data));
+            if (q.length > 256) q.shift();
+          };
+          return 0;
+        } catch (e) {
+          console.warn("ws_open", e);
+          wsSlots[slot] = null;
+          return -1;
+        }
+      },
+      ws_state: (slot) => {
+        const r = wsSlots[slot];
+        if (!r || !r.sock) return 1;
+        return r.sock.readyState === WebSocket.OPEN ? 0 : 1;
+      },
+      ws_count: (slot) => {
+        const r = wsSlots[slot];
+        return r && r.queue ? r.queue.length : 0;
+      },
+      ws_copy: (slot, ptr, cap) => {
+        const r = wsSlots[slot];
+        if (!r || !r.queue || !r.queue.length) return -1;
+        const s = r.queue.shift();
+        const b = te ? te.encode(s) : Array.from(s).map((c) => c.charCodeAt(0) & 0xff);
+        const n = Math.min(b.length, Math.max(cap, 0));
+        const dst = u8();
+        for (let i = 0; i < n; i++) dst[ptr + i] = b[i];
+        return n;
+      },
+      ws_close: (slot) => {
+        const r = wsSlots[slot];
+        if (r && r.sock) {
+          try {
+            r.sock.close();
+          } catch (e) {}
+        }
+        wsSlots[slot] = null;
+      },
       write: (p, n) => {
         const t = bytes(p, n);
         if (opts.onWrite) opts.onWrite(t);

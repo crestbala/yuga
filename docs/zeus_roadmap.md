@@ -18,12 +18,12 @@ their exit criteria as the definition of done.
 |---|---|---|
 | UI core | Retained tree, per-prop thunks, arena recycling, headless layout/paint tests, DRAW goldens | list virtualization, scroll physics, IME/multiline, images |
 | Reactivity | `Signal<int>` scalars, `For` list rebuilds, reactive props (`width`, `position`, `grow`, `show`, …) | floats/dates in signals; appends rebuild whole lists |
-| Data plane | `#[proto]` codecs + unary gRPC-Web / h2c client **and** server, `Result<T>`, async `call_async` callback client | no bidirectional streaming, no TLS, no auth/session story |
-| Networking | `std/net`: **blocking** POSIX sockets (wasm: `fetch_rpc` only); Phase 1 async transport: timers + non-blocking connect/poll/send in `std:async` + `http.call_async` steppers | TLS, ws/SSE, streaming bodies |
+| Data plane | `#[proto]` codecs + unary gRPC-Web / h2c client **and** server, `Result<T>`, async `call_async` client, SSE + WebSocket streams (Phase 1b), bearer-token auth (`set_token` + `app.before`) | no bidirectional streaming, no TLS |
+| Networking | `std/net`: blocking POSIX sockets + Phase 1 async transport (timers, non-blocking connect/poll/send, `http.call_async`/`sse_open`/`ws_open` steppers); wasm: `fetch_rpc` + async fetch slots | TLS, streaming bodies on wasm |
 | Storage | `sys.read_file` / `write_file` (whole-file), env | KV/table store, structured persistence, fs tree, app-data paths |
 | Media | inline SVG only (paths, circles, `currentColor`) | raster images, gradients — the missing primitive |
 | Text | one weight per host, no selection, no IME on canvas | multilingual/emoji, rich text, multiline input |
-| Server | single-threaded Yuga accept loop (HTTP/1.1 + h2c) | concurrency model for chat-class servers |
+| Server | single-threaded Yuga accept loop (HTTP/1.1 + h2c + one SSE/ws client per connection) | concurrency model for chat-class servers |
 | Kit | ~50 shadcn widgets, palette tokens, goldens | monolith namespace, no DCE, fixed-pixel tuning |
 
 ## 2. Already fixed (do not re-plan)
@@ -74,15 +74,15 @@ demos. Phase column points into §6.
 | 1 | No raster image primitive (draw op + host decode) | product photos, avatars, feeds — every visual app | med-high (7-file pipeline) | 2 |
 | 2 | Single-line text, no IME on canvas hosts | chat input, search, forms beyond ASCII | high (host IME + multiline) | 3 |
 | 3 | `For` rebuilds the whole list per push (recycling yes, O(n) still) | message logs, activity feeds, 10k-row tables | medium (windowed rows) | 5 |
-| 4 | Blocking sockets; no async/timers in the runtime | any background I/O without freezing the UI | medium | 1 |
-| 5 | No realtime transport (ws/SSE) | chat/social presence, live updates | medium | 1b |
-| 6 | No scroll physics / overscroll / nested scrollers | feed feel, long pages | medium | 5b |
-| 7 | `Signal<int>` only (no float/date/bool scalar store) | smooth animation, timestamps, charts | small-med | 6b |
-| 8 | Kit monolith, no dead-code elimination | web bundle size, componentization | medium | 7 |
-| 9 | a11y = labels only; no focus ring, thin keyboard model | enterprise + compliance | ongoing | 7b |
-| 10 | Fixed-pixel tuning; no density/font scaling | devices, accessibility | small | 7c |
-| 11 | No TLS | anything beyond localhost | med | 6 |
-| 12 | No KV/persistence beyond whole-file read/write | drafts, caches, offline, cart | small-med | 4 |
+| 4 | No scroll physics / overscroll / nested scrollers | feed feel, long pages | medium | 5b |
+| 5 | `Signal<int>` only (no float/date/bool scalar store) | smooth animation, timestamps, charts | small-med | 6b |
+| 6 | Kit monolith, no dead-code elimination | web bundle size, componentization | medium | 7 |
+| 7 | a11y = labels only; no focus ring, thin keyboard model | enterprise + compliance | ongoing | 7b |
+| 8 | Fixed-pixel tuning; no density/font scaling | devices, accessibility | small | 7c |
+| 9 | No TLS | anything beyond localhost | med | 6 |
+| 10 | No KV/persistence beyond whole-file read/write | drafts, caches, offline, cart | small-med | 4 |
+
+Resolved by the landed phases: blocking sockets/async runtime (Phase 1), and no realtime transport (Phase 1b) — ws/SSE + the auth/session convention exist; what remains for chat-class servers is the §5.3 reactor (concurrent connections) and wasm ws via the browser's WebSocket.
 
 ## 5. Architecture decisions (the reasoning to preserve)
 
@@ -92,7 +92,7 @@ stateful; threading zeus would be a rewrite with no user-visible gain. The
 industry answer (Android/UIKit/Swing) is: background I/O, completion **on the
 one UI thread**. Keep it.
 
-### 5.2 Async = task pool + completion queue (C runtime), not language threads
+### 5.2 Async = one UI thread + Yuga queues (no language threads)
 Yuga fns cannot run on arbitrary threads (globals, arenas). Shape:
 
 ```yuga
@@ -115,8 +115,9 @@ understands.
   sleep while idle and wake at the next deadline (`engine_next_ms`). A C
   task pool stays an option for truly blocking syscalls (DNS, TLS) when
   those appear.
-- Yuga side: `spawn(fn)` + completion callbacks suffice at first; `async`/
-  `await` sugar can be added later on top without changing the model.
+- Yuga side: `spawn(fn)` + completion callbacks run everything; the
+  `async fn` / `await` sugar (Phase 1c) re-enters the same pump — sequential
+  code reads like JS, still on the one thread.
 - Timers (`sleep`, `after(ms, fn)`, interval) ship with the same queue.
 
 ### 5.3 Server: reactor, not threads
@@ -150,11 +151,10 @@ Definition of done per phase = exit criteria, all verified by `make test`
 - **Exit:** an app completes a gRPC round-trip while animating; headless test asserts completion → repaint without a manual `engine_layout`. **Green** (`zeus_async_rpc.yuga` runs a real child-process `Echo.Ping` server; wasm fetch path compiles, needs a browser to run).
 
 ### Phase 1b — Realtime transport
-- [ ] SSE on the existing HTTP/1.1 server (server → client push).
-- [ ] WebSocket client (native + wasm) and server.
-- [ ] Auth/session convention: token header + an `app.before(fn)` middleware hook.
-- **Exit:** a headless loop test streams N events over SSE/ws and the UI
-  shows each (golden or probe assertions).
+- [x] SSE on the existing HTTP/1.1 server (server → client push): `read_head` / `sse_start` / `sse_send` per connection, `http.sse_open` streaming client (events per `data:` line, UI-thread callback).
+- [x] WebSocket client (native **and** wasm) and server: pure-Yuga RFC 6455 codec in `httpcore/ws.yuga` (base64, SHA-1, accept key, masked/unmasked frames), `http.ws_upgrade` / `ws_send_text` server push, `http.ws_open` streaming client — native TCP steppers, wasm via the browser's WebSocket (JS loader bridge, per-frame drain). Live demo: `examples/zeus/ws` (native tick server + wasm page).
+- [x] Auth/session convention: bearer token header (`http.set_token`), parsed server-side into `req_token()`, `app.before(fn)` middleware hook (alias of `use`) that can `reject()` → handler skipped, grpc-status 16 (`http_auth.yuga`).
+- **Exit:** a headless loop test streams N events over SSE/ws and the UI shows each (golden or probe assertions). **Green** (`zeus_stream.yuga`: 5 SSE events + 5 ws messages → signal-fed label `events: 10`, repaint probes, child-process servers).
 
 ### Phase 1c — JS-shaped `async fn` / `await` (language sugar)
 Callback APIs (`call_async`) are the runtime; this phase adds the syntax the
@@ -167,7 +167,8 @@ thread.
 - [x] Awaitable surface v1: `Future<string>` mailboxes in `std:async` (`future_str` / `resolve` / `await_value` — pure Yuga, no C); `http.acall(c, name, body)` is the awaitable gRPC-Web call; awaiting pumps timers/spawns/socket steppers until `resolve`, then returns the value.
 - [x] Demo + tests: `examples/zeus/counter/macos/app.yuga` is `async fn main` with two awaited RPCs (`let raw = await c.acall(...)`) feeding the App; `compile_pass/async_await.yuga` (sequential awaits, sync call of an async fn, pre-resolved future); `compile_fail/async_await_ctx.yuga`.
 - **Exit:** sequential awaited values flow in order through the pump and repaint; awaits outside `async fn` are compile errors. **Green** — caveat: awaiting re-enters the pump on the UI thread, so an await inside an event handler pauses host repaint until it returns; init/startup awaits (the counter App) and headless flows are the sweet spot, callbacks stay the reactive path.
-- [ ] Follow-ups: widen `Future<T>` beyond string payloads; `async`/`await` highlighting in the tree-sitter/editor grammars; loop-and-branch-heavy bodies are already fine (no CPS split in this design) but want a stress test.
+- [x] Follow-up: `async`/`await` highlighting landed in the tree-sitter grammar + Zed/VSCode grammars (violet scopes in VSCode).
+- [ ] Follow-ups: widen `Future<T>` beyond string payloads; loop-and-branch-heavy bodies are already fine (no CPS split in this design) but want a stress test.
 
 ### Phase 2 — Image primitive
 - [ ] New draw op kind (raster) through scene → platform → C → hosts + canvas loaders.

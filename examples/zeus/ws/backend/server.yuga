@@ -1,0 +1,75 @@
+//! Tiny WebSocket demo backend: one client at a time on the blocking accept
+//! loop (the chat-class reactor is a later phase). Every 500ms it pushes a
+//! `tick-N` text frame. Closed clients (tab close/refresh) are caught with a
+//! zero-timeout poll each round, so the accept loop never starves on a ghost
+//! connection. Run `./run.sh` in the demo root, then open http://127.0.0.1:5173
+//! and watch the wasm page count ticks.
+
+import "std:http"
+import "std:net"
+import "std:async"
+import "std:fmt"
+import "std:sys"
+
+fn tick_msg(n: int) -> string {
+    return http.concat_str("tick-", http.string_of(http.u_itoa(n)))
+}
+
+fn serve(c: int) {
+    let head = http.read_head(c)
+    let key = http.ws_header(head, "sec-websocket-key")
+    if key.len == 0 {
+        net.tcp_close(c)
+        return
+    }
+    if http.ws_upgrade(c, key) != 0 {
+        net.tcp_close(c)
+        return
+    }
+    fmt.println("ws: client connected, pushing ticks")
+    let mut n = 0
+    let mut live = 1
+    while live == 1 {
+        n = n + 1
+        if http.ws_send_text(c, tick_msg(n)) != 0 {
+            live = 0
+        }
+        if live == 0 {
+            break
+        }
+        // Push-only loop: a closed tab or a page refresh leaves a FIN/RST we
+        // would never notice — writes to a half-closed socket can succeed for
+        // a long time, so without this the accept loop starves and new
+        // connects time out. Poll readable each round: EOF means the client
+        // is gone.
+        if net.tcp_poll(c, 1, 0) != 0 {
+            let b = net.tcp_read(c, 1)
+            if b.len == 0 {
+                live = 0
+            } else {
+                // Stray bytes (a ping or partial frame): drain, keep ticking.
+                net.tcp_read(c, 4096)
+            }
+        }
+        if live == 1 {
+            async.sleep(500)
+        }
+    }
+    fmt.println("ws: client gone")
+    net.tcp_close(c)
+}
+
+fn main() {
+    let l = net.tcp_listen(8080)
+    if l < 0 {
+        fmt.println("ws: cannot bind 127.0.0.1:8080")
+        sys.exit(1)
+    }
+    fmt.println("ws: ws://127.0.0.1:8080/ws  (frontend: http://127.0.0.1:5173)")
+    for k in 0..2147483647 {
+        let c = net.tcp_accept(l)
+        if c >= 0 {
+            serve(c)
+        }
+    }
+}

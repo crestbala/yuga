@@ -1,0 +1,41 @@
+//! WebSocket demo UI (wasm). `http.ws_open(client(""), "/ws", ...)` opens
+//! the same-origin socket through the browser's WebSocket: every frame the
+//! engine drains the JS message queue, so each `tick-N` frame lands in the
+//! signals below and repaints. The vite dev server proxies `/ws` to the
+//! native backend on :8080. If the socket drops (backend restarted), the
+//! page reconnects every second.
+
+import "std:async"
+import "std:zeus"
+import "std:http"
+
+fn Panel(n: Signal<int>, last: Signal<string>, state: Signal<string>) {
+    zeus.Box(align_direction = DIRECTION.Column, padding = 20, width = 280) {
+        zeus.Text("Zeus ws demo", font = 20)
+        zeus.Text("messages: {{n.get()}}", font = 15)
+        zeus.Text("last: {{last.get()}}", font = 13)
+        zeus.Text("ws: {{state.get()}}", font = 13)
+    }
+}
+
+fn connect(n: Signal<int>, last: Signal<string>, state: Signal<string>) {
+    http.ws_open(http.client(""), "/ws", fn(msg) {
+        n.set(n.get() + 1)
+        last.set(msg)
+        state.set("open")
+    }, fn() {
+        // socket closed (server restarted?): retry shortly
+        state.set("reconnecting")
+        async.after(1000, || { connect(n, last, state) })
+    })
+}
+
+fn main() {
+    let n = zeus.signal(0)
+    let last = zeus.signal("(waiting)")
+    let state = zeus.signal("connecting")
+    zeus.App("ws", 300, 200, fn() {
+        Panel(n, last, state)
+    })
+    connect(n, last, state)
+}

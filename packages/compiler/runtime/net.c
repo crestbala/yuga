@@ -25,6 +25,84 @@ int32_t zeus_js_fetch_rpc_async(const char *path, int32_t path_len, const char *
 #define ASYNC_FETCH_SLOTS 4
 #define ASYNC_FETCH_CAP 65536
 
+/* Browser WebSocket bridge (wasm): the JS loader owns the WebSocket and a
+   per-slot queue of inbound messages; wasm polls state/count and copies one
+   message out per `ws_copy`. Slot ids are shared with JS. */
+
+__attribute__((import_module("zeus"), import_name("ws_open")))
+int32_t zeus_js_ws_open(const char *url, int32_t url_len, int32_t slot);
+
+__attribute__((import_module("zeus"), import_name("ws_state")))
+int32_t zeus_js_ws_state(int32_t slot);
+
+__attribute__((import_module("zeus"), import_name("ws_count")))
+int32_t zeus_js_ws_count(int32_t slot);
+
+__attribute__((import_module("zeus"), import_name("ws_copy")))
+int32_t zeus_js_ws_copy(int32_t slot, char *out, int32_t cap);
+
+__attribute__((import_module("zeus"), import_name("ws_close")))
+void zeus_js_ws_close(int32_t slot);
+
+#define WS_SLOTS 4
+#define WS_CAP 65536
+
+static char *g_ws_buf[WS_SLOTS];
+static int g_ws_used[WS_SLOTS];
+
+int64_t yuga_net_ws_issue(yuga_str url) {
+    int i;
+    if (url.len <= 0 || !url.ptr) return -1;
+    for (i = 0; i < WS_SLOTS; i++) {
+        if (g_ws_used[i]) continue;
+        g_ws_buf[i] = (char *)malloc(WS_CAP);
+        if (!g_ws_buf[i]) return -1;
+        if (zeus_js_ws_open(url.ptr, (int32_t)url.len, (int32_t)i) < 0) {
+            free(g_ws_buf[i]);
+            g_ws_buf[i] = NULL;
+            return -1;
+        }
+        g_ws_used[i] = 1;
+        return (int64_t)i;
+    }
+    return -1;
+}
+
+int64_t yuga_net_ws_state(int64_t slot) {
+    if (slot < 0 || slot >= WS_SLOTS || !g_ws_used[slot]) return 1;
+    return (int64_t)zeus_js_ws_state((int32_t)slot);
+}
+
+int64_t yuga_net_ws_count(int64_t slot) {
+    if (slot < 0 || slot >= WS_SLOTS || !g_ws_used[slot]) return 0;
+    return (int64_t)zeus_js_ws_count((int32_t)slot);
+}
+
+yuga_str yuga_net_ws_copy(int64_t slot, int64_t max) {
+    char *p;
+    int32_t n;
+    if (slot < 0 || slot >= WS_SLOTS || !g_ws_used[slot]) {
+        return (yuga_str){ .ptr = "", .len = 0 };
+    }
+    if (max < 1) max = 1;
+    if (max > WS_CAP - 1) max = WS_CAP - 1;
+    n = zeus_js_ws_copy((int32_t)slot, g_ws_buf[slot], (int32_t)max);
+    if (n <= 0) return (yuga_str){ .ptr = "", .len = 0 };
+    p = (char *)malloc((size_t)n + 1);
+    if (!p) return (yuga_str){ .ptr = "", .len = 0 };
+    memcpy(p, g_ws_buf[slot], (size_t)n);
+    p[n] = 0;
+    return (yuga_str){ .ptr = p, .len = (int64_t)n };
+}
+
+void yuga_net_ws_close(int64_t slot) {
+    if (slot < 0 || slot >= WS_SLOTS || !g_ws_used[slot]) return;
+    zeus_js_ws_close((int32_t)slot);
+    free(g_ws_buf[slot]);
+    g_ws_buf[slot] = NULL;
+    g_ws_used[slot] = 0;
+}
+
 typedef struct {
     int used;
     int32_t handle;
@@ -448,6 +526,30 @@ int64_t yuga_net_fetch_ready(void) { return 0; }
 yuga_str yuga_net_fetch_take(void) {
     return (yuga_str){ .ptr = "", .len = 0 };
 }
+
+/* Browser WebSocket bridge is wasm-only. */
+int64_t yuga_net_ws_issue(yuga_str url) {
+    (void)url;
+    return -1;
+}
+
+int64_t yuga_net_ws_state(int64_t slot) {
+    (void)slot;
+    return 1;
+}
+
+int64_t yuga_net_ws_count(int64_t slot) {
+    (void)slot;
+    return 0;
+}
+
+yuga_str yuga_net_ws_copy(int64_t slot, int64_t max) {
+    (void)slot;
+    (void)max;
+    return (yuga_str){ .ptr = "", .len = 0 };
+}
+
+void yuga_net_ws_close(int64_t slot) { (void)slot; }
 
 yuga_str yuga_net_fetch_rpc(yuga_str path, yuga_str body) {
     (void)path;
