@@ -16,12 +16,17 @@
     let mem = null;
     let stopped = false;
     let raf = 0;
+    let wakeTimer = 0;
+    /* `start` rebinds this so `request_frame` / image onload can wake rAF. */
+    let schedule = function (_ms) {};
     /* Instance exports; imports that finish asynchronously (fetch_rpc_async)
        call back into these once `boot` has instantiated the module. */
     let exp = null;
     /* Browser WebSockets (wasm `http.ws_open`): the socket and an inbound
        message queue live here per slot; wasm polls and copies out. */
     let wsSlots = new Array(8).fill(null);
+    const imgCache = new Map();
+    let fileInput = null;
     const te = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
     const ac = new AbortController();
     const signal = ac.signal;
@@ -263,6 +268,8 @@
       },
     },
     zeus: {
+      /* Wake the idle rAF loop (image decode, plat_redraw, async fetch). */
+      request_frame: () => schedule(0),
       /* Monotonic milliseconds (std:async `now_ms`). i64: return a BigInt. */
       now_ms: () => BigInt(Math.floor(performance.now())),
       /* WebSocket bridge: open one same-origin socket; inbound text messages
@@ -374,6 +381,100 @@
         ctx.clip();
       },
       restore: () => ctx.restore(),
+      pick_image: () => {
+        if (!fileInput) {
+          fileInput = document.createElement("input");
+          fileInput.type = "file";
+          fileInput.accept = "image/png,image/jpeg,image/webp,image/gif";
+          fileInput.style.display = "none";
+          document.body.appendChild(fileInput);
+          fileInput.addEventListener("change", () => {
+            const f = fileInput.files && fileInput.files[0];
+            fileInput.value = "";
+            if (!f || !exp || !te || !mem) return;
+            const url = URL.createObjectURL(f);
+            const im = new Image();
+            im.onload = () => {
+              imgCache.set(url, im);
+              const bytes = te.encode(url);
+              const cap = exp.zeus_text_buf_cap ? exp.zeus_text_buf_cap() : 0;
+              const ptr = exp.zeus_text_buf ? exp.zeus_text_buf() : 0;
+              if (!ptr || cap < 2) return;
+              const n = Math.min(bytes.length, cap - 1);
+              new Uint8Array(mem.buffer, ptr, n).set(bytes.subarray(0, n));
+              if (exp.zeus_picked) exp.zeus_picked(n, im.naturalWidth, im.naturalHeight);
+              schedule(0);
+            };
+            im.onerror = () => {
+              imgCache.set(url, "fail");
+            };
+            im.src = url;
+          });
+        }
+        fileInput.click();
+      },
+      /* PNG / JPEG / WebP / GIF via the browser decoder. Cache by src.
+         fit: 0 stretch, 1 contain, 2 cover, 3 none. */
+      image: (x, y, w, h, ptr, radius, alpha, fit) => {
+        const src = cstr(ptr);
+        if (!src || w <= 0 || h <= 0) return;
+        let rec = imgCache.get(src);
+        if (rec === "fail") return;
+        if (!rec) {
+          const im = new Image();
+          /* Tiny `data:` catalog shots should decode on this paint, not the
+             next rAF. `decoding = "sync"` is a hint; we still draw if
+             `complete` after setting `src`. */
+          if ("decoding" in im) im.decoding = "sync";
+          im.onload = () => schedule(0);
+          im.onerror = () => {
+            imgCache.set(src, "fail");
+          };
+          im.src = src;
+          imgCache.set(src, im);
+          rec = im;
+        }
+        if (!rec.complete || !rec.naturalWidth) return;
+        const p = snapRect(x, y, w, h);
+        const iw = rec.naturalWidth;
+        const ih = rec.naturalHeight;
+        let dx = p.x, dy = p.y, dw = p.w, dh = p.h;
+        if (fit === 3) {
+          dw = iw;
+          dh = ih;
+        } else if (fit === 1 || fit === 2) {
+          if ((fit === 1 && iw * p.h <= ih * p.w) || (fit === 2 && iw * p.h >= ih * p.w)) {
+            dh = p.h;
+            dw = ih ? (iw * p.h) / ih : p.w;
+          } else {
+            dw = p.w;
+            dh = iw ? (ih * p.w) / iw : p.h;
+          }
+          dx = p.x + (p.w - dw) / 2;
+          dy = p.y + (p.h - dh) / 2;
+        }
+        ctx.save();
+        if (radius > 0) {
+          let r = radius;
+          if (r > p.w / 2) r = p.w / 2;
+          if (r > p.h / 2) r = p.h / 2;
+          ctx.beginPath();
+          ctx.moveTo(p.x + r, p.y);
+          ctx.arcTo(p.x + p.w, p.y, p.x + p.w, p.y + p.h, r);
+          ctx.arcTo(p.x + p.w, p.y + p.h, p.x, p.y + p.h, r);
+          ctx.arcTo(p.x, p.y + p.h, p.x, p.y, r);
+          ctx.arcTo(p.x, p.y, p.x + p.w, p.y, r);
+          ctx.closePath();
+          ctx.clip();
+        } else {
+          ctx.beginPath();
+          ctx.rect(p.x, p.y, p.w, p.h);
+          ctx.clip();
+        }
+        ctx.globalAlpha = alpha >= 0 && alpha < 255 ? alpha / 255 : 1;
+        ctx.drawImage(rec, dx, dy, dw, dh);
+        ctx.restore();
+      },
       svg: (x, y, w, h, ptr, color, alpha) => {
         const markup = cstr(ptr);
         if (!markup || w <= 0 || h <= 0) return;
@@ -435,38 +536,27 @@
         ctx.restore();
       },
       fetch_rpc_async: (pathPtr, pathLen, bodyPtr, bodyLen, outPtr, cap, handle) => {
+        /* Sync XHR: `await` pumps on this thread (`tick` + `sleep`). An async
+           XHR never completes while that loop holds the JS event loop. */
         try {
           const path = bytes(pathPtr, pathLen) || "/";
           const body =
             bodyLen > 0 ? u8().slice(bodyPtr, bodyPtr + bodyLen) : new Uint8Array(0);
           const xhr = new XMLHttpRequest();
-          xhr.open("POST", path, true);
-          /* Binary-safe response: each byte as a Latin-1 code unit. */
+          xhr.open("POST", path, false);
           xhr.overrideMimeType("text/plain; charset=x-user-defined");
           xhr.setRequestHeader("Content-Type", "application/grpc-web+proto");
           xhr.setRequestHeader("Accept", "application/grpc-web+proto");
-          xhr.onload = () => {
-            if (xhr.status !== 200) {
-              if (exp && exp.zeus_fetch_done) exp.zeus_fetch_done(handle, -1);
-              return;
-            }
-            try {
-              const t = xhr.responseText || "";
-              const n = Math.min(t.length, Math.max(cap, 0));
-              const dst = u8();
-              for (let i = 0; i < n; i++) dst[outPtr + i] = t.charCodeAt(i) & 0xff;
-              if (exp && exp.zeus_fetch_done) exp.zeus_fetch_done(handle, n);
-            } catch (e) {
-              if (exp && exp.zeus_fetch_done) exp.zeus_fetch_done(handle, -1);
-            }
-          };
-          xhr.onerror = () => {
-            if (exp && exp.zeus_fetch_done) exp.zeus_fetch_done(handle, -1);
-          };
-          xhr.onabort = () => {
-            if (exp && exp.zeus_fetch_done) exp.zeus_fetch_done(handle, -1);
-          };
           xhr.send(body);
+          if (xhr.status !== 200) {
+            if (exp && exp.zeus_fetch_done) exp.zeus_fetch_done(handle, -1);
+            return 0;
+          }
+          const t = xhr.responseText || "";
+          const n = Math.min(t.length, Math.max(cap, 0));
+          const dst = u8();
+          for (let i = 0; i < n; i++) dst[outPtr + i] = t.charCodeAt(i) & 0xff;
+          if (exp && exp.zeus_fetch_done) exp.zeus_fetch_done(handle, n);
           return 0;
         } catch (e) {
           console.warn("fetch_rpc_async", e);
@@ -503,36 +593,59 @@
     function stop() {
       stopped = true;
       if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      if (wakeTimer) clearTimeout(wakeTimer);
+      wakeTimer = 0;
       ac.abort();
     }
 
-    function boot(wasmBuffer) {
-      return WebAssembly.instantiate(wasmBuffer, imports).then((r) => {
+    function start(instance) {
         if (stopped) return;
-        exp = r.instance.exports;
+        exp = instance.exports;
         mem = exp.memory;
         const sz = sizeCanvas();
-        exp.zeus_start();
-        if (exp.zeus_resize) exp.zeus_resize(sz.w, sz.h);
         function frame() {
+          raf = 0;
           if (stopped) return;
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           applyLayoutTransform();
+          let next = 0;
           try {
-            exp.zeus_paint();
+            next = exp.zeus_paint() | 0;
           } catch (e) {
             console.error("zeus_paint", e);
             return;
           }
-          raf = requestAnimationFrame(frame);
+          if (next) schedule(next <= 1 ? 0 : next);
         }
-        raf = requestAnimationFrame(frame);
+        schedule = function (ms) {
+          if (stopped) return;
+          if (!ms) {
+            if (wakeTimer) {
+              clearTimeout(wakeTimer);
+              wakeTimer = 0;
+            }
+            if (!raf) raf = requestAnimationFrame(frame);
+            return;
+          }
+          if (raf) return;
+          if (wakeTimer) return;
+          wakeTimer = setTimeout(() => {
+            wakeTimer = 0;
+            schedule(0);
+          }, ms);
+        };
+        /* Tree build only — layout waits for the first paint so the tab can
+           finish loading and input listeners can attach. */
+        exp.zeus_start();
+        if (exp.zeus_resize) exp.zeus_resize(sz.w, sz.h);
         window.addEventListener(
           "resize",
           () => {
             const s = sizeCanvas();
             if (exp.zeus_resize) exp.zeus_resize(s.w, s.h);
+            schedule(0);
           },
           { signal }
         );
@@ -541,6 +654,7 @@
           (e) => {
             const p = layoutPoint(e.clientX, e.clientY);
             exp.zeus_pointer_down(p.x, p.y);
+            schedule(0);
           },
           { signal }
         );
@@ -551,16 +665,25 @@
             exp.zeus_pointer_move(p.x, p.y);
             const cp = exp.zeus_cursor_sync ? exp.zeus_cursor_sync() : 0;
             canvas.style.cursor = cstr(cp) || "default";
+            schedule(0);
           },
           { signal }
         );
-        canvas.addEventListener("pointerup", () => exp.zeus_pointer_up(), { signal });
+        canvas.addEventListener(
+          "pointerup",
+          () => {
+            exp.zeus_pointer_up();
+            schedule(0);
+          },
+          { signal }
+        );
         canvas.addEventListener(
           "wheel",
           (e) => {
             e.preventDefault();
             const p = layoutPoint(e.clientX, e.clientY);
             exp.zeus_scroll(p.x, p.y, e.deltaX, e.deltaY);
+            schedule(0);
           },
           { passive: false, signal }
         );
@@ -586,6 +709,7 @@
             if (e.key === "Home") key = 1006;
             if (e.key === "End") key = 1007;
             exp.zeus_key(key, mods);
+            schedule(0);
             if (e.key === "Tab") e.preventDefault();
             if (e.key === "Enter" && exp.zeus_captures_text && exp.zeus_captures_text())
               e.preventDefault();
@@ -614,6 +738,7 @@
             if (e.key === "Home") key = 1006;
             if (e.key === "End") key = 1007;
             if (exp.zeus_key_up) exp.zeus_key_up(key, mods);
+            schedule(0);
           },
           { signal }
         );
@@ -627,6 +752,7 @@
           new Uint8Array(mem.buffer, ptr, n).set(bytes.subarray(0, n));
           if (marked && exp.zeus_marked) exp.zeus_marked(n);
           else if (exp.zeus_text) exp.zeus_text(n);
+          schedule(0);
         }
         window.addEventListener(
           "paste",
@@ -654,10 +780,25 @@
           },
           { signal }
         );
+        schedule(0);
+    }
+
+    function boot(wasmBuffer) {
+      return WebAssembly.instantiate(wasmBuffer, imports).then((r) => start(r.instance));
+    }
+
+    function bootUrl(url) {
+      return fetch(url).then((r) => {
+        if (!r.ok) throw new Error("failed to load " + url + " (" + r.status + ")");
+        const ct = (r.headers.get("content-type") || "").toLowerCase();
+        if (typeof WebAssembly.instantiateStreaming === "function" && ct.indexOf("wasm") >= 0) {
+          return WebAssembly.instantiateStreaming(r, imports).then((x) => start(x.instance));
+        }
+        return r.arrayBuffer().then(boot);
       });
     }
 
-    return { boot: boot, stop: stop, sizeCanvas: sizeCanvas };
+    return { boot: boot, bootUrl: bootUrl, stop: stop, sizeCanvas: sizeCanvas };
   }
 
   root.attachZeus = attachZeus;
@@ -665,12 +806,9 @@
   const canvas = document.getElementById("zeus");
   if (canvas && canvas.getAttribute("data-wasm")) {
     const host = attachZeus(canvas);
-    fetch(canvas.getAttribute("data-wasm") || "app.wasm")
-      .then((r) => r.arrayBuffer())
-      .then((buf) => host.boot(buf))
-      .catch((err) => {
-        console.error(err);
-        document.body.appendChild(document.createTextNode(String(err)));
-      });
+    host.bootUrl(canvas.getAttribute("data-wasm") || "app.wasm").catch((err) => {
+      console.error(err);
+      document.body.appendChild(document.createTextNode(String(err)));
+    });
   }
 })(typeof window !== "undefined" ? window : globalThis);

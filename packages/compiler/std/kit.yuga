@@ -826,20 +826,32 @@ fn Checkbox(label: string, on: Signal<int>) {
     }
 }
 
+/// Raster photo. Hosts decode PNG / JPEG / WebP / GIF from a path, data URI,
+/// or URL. Props match `zeus.Image`: `width` / `height` / `radius` / `fit`
+/// (`IMAGE_FIT.Stretch` / `.Contain` / `.Cover` / `.None`) / `lazy` / pins.
+fn Image(src: fn() -> string, p: ImageProps) -> Node {
+    return zeus.Image(src, p)
+}
+
 /// Avatar: rounded-full with initials on muted. `size` is the diameter
-/// (40 = shadcn h-10). `User` composes it.
-fn Avatar(initials: string, size: int) {
+/// (40 = shadcn h-10). Pass `src` for a photo; initials remain the fallback
+/// while the host loads. `User` composes it.
+fn Avatar(initials: string, size: int, src: string = "") {
     zeus.Box(align_direction = DIRECTION.Row, width = size, height = size,
              radius = size / 2, background = raised(), align_items = ALIGN.Center,
              justify = ALIGN.Center) {
         zeus.Text(initials, color = ink(), font = (size + 8) / 4)
+        if src.len > 0 {
+            zeus.Image(src, width = size, height = size, radius = size / 2,
+                       position = zeus.pos_absolute(), left = 0, top = 0)
+        }
     }
 }
 
 /// Avatar + name + role column, the "user card" pattern.
-fn User(initials: string, name: string, role: string) {
+fn User(initials: string, name: string, role: string, src: string = "") {
     Row(SPACE.Xs) {
-        Avatar(initials, 40)
+        Avatar(initials, 40, src)
         Column(2) {
             zeus.Text(name, color = ink(), font = FONT_BODY)
             zeus.Text(role, color = mute(), font = FONT_CAPTION)

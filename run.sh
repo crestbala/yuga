@@ -4,7 +4,8 @@
 #   ./run.sh                      list what is runnable
 #   ./run.sh fizzbuzz             a language example (examples/language/)
 #   ./run.sh dashboard            a Zeus app (examples/zeus/), Cocoa desktop
-#   ./run.sh dashboard ios        ...on another host: native | wasm32 | ios | android
+#   ./run.sh gallery web          Vite wasm UI (http://127.0.0.1:5174)
+#   ./run.sh dashboard ios        ...on another host: native | web | wasm32 | ios | android
 #   ./run.sh counter              the full-stack example (backend :8080 + web UI :5173)
 #   ./run.sh counter macos        ...as a native/ios/android client
 #
@@ -32,7 +33,7 @@ list() {
     printf '  %s\n' "$(basename "$f" .yuga)"
   done
   echo
-  echo "zeus apps          (./run.sh <name> [native|wasm32|ios|android])"
+  echo "zeus apps          (./run.sh <name> [native|web|wasm32|ios|android])"
   for d in "$ZEUSDIR"/*/; do
     d=${d%/}
     name=$(basename "$d")
@@ -82,15 +83,66 @@ run_repl_stack() {
   esac
 }
 
+run_gallery_stack() {
+  variant=${1:-web}
+  case $variant in
+    web|frontend|"") exec "$ZEUSDIR/gallery/frontend/run.sh" ;;
+    macos|native)    exec "$ZEUSDIR/gallery/macos/run.sh" ;;
+    backend)         exec "$ZEUSDIR/gallery/backend/run.sh" ;;
+    *) die "unknown gallery variant '$variant' (web frontend macos backend)" ;;
+  esac
+}
+
+# Canvas2D wasm via Vite (same stack as counter/frontend). Ctrl-C stops it.
+# Override the port with ZEUS_WEB_PORT (default 5174).
+run_zeus_web() {
+  name=$1
+  src=$ZEUSDIR/$name/$name.yuga
+  port=${ZEUS_WEB_PORT:-5174}
+  web=$HERE/packages/zeus
+  [ -f "$src" ] || die "no Zeus app at $src"
+  if [ ! -f "$ZEUSDIR/$name/index.html" ]; then
+    cat > "$ZEUSDIR/$name/index.html" <<EOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>$name</title>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  </style>
+</head>
+<body>
+  <canvas id="zeus" data-wasm="/$name.wasm"></canvas>
+  <script src="/loader.js"></script>
+</body>
+</html>
+EOF
+  fi
+  if [ ! -d "$web/node_modules" ]; then
+    echo "run.sh: npm install (vite)"
+    (cd "$web" && npm install)
+  fi
+  echo "run.sh: $name wasm at http://127.0.0.1:$port/  (Vite, Ctrl-C to stop)"
+  export ZEUS_APP=$name
+  export ZEUS_WEB_PORT=$port
+  cd "$web" || exit 1
+  exec npx vite --config web/vite.config.js
+}
+
 run_zeus_app() {
   name=$1
   target=${2:-native}
   ensure_yugac
   case $target in
     native) exec "$YUGAC" --run "$ZEUSDIR/$name/$name.yuga" ;;
-    wasm32|wasm|ios|android)
+    web) run_zeus_web "$name" ;;
+    wasm32|wasm)
+      exec "$YUGAC" --target=wasm32 --run "$ZEUSDIR/$name/$name.yuga" ;;
+    ios|android)
       exec "$YUGAC" "--target=$target" --run "$ZEUSDIR/$name/$name.yuga" ;;
-    *) die "unknown target '$target' (native wasm32 ios android)" ;;
+    *) die "unknown target '$target' (native web wasm32 ios android)" ;;
   esac
 }
 
@@ -125,6 +177,7 @@ case $what in
   language/*) run_language "${what#language/}" ;;
   repl|zeus/repl) run_repl_stack "$@" ;;
   counter|zeus/counter) run_counter_stack "$@" ;;
+  gallery|zeus/gallery) run_gallery_stack "$@" ;;
   zeus/*)     run_zeus_app "${what#zeus/}" "$@" ;;
 esac
 
@@ -142,6 +195,8 @@ if [ "$is_lang" = 1 ]; then
 elif [ "$is_zeus" = 1 ]; then
   if [ "$what" = counter ]; then
     run_counter_stack "$@"
+  elif [ "$what" = gallery ]; then
+    run_gallery_stack "$@"
   elif [ "$what" = repl ]; then
     run_repl_stack "$@"
   else

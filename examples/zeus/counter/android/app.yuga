@@ -1,19 +1,22 @@
 //! Android emulator counter UI. Same Zeus tree as wasm, iOS, and macOS.
 //!
-//! `main` POSTs `Counter.Hello` and `Counter.Stats` to the native backend.
-//! The emulator loopback alias is `10.0.2.2:8080` (`api.android_addr()`),
+//! `main` is an `async fn`: each `await c.async_call(...)` is a gRPC-Web round
+//! trip. The emulator loopback alias is `10.0.2.2:8080` (`api.android_addr()`),
 //! not `127.0.0.1`. Start the backend first: `../backend/run.sh`, or use
 //! `./run.sh`. A physical device needs the Mac's LAN IP instead.
 
+import "std:async"
 import "std:zeus"
 import "std:http"
 import "../backend/api.yuga"
 import "../screen.yuga"
 
-fn main() {
+async fn main() {
     let c = http.client(api.android_addr())
-    let hello = api.decode_HelloResp(c.call(api.hello_rpc(), api.encode_HelloReq(HelloReq {})))
-    let stats = api.decode_StatsResp(c.call(api.stats_rpc(), api.encode_StatsReq(StatsReq {})))
+    let hello_raw = await c.async_call(api.hello_rpc(), api.encode_HelloReq(HelloReq {}))
+    let stats_raw = await c.async_call(api.stats_rpc(), api.encode_StatsReq(StatsReq {}))
+    let hello = api.decode_HelloResp(hello_raw)
+    let stats = api.decode_StatsResp(stats_raw)
     zeus.App("Zeus", 640, 680, fn() {
         screen.Screen("API", "Android", stats.users, stats.jobs, stats.uptime, stats.load, hello.count)
     })

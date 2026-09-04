@@ -6,6 +6,7 @@ packages/compiler/runtime/.obj/
 *.dSYM/
 .DS_Store
 packages/tree-sitter-yuga/node_modules/
+packages/zeus/node_modules/
 packages/tree-sitter-yuga/bindings/
 packages/tree-sitter-yuga/build/
 packages/tree-sitter-yuga/target/
@@ -26,6 +27,10 @@ examples/zeus/counter/android/build/
 examples/zeus/counter/android/.sdk-env
 examples/zeus/counter/frontend/build/
 examples/zeus/counter/frontend/node_modules/
+examples/zeus/gallery/frontend/build/
+examples/zeus/gallery/frontend/node_modules/
+examples/zeus/gallery/backend/build/
+examples/zeus/gallery/macos/build/
 www/frontend/node_modules/
 www/frontend/build/
 www/backend/build/

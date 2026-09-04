@@ -265,6 +265,11 @@ fn raw_svg(markup: string) -> Node {
     arena.nodes[id].text = markup
     return nd(id)
 }
+fn raw_image(src: string) -> Node {
+    let id = arena.alloc_node(14)
+    arena.nodes[id].text = src
+    return nd(id)
+}
 fn raw_grid(columns: int, gap: int) -> Node {
     let id = arena.alloc_node(2)
     arena.nodes[id].grid_cols = columns
@@ -1197,6 +1202,8 @@ fn dump() {
             fmt.println("restore")
         } else if d.kind == 9 {
             fmt.println("text_rot", d.x, d.y, d.rgb, d.font, d.w, d.text)
+        } else if d.kind == 10 {
+            fmt.println("image", d.x, d.y, d.w, d.h, d.alpha, d.radius, d.value)
         }
     }
 }
@@ -1232,6 +1239,15 @@ enum ALIGN {
     Around = 4,
     Evenly = 5,
     Stretch = 6,
+}
+
+/// How `Image` maps the bitmap into its layout box: Stretch (default, may
+/// distort), Contain (letterbox), Cover (crop to fill), None (intrinsic size).
+enum IMAGE_FIT {
+    Stretch = 0,
+    Contain = 1,
+    Cover = 2,
+    None = 3,
 }
 
 /// The spacing scale, in points.
@@ -1566,6 +1582,14 @@ fn apply_int(nid: int, setter: int, v: int) {
         if v == 0 || v == 1 {
             arena.nodes[nid].show_on = v
         }
+    } else if setter == 32 {
+        if v >= 0 {
+            arena.nodes[nid].font = v
+        }
+    } else if setter == 33 {
+        if v >= 0 {
+            arena.nodes[nid].wrap = v
+        }
     }
 }
 
@@ -1806,6 +1830,35 @@ struct SvgProps {
     z_index: fn() -> int = -1,
     /// Visible when the thunk is true (signal shows win, as BoxProps).
     show: fn() -> bool = true,
+}
+
+/// Options for `Image`. Hosts decode PNG / JPEG / WebP / GIF from a path,
+/// data URI, or URL and cache by `src`. Without `width`/`height` the box is
+/// empty. `fit` is `IMAGE_FIT` (stretch / contain / cover / none).
+struct ImageProps {
+    width: fn() -> int = -1,
+    height: fn() -> int = -1,
+    radius: fn() -> int = -1,
+    /// `IMAGE_FIT.Stretch` (default), `.Contain`, `.Cover`, or `.None`.
+    fit: fn() -> int = 0,
+    /// 1 = decode only once the node intersects the view (skip off-screen).
+    lazy: fn() -> int = 0,
+    opacity: fn() -> int = -1,
+    grow: fn() -> int = -1,
+    shrink: fn() -> int = -1,
+    min_width: fn() -> int = -1,
+    max_width: fn() -> int = -1,
+    min_height: fn() -> int = -1,
+    max_height: fn() -> int = -1,
+    position: fn() -> int = -1,
+    left: fn() -> int = -1,
+    top: fn() -> int = -1,
+    right: fn() -> int = -1,
+    bottom: fn() -> int = -1,
+    z_index: fn() -> int = -1,
+    /// Visible when the thunk is true (signal shows win, as BoxProps).
+    show: fn() -> bool = true,
+    a11y_label: fn() -> string = "",
 }
 
 /// Install the pointer and key handlers a container or input accepts.
@@ -2230,6 +2283,83 @@ fn Svg(markup: string, p: SvgProps) -> Node {
     let show = __show_on(p.show)
     prop_int(n, 31, show)
     return ui_emit(n)
+}
+
+/// Raster image. `src` is a file path, `data:` URI, or `http(s):` URL.
+/// Hosts decode PNG / JPEG / WebP / GIF and cache by that string; a missing
+/// or still-loading src paints nothing. `fit` is `IMAGE_FIT` (stretch /
+/// contain / cover / none). `lazy = 1` skips decode while off-screen.
+fn Image(src: fn() -> string, p: ImageProps) -> Node {
+    arena.ensure()
+    let n = raw_image("")
+    shrink(n, 0)
+    arena.nodes[n.id].a11y_role = "img"
+    prop_str(n, 100, src)
+    prop_int(n, 1, p.width)
+    prop_int(n, 2, p.height)
+    prop_int(n, 7, p.radius)
+    prop_int(n, 32, p.fit)
+    prop_int(n, 33, p.lazy)
+    prop_int(n, 13, p.opacity)
+    prop_int(n, 9, p.grow)
+    let sw = __shrink_weight(p.grow, p.shrink)
+    prop_int(n, 30, sw)
+    prop_int(n, 18, p.min_width)
+    prop_int(n, 19, p.max_width)
+    prop_int(n, 20, p.min_height)
+    prop_int(n, 21, p.max_height)
+    prop_int(n, 24, p.position)
+    prop_int(n, 25, p.left)
+    prop_int(n, 26, p.top)
+    prop_int(n, 27, p.right)
+    prop_int(n, 28, p.bottom)
+    prop_int(n, 29, p.z_index)
+    let show = __show_on(p.show)
+    prop_int(n, 31, show)
+    prop_str(n, 101, p.a11y_label)
+    return ui_emit(n)
+}
+
+let mut pick_dest: Signal<string> = Signal { id: 0 }
+let mut pick_w: Signal<int> = Signal { id: 0 }
+let mut pick_h: Signal<int> = Signal { id: 0 }
+
+/// Open a host file picker (PNG / JPEG / WebP / GIF). Writes the chosen src
+/// into `dest` and the image's intrinsic size into `dw` / `dh`. Native hosts
+/// return from the dialog; wasm and mobile finish via `engine_picked_image`.
+fn pick_image(dest: Signal<string>, dw: Signal<int>, dh: Signal<int>) {
+    pick_dest = dest
+    pick_w = dw
+    pick_h = dh
+    let mut w = 0
+    let mut h = 0
+    let src = platform.plat_pick_image(&mut w, &mut h)
+    if src.len > 0 {
+        set(dest, src)
+        set(dw, w)
+        set(dh, h)
+        pick_dest = Signal { id: 0 }
+        pick_w = Signal { id: 0 }
+        pick_h = Signal { id: 0 }
+    }
+}
+
+/// Host async completion for `pick_image` (file input, photo library).
+fn engine_picked_image(src: string, w: int, h: int) {
+    if pick_dest.id > 0 {
+        if src.len > 0 {
+            set(pick_dest, src)
+            if pick_w.id > 0 {
+                set(pick_w, w)
+            }
+            if pick_h.id > 0 {
+                set(pick_h, h)
+            }
+        }
+        pick_dest = Signal { id: 0 }
+        pick_w = Signal { id: 0 }
+        pick_h = Signal { id: 0 }
+    }
 }
 
 /// Open a window and build the tree once. The tree is retained: signals

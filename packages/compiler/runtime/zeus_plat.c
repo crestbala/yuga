@@ -202,6 +202,7 @@ void yuga_platform_plat_sig_free(int64_t id) {
 static void (*plat_run)(void);
 static void (*plat_measure)(const char *s, int64_t px, int64_t *w, int64_t *h);
 static void (*plat_redraw)(void);
+static void (*plat_pick_image)(char *out, int cap, int64_t *w, int64_t *h);
 
 static char *win_title;
 static int64_t win_w = 640, win_h = 480;
@@ -235,6 +236,34 @@ void zeus_set_platform(void (*run)(void),
     plat_run = run;
     plat_measure = measure;
     plat_redraw = redraw;
+}
+
+void zeus_set_pick_image(void (*pick)(char *out, int cap, int64_t *w, int64_t *h)) {
+    plat_pick_image = pick;
+}
+
+static yuga_str pick_dup(const char *src) {
+    size_t n = src ? strlen(src) : 0;
+    char *p;
+    if (n == 0) return (yuga_str){"", 0};
+    p = (char *)yuga_new(n + 1, "pick_image", 0);
+    memcpy(p, src, n);
+    p[n] = 0;
+    return (yuga_str){p, (int64_t)n};
+}
+
+yuga_str yuga_zeus_plat_pick_image(int64_t *w, int64_t *h) {
+    char buf[4096];
+    buf[0] = 0;
+    if (w) *w = 0;
+    if (h) *h = 0;
+    if (plat_pick_image) plat_pick_image(buf, (int)sizeof buf, w, h);
+    return pick_dup(buf);
+}
+
+void zeus_picked_image(const char *src, int64_t w, int64_t h) {
+    yuga_zeus_engine_picked_image(pick_dup(src), w, h);
+    if (plat_redraw) plat_redraw();
 }
 
 void yuga_zeus_plat_run(void) {
@@ -295,6 +324,15 @@ void yuga_zeus_plat_svg(int64_t x, int64_t y, int64_t w, int64_t h, yuga_str mar
     if (!have_draw || !paint_draw.svg) return;
     p = dup_ys(markup);
     paint_draw.svg(paint_ctx, x, y, w, h, p, rgb & 0xFFFFFF, alpha);
+    free(p);
+}
+
+void yuga_zeus_plat_image(int64_t x, int64_t y, int64_t w, int64_t h, yuga_str src,
+                         int64_t radius, int64_t alpha, int64_t fit) {
+    char *p;
+    if (!have_draw || !paint_draw.image) return;
+    p = dup_ys(src);
+    paint_draw.image(paint_ctx, x, y, w, h, p, radius, alpha, fit);
     free(p);
 }
 
@@ -521,6 +559,13 @@ void yuga_platform_plat_text_int(int64_t x, int64_t y, int64_t v, int64_t rgb, i
 void yuga_platform_plat_svg(int64_t x, int64_t y, int64_t w, int64_t h, yuga_str markup,
                             int64_t rgb, int64_t alpha) {
     yuga_zeus_plat_svg(x, y, w, h, markup, rgb, alpha);
+}
+void yuga_platform_plat_image(int64_t x, int64_t y, int64_t w, int64_t h, yuga_str src,
+                              int64_t radius, int64_t alpha, int64_t fit) {
+    yuga_zeus_plat_image(x, y, w, h, src, radius, alpha, fit);
+}
+yuga_str yuga_platform_plat_pick_image(int64_t *w, int64_t *h) {
+    return yuga_zeus_plat_pick_image(w, h);
 }
 void yuga_platform_plat_save(void) { yuga_zeus_plat_save(); }
 void yuga_platform_plat_clip(int64_t x, int64_t y, int64_t w, int64_t h) {

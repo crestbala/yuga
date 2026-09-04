@@ -1,0 +1,11 @@
+//! macOS desktop gallery UI. Same Zeus tree as wasm.
+
+import "std:zeus"
+import "../screen.yuga"
+
+fn main() {
+    let win = zeus.window_size()
+    zeus.App("Zeus Kit", win.width, win.height, fn() {
+        screen.Screen()
+    })
+}

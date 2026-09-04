@@ -59,6 +59,10 @@ fn svg(x: int, y: int, w: int, h: int, markup: string, rgb: int, alpha: int) {
     emit(5, x, y, w, h, rgb, 0, alpha, 0, markup, 0)
 }
 
+fn image(x: int, y: int, w: int, h: int, src: string, radius: int, alpha: int, fit: int) {
+    emit(10, x, y, w, h, 0, radius, alpha, 0, src, fit)
+}
+
 fn save() {
     emit(6, 0, 0, 0, 0, 0, 0, 0, 0, "", 0)
 }
@@ -95,6 +99,8 @@ fn present() {
             platform.plat_restore()
         } else if d.kind == 9 {
             platform.plat_text_rot(d.x, d.y, d.text, d.rgb, d.font, d.w)
+        } else if d.kind == 10 {
+            platform.plat_image(d.x, d.y, d.w, d.h, d.text, d.radius, d.alpha, d.value)
         }
     }
 }
@@ -417,6 +423,28 @@ fn paint_node(id: int) {
         paint_hover_wash(id)
     } else if k == 12 {
         svg(x, y, w, h, arena.nodes[id].text, arena.fg_of(id), arena.paint_alpha(id))
+    } else if k == 14 {
+        let mut draw = 1
+        if arena.nodes[id].wrap != 0 {
+            let vw = platform.plat_view_width()
+            let vh = platform.plat_view_height()
+            if x + w < 0 {
+                draw = 0
+            }
+            if y + h < 0 {
+                draw = 0
+            }
+            if x > vw {
+                draw = 0
+            }
+            if y > vh {
+                draw = 0
+            }
+        }
+        if draw != 0 {
+            image(x, y, w, h, arena.nodes[id].text, arena.nodes[id].radius, arena.paint_alpha(id),
+                  arena.nodes[id].font)
+        }
     } else {
         // Text inputs paint flat: no hover/press wash, so clicking never
         // greys the field — shadcn keeps the surface clear and the outline

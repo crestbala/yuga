@@ -13,7 +13,7 @@ int yuga_app_main(void);
 
 static JavaVM *g_jvm;
 static jobject g_view;
-static jmethodID m_fill, m_fill_a, m_text, m_text_rot, m_save, m_clip, m_restore, m_svg, m_measure, m_invalidate;
+static jmethodID m_fill, m_fill_a, m_text, m_text_rot, m_save, m_clip, m_restore, m_svg, m_image, m_pick, m_measure, m_invalidate;
 static JNIEnv *g_env;
 static jobject g_canvas;
 static int g_started;
@@ -102,6 +102,18 @@ static void draw_svg(void *ctx, int64_t x, int64_t y, int64_t w, int64_t h, cons
     (*env)->DeleteLocalRef(env, js);
 }
 
+static void draw_image(void *ctx, int64_t x, int64_t y, int64_t w, int64_t h, const char *src,
+                       int64_t radius, int64_t alpha, int64_t fit) {
+    JNIEnv *env = g_env;
+    jstring js;
+    (void)ctx;
+    if (!env || !g_view || !g_canvas || !m_image) return;
+    js = (*env)->NewStringUTF(env, src ? src : "");
+    (*env)->CallVoidMethod(env, g_view, m_image, g_canvas, (jint)x, (jint)y, (jint)w, (jint)h, js,
+                           (jint)radius, (jint)alpha, (jint)fit);
+    (*env)->DeleteLocalRef(env, js);
+}
+
 static void android_measure(const char *s, int64_t px, int64_t *w, int64_t *h) {
     JNIEnv *env = g_env ? g_env : env_now();
     jstring js;
@@ -124,6 +136,15 @@ static void android_run(void) {
     /* Activity already created the view; layout happens on first paint. */
 }
 
+static void android_pick_image(char *out, int cap, int64_t *w, int64_t *h) {
+    JNIEnv *env = g_env ? g_env : env_now();
+    if (w) *w = 0;
+    if (h) *h = 0;
+    if (out && cap > 0) out[0] = 0;
+    if (!env || !g_view || !m_pick) return;
+    (*env)->CallVoidMethod(env, g_view, m_pick);
+}
+
 static void android_redraw(void) {
     JNIEnv *env = g_env ? g_env : env_now();
     if (!env || !g_view || !m_invalidate) return;
@@ -140,6 +161,7 @@ static void bind_canvas(void) {
     d.clip = draw_clip;
     d.restore = draw_restore;
     d.svg = draw_svg;
+    d.image = draw_image;
     zeus_bind_draw(d);
 }
 
@@ -156,6 +178,9 @@ static void cache_methods(JNIEnv *env, jobject thiz) {
     m_restore = (*env)->GetMethodID(env, cls, "jniRestore", "(Landroid/graphics/Canvas;)V");
     m_svg = (*env)->GetMethodID(env, cls, "jniSvg",
                                 "(Landroid/graphics/Canvas;IIIILjava/lang/String;II)V");
+    m_image = (*env)->GetMethodID(env, cls, "jniImage",
+                                  "(Landroid/graphics/Canvas;IIIILjava/lang/String;III)V");
+    m_pick = (*env)->GetMethodID(env, cls, "jniPick", "()V");
     m_measure = (*env)->GetMethodID(env, cls, "jniMeasure", "(Ljava/lang/String;I)J");
     m_invalidate = (*env)->GetMethodID(env, cls, "jniInvalidate", "()V");
     (*env)->DeleteLocalRef(env, cls);
@@ -175,6 +200,7 @@ JNIEXPORT void JNICALL Java_com_yuga_zeus_ZeusView_nativeStart(JNIEnv *env, jobj
     g_view = (*env)->NewGlobalRef(env, thiz);
     cache_methods(env, thiz);
     zeus_set_platform(android_run, android_measure, android_redraw);
+    zeus_set_pick_image(android_pick_image);
     bind_canvas();
     /* HTTP in yuga_app_main blocks. Java calls this off the UI thread. */
     yuga_app_main();
@@ -217,6 +243,7 @@ JNIEXPORT void JNICALL Java_com_yuga_zeus_ZeusView_nativePaint(JNIEnv *env, jobj
     d.clip = draw_clip;
     d.restore = draw_restore;
     d.svg = draw_svg;
+    d.image = draw_image;
     zeus_paint(NULL, d);
     g_canvas = NULL;
 }
@@ -251,4 +278,14 @@ JNIEXPORT void JNICALL Java_com_yuga_zeus_ZeusView_nativeKey(JNIEnv *env, jobjec
     (void)env;
     (void)thiz;
     (void)zeus_handle_key_ev((int)key, (int)mods);
+}
+
+JNIEXPORT void JNICALL Java_com_yuga_zeus_ZeusView_nativePicked(JNIEnv *env, jobject thiz,
+                                                               jstring src, jint w, jint h) {
+    const char *s;
+    (void)thiz;
+    g_env = env;
+    s = src ? (*env)->GetStringUTFChars(env, src, NULL) : NULL;
+    zeus_picked_image(s ? s : "", w, h);
+    if (s) (*env)->ReleaseStringUTFChars(env, src, s);
 }

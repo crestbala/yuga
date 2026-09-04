@@ -317,6 +317,19 @@ fn measure_node(id: int) {
         arena.nodes[id].ih = arena.clamp_h(id, ih)
         return
     }
+    if k == 14 {
+        let mut iw = 0
+        let mut ih = 0
+        if arena.nodes[id].ew >= 0 {
+            iw = arena.nodes[id].ew
+        }
+        if arena.nodes[id].eh >= 0 {
+            ih = arena.nodes[id].eh
+        }
+        arena.nodes[id].iw = arena.clamp_w(id, iw)
+        arena.nodes[id].ih = arena.clamp_h(id, ih)
+        return
+    }
     if k == 13 {
         let mut iw = 0
         let mut ih = 0
