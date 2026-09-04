@@ -3,6 +3,7 @@
 // Dark restyles the whole palette via `zeus.appearance()`.
 import "std:zeus"
 import "std:kit"
+import "std:kv"
 
 fn Navbar(page: Signal<int>) {
     kit.Column(0) {
@@ -127,14 +128,15 @@ fn DisplayRow() {
     }
 }
 
-fn Field(name: Signal<string>, note: Signal<string>) {
+fn Field(name: Signal<string>, note: Signal<string>, st: Store) {
     kit.SectionHeader("Forms", "Input",
         "A label + input pair, shadcn style: h-9, rounded-md, hairline border.")
     kit.Card() {
         kit.Field("Name", name, "Your name")
         zeus.Text(if name.get().len < 3 { "Name must be at least 3 characters." } else { "" },
                   color = kit.danger(), font = kit.FONT_CONTROL)
-        kit.TextArea(note, "Write a note")
+        kit.TextArea(note, "Draft — saved as you type", fn() => kv.set(st, "draft", note.get()))
+        kit.Note("{{note.get().len}} chars · std:kv under Application Support")
         kit.Button("Submit", kit.LOOK.Solid, kit.SIZE.Md, fn() => name.set(name.get()))
     }
 }
@@ -222,12 +224,13 @@ fn Data() {
 }
 
 fn Components() {
+    let st = kv.open("zeus-gallery")
     let name = zeus.signal("")
-    let note = zeus.signal("")
+    let note = zeus.signal(kv.get(st, "draft"))
     DateSection()
     ButtonScale()
     DisplayRow()
-    Field(name, note)
+    Field(name, note, st)
     Choice()
     Controls()
     People()

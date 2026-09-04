@@ -23,3 +23,10 @@ fn exec_status() -> int {}
 
 /// Read the whole file. Empty if missing. Native only; wasm returns empty.
 fn read_file(path: string) -> string {}
+
+/// Create `path` and parents (`mkdir -p`). `0` on success. Native only;
+/// wasm returns `1`.
+fn mkdir(path: string) -> int {}
+
+/// Rename `from` to `to`. `0` on success. Native only; wasm returns `1`.
+fn rename(from: string, to: string) -> int {}

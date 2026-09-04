@@ -1,0 +1,47 @@
+// Phase 4: file-backed kv. Write, close, reopen from disk (a second "process").
+import "std:fmt"
+import "std:sys"
+import "std:kv"
+
+fn fail(what: string) {
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fail(what)
+}
+
+fn main() {
+    let path = "/tmp/yuga_kv_roundtrip.kv"
+    sys.write_file(path, "")
+    let s = kv.open_path(path)
+    kv.set(s, "a", "one")
+    kv.set(s, "b", "two")
+    kv.set(s, "nl", "x\ny")
+    kv.delete(s, "b")
+    kv.set(s, "a", "ONE")
+    expect(fmt.eq(kv.get(s, "a"), "ONE"), "get after set")
+    expect(fmt.eq(kv.get(s, "b"), ""), "deleted")
+    expect(fmt.eq(kv.get(s, "nl"), "x\ny"), "newline value")
+    let keys = kv.list(s)
+    expect(keys.len == 2, "list len")
+    kv.close(s)
+    let s2 = kv.open_path(path)
+    expect(fmt.eq(kv.get(s2, "a"), "ONE"), "reopen a")
+    expect(fmt.eq(kv.get(s2, "nl"), "x\ny"), "reopen nl")
+    expect(fmt.eq(kv.get(s2, "b"), ""), "reopen deleted")
+    let keys2 = kv.list(s2)
+    expect(keys2.len == 2, "reopen list")
+    let dir = kv.data_dir("yuga-kv-test")
+    expect(dir.len > 0, "data_dir")
+    let s3 = kv.open("yuga-kv-test")
+    kv.set(s3, "probe", "ok")
+    kv.close(s3)
+    let s4 = kv.open("yuga-kv-test")
+    expect(fmt.eq(kv.get(s4, "probe"), "ok"), "named store reopen")
+    fmt.println("kv ok")
+}
