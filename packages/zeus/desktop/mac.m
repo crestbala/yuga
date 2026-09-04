@@ -617,8 +617,10 @@ static NSCursor *zeus_cursor_for(const char *name) {
     return [NSCursor arrowCursor];
 }
 
-@interface ZeusView : NSView {
+@interface ZeusView : NSView <NSTextInputClient> {
     NSTrackingArea *track;
+    NSString *marked;
+    NSRange markedSel;
 }
 @end
 
@@ -738,27 +740,30 @@ static NSCursor *zeus_cursor_for(const char *name) {
         [self setNeedsDisplay:YES];
 }
 
-- (void)keyDown:(NSEvent *)event {
+- (int)zeusMods:(NSEvent *)event {
+    NSEventModifierFlags f = [event modifierFlags];
+    int mods = 0;
+    if (f & NSEventModifierFlagShift) mods |= ZEUS_MOD_SHIFT;
+    if (f & NSEventModifierFlagControl) mods |= ZEUS_MOD_CTRL;
+    if (f & NSEventModifierFlagOption) mods |= ZEUS_MOD_ALT;
+    if (f & NSEventModifierFlagCommand) mods |= ZEUS_MOD_CMD;
+    return mods;
+}
+
+- (int)zeusKeyFromEvent:(NSEvent *)event {
     int key = 0;
     unsigned short code = [event keyCode];
-    if (code == 53)
-        key = 27;
-    else if (code == 51)
-        key = 8;
-    else if (code == 36)
-        key = 13;
-    else if (code == 123)
-        key = 1000;
-    else if (code == 124)
-        key = 1001;
-    else if (code == 126)
-        key = 1002;
-    else if (code == 125)
-        key = 1003;
-    else if (code == 116)
-        key = 1004;
-    else if (code == 121)
-        key = 1005;
+    if (code == 53) key = 27;
+    else if (code == 51) key = 8;
+    else if (code == 36) key = 13;
+    else if (code == 123) key = 1000;
+    else if (code == 124) key = 1001;
+    else if (code == 126) key = 1002;
+    else if (code == 125) key = 1003;
+    else if (code == 116) key = 1004;
+    else if (code == 121) key = 1005;
+    else if (code == 115) key = 1006;
+    else if (code == 119) key = 1007;
     else {
         NSString *chars = [event characters];
         if ([chars length] > 0) {
@@ -766,15 +771,8 @@ static NSCursor *zeus_cursor_for(const char *name) {
             if (c >= 32 && c < 127) key = (int)c;
         }
     }
-    NSEventModifierFlags f = [event modifierFlags];
-    int mods = 0;
-    if (f & NSEventModifierFlagShift) mods |= ZEUS_MOD_SHIFT;
-    if (f & NSEventModifierFlagControl) mods |= ZEUS_MOD_CTRL;
-    if (f & NSEventModifierFlagOption) mods |= ZEUS_MOD_ALT;
-    if (f & NSEventModifierFlagCommand) mods |= ZEUS_MOD_CMD;
+    int mods = [self zeusMods:event];
     if (code == 48) key = ZEUS_K_TAB;
-    /* A shortcut is defined by the unmodified key, so Cmd+Shift+S and
-       Cmd+S cannot resolve to two different chords. */
     if (!key || (mods & ~ZEUS_MOD_SHIFT)) {
         NSString *raw = [event charactersIgnoringModifiers];
         if ([raw length] > 0) {
@@ -783,10 +781,133 @@ static NSCursor *zeus_cursor_for(const char *name) {
             if (c >= 32 && c < 127) key = (int)c;
         }
     }
+    return key;
+}
+
+- (void)keyDown:(NSEvent *)event {
+    int mods = [self zeusMods:event];
+    unsigned short code = [event keyCode];
+    if (code == 48 || code == 53 || (mods & (ZEUS_MOD_CMD | ZEUS_MOD_CTRL))) {
+        int key = [self zeusKeyFromEvent:event];
+        if (key && zeus_handle_key_ev(key, mods))
+            [self setNeedsDisplay:YES];
+        else
+            [super keyDown:event];
+        return;
+    }
+    if (zeus_focus_captures_text()) {
+        [self interpretKeyEvents:@[ event ]];
+        return;
+    }
+    int key = [self zeusKeyFromEvent:event];
     if (key && zeus_handle_key_ev(key, mods))
         [self setNeedsDisplay:YES];
     else
         [super keyDown:event];
+}
+
+- (void)insertText:(id)string {
+    [self insertText:string replacementRange:NSMakeRange(NSNotFound, 0)];
+}
+
+- (void)insertText:(id)string replacementRange:(NSRange)replacementRange {
+    (void)replacementRange;
+    NSString *s = [string isKindOfClass:[NSAttributedString class]]
+                      ? [(NSAttributedString *)string string]
+                      : (NSString *)string;
+    const char *u = [s UTF8String];
+    if (u && zeus_handle_text(u, (int)strlen(u))) {
+        [marked release];
+        marked = nil;
+        [self setNeedsDisplay:YES];
+    }
+}
+
+- (void)setMarkedText:(id)string selectedRange:(NSRange)selectedRange
+       replacementRange:(NSRange)replacementRange {
+    (void)replacementRange;
+    NSString *s = [string isKindOfClass:[NSAttributedString class]]
+                      ? [(NSAttributedString *)string string]
+                      : (NSString *)string;
+    [marked release];
+    marked = [s copy];
+    markedSel = selectedRange;
+    const char *u = [s UTF8String];
+    zeus_handle_marked(u ? u : "", u ? (int)strlen(u) : 0);
+    [self setNeedsDisplay:YES];
+}
+
+- (void)unmarkText {
+    [marked release];
+    marked = nil;
+    zeus_handle_marked("", 0);
+    [self setNeedsDisplay:YES];
+}
+
+- (BOOL)hasMarkedText { return marked != nil && [marked length] > 0; }
+- (NSRange)markedRange {
+    return marked ? NSMakeRange(0, [marked length]) : NSMakeRange(NSNotFound, 0);
+}
+- (NSRange)selectedRange { return markedSel; }
+- (NSArray *)validAttributesForMarkedText { return @[]; }
+- (NSUInteger)characterIndexForPoint:(NSPoint)point {
+    (void)point;
+    return 0;
+}
+- (NSRect)firstRectForCharacterRange:(NSRange)range actualRange:(NSRangePointer)actualRange {
+    (void)range;
+    if (actualRange) *actualRange = range;
+    NSRect r = [self convertRect:self.bounds toView:nil];
+    r = [[self window] convertRectToScreen:r];
+    r.size.width = 1;
+    r.size.height = 16;
+    return r;
+}
+- (NSAttributedString *)attributedSubstringForProposedRange:(NSRange)range
+                                                actualRange:(NSRangePointer)actualRange {
+    (void)range;
+    if (actualRange) *actualRange = NSMakeRange(NSNotFound, 0);
+    return nil;
+}
+
+- (void)doCommandBySelector:(SEL)sel {
+    int key = 0, mods = 0;
+    if (sel == @selector(deleteBackward:)) key = 8;
+    else if (sel == @selector(deleteForward:)) key = 127;
+    else if (sel == @selector(insertNewline:)) key = 13;
+    else if (sel == @selector(moveLeft:)) key = 1000;
+    else if (sel == @selector(moveRight:)) key = 1001;
+    else if (sel == @selector(moveUp:)) key = 1002;
+    else if (sel == @selector(moveDown:)) key = 1003;
+    else if (sel == @selector(moveToBeginningOfLine:) || sel == @selector(moveToLeftEndOfLine:))
+        key = 1006;
+    else if (sel == @selector(moveToEndOfLine:) || sel == @selector(moveToRightEndOfLine:))
+        key = 1007;
+    else if (sel == @selector(moveLeftAndModifySelection:)) {
+        key = 1000;
+        mods = ZEUS_MOD_SHIFT;
+    } else if (sel == @selector(moveRightAndModifySelection:)) {
+        key = 1001;
+        mods = ZEUS_MOD_SHIFT;
+    } else if (sel == @selector(moveUpAndModifySelection:)) {
+        key = 1002;
+        mods = ZEUS_MOD_SHIFT;
+    } else if (sel == @selector(moveDownAndModifySelection:)) {
+        key = 1003;
+        mods = ZEUS_MOD_SHIFT;
+    } else if (sel == @selector(insertTab:))
+        key = ZEUS_K_TAB;
+    else if (sel == @selector(cancelOperation:))
+        key = 27;
+    if (key && zeus_handle_key_ev(key, mods)) [self setNeedsDisplay:YES];
+}
+
+- (void)paste:(id)sender {
+    (void)sender;
+    NSString *s = [[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString];
+    if (!s) return;
+    const char *u = [s UTF8String];
+    if (u && zeus_handle_text(u, (int)strlen(u))) [self setNeedsDisplay:YES];
 }
 
 - (void)keyUp:(NSEvent *)event {

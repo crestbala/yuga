@@ -401,8 +401,36 @@
         if (e.key === "ArrowRight") key = 1001;
         if (e.key === "ArrowUp") key = 1002;
         if (e.key === "ArrowDown") key = 1003;
+        if (e.key === "Home") key = 1006;
+        if (e.key === "End") key = 1007;
         exp.zeus_key(key, mods);
         if (e.key === "Tab") e.preventDefault();
+        if (e.key === "Enter" && exp.zeus_captures_text && exp.zeus_captures_text())
+          e.preventDefault();
+      });
+      function sendWasmText(s, marked) {
+        if (!s || !exp.zeus_text_buf) return;
+        const bytes = new TextEncoder().encode(s);
+        const cap = exp.zeus_text_buf_cap();
+        const ptr = exp.zeus_text_buf();
+        const n = Math.min(bytes.length, cap - 1);
+        new Uint8Array(mem.buffer, ptr, n).set(bytes.subarray(0, n));
+        if (marked && exp.zeus_marked) exp.zeus_marked(n);
+        else if (exp.zeus_text) exp.zeus_text(n);
+      }
+      window.addEventListener("paste", (e) => {
+        if (!exp.zeus_captures_text || !exp.zeus_captures_text()) return;
+        const t = e.clipboardData && e.clipboardData.getData("text");
+        if (!t) return;
+        e.preventDefault();
+        sendWasmText(t, false);
+      });
+      window.addEventListener("compositionupdate", (e) => {
+        if (e.data) sendWasmText(e.data, true);
+      });
+      window.addEventListener("compositionend", (e) => {
+        sendWasmText("", true);
+        if (e.data) sendWasmText(e.data, false);
       });
     })
     .catch((err) => {

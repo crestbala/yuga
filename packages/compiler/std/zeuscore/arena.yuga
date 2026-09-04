@@ -1312,9 +1312,54 @@ fn input_shown(id: int) -> string {
     if slot < 0 {
         return nodes[id].text
     }
+    let shown = platform.plat_edit_shown(slot)
+    if shown.len > 0 {
+        return shown
+    }
     if platform.plat_edit_len(slot) > 0 {
         return platform.plat_edit_text(slot)
     }
     return nodes[id].text
+}
+
+fn input_committed(id: int) -> string {
+    let slot = nodes[id].edit_slot
+    if slot < 0 {
+        return ""
+    }
+    return platform.plat_edit_text(slot)
+}
+
+fn input_inner_w(id: int) -> int {
+    let w = inner_w(id)
+    if w < 1 {
+        return 1
+    }
+    return w
+}
+
+fn edit_ready(id: int) -> int {
+    if id <= 0 {
+        return -1
+    }
+    if id >= nodes.len {
+        return -1
+    }
+    if nodes[id].kind != 10 {
+        return -1
+    }
+    if nodes[id].edit_slot < 0 {
+        stamp_edits()
+    }
+    let slot = nodes[id].edit_slot
+    if slot < 0 {
+        return -1
+    }
+    let mut font = nodes[id].font
+    if font < 8 {
+        font = 14
+    }
+    platform.plat_edit_metrics(slot, input_inner_w(id), font)
+    return slot
 }
 

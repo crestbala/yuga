@@ -164,12 +164,38 @@ fn paint_input(id: int) {
     let fg = arena.fg_of(id)
     let shown = arena.input_shown(id)
     let inner = arena.inner_w(id)
+    let slot = arena.nodes[id].edit_slot
     save()
     clip(x, y, w, h)
+    if slot >= 0 {
+        let mut font = arena.nodes[id].font
+        if font < 8 {
+            font = 14
+        }
+        platform.plat_edit_metrics(slot, arena.input_inner_w(id), font)
+        let a = platform.plat_edit_anchor(slot)
+        let c = platform.plat_edit_caret(slot)
+        if a != c {
+            let sel = 11053224
+            let lh = platform.plat_edit_line_h(slot)
+            let cx = tx + platform.plat_edit_caret_x(slot)
+            let cy = ty + platform.plat_edit_caret_y(slot)
+            fill(tx, cy, inner, lh, sel, 0)
+            fill(cx, cy, 1, lh, sel, 0)
+        }
+    }
     if inner > 0 {
         text_wrap(tx, ty, shown, fg, arena.nodes[id].font, inner)
     } else {
         text(tx, ty, shown, fg, arena.nodes[id].font)
+    }
+    if arena.focus_id == id {
+        if slot >= 0 {
+            let lh = platform.plat_edit_line_h(slot)
+            let cx = tx + platform.plat_edit_caret_x(slot)
+            let cy = ty + platform.plat_edit_caret_y(slot)
+            fill(cx, cy, 1, lh, fg, 0)
+        }
     }
     restore()
 }

@@ -973,6 +973,21 @@ fn engine_key(key: int) -> int {
     return input.key(key)
 }
 
+/// Insert UTF-8 into the focused input (IME commit, paste). Headless tests
+/// can call this instead of synthesizing one key per byte.
+fn engine_insert(text: string) -> int {
+    return input.insert_text(text)
+}
+
+/// IME composition overlay on the focused input. Empty clears the mark.
+fn engine_marked(text: string) -> int {
+    return input.mark_text(text)
+}
+
+fn engine_set_mods(mods: int) {
+    arena.ev_mods = mods
+}
+
 fn engine_key_ev(key: int, mods: int) -> int {
     arena.ensure()
     arena.ev_mods = mods
@@ -1735,12 +1750,15 @@ struct InputProps {
     background: fn() -> string = "",
     font: fn() -> int = -1,
     padding: fn() -> int = -1,
+    grow: fn() -> int = -1,
     bind: Signal<string> = Signal { id: 0 },
     bind__set: bool = false,
     /// CSS cursor under the pointer (default `""` = arrow; inputs usually
     /// want `"text"` on their frame).
     cursor: fn() -> string = "",
     a11y_label: fn() -> string = "",
+    /// 1 = multiline (Enter inserts a newline, wrap + caret up/down).
+    multiline: fn() -> int = 0,
     on_key_down: fn() = __noop,
     on_key_down__set: bool = false,
     on_key_up: fn() = __noop,
@@ -1993,8 +2011,9 @@ fn __enabled_opacity(enabled: fn() -> bool) -> fn() -> int {
     }
 }
 
-/// Single-line text field. `bind = sig` writes the edit buffer back into a
-/// `Signal<string>` on every edit; the store notifies only on a real change.
+/// Text field. `multiline = 1` wraps and lets Enter insert a newline.
+/// `bind = sig` writes the committed buffer into a `Signal<string>` on every
+/// edit; the store notifies only on a real change.
 fn Input(p: InputProps) -> Node {
     arena.ensure()
     let n = raw_input(p.placeholder)
@@ -2013,14 +2032,16 @@ fn Input(p: InputProps) -> Node {
     prop_str(n, 15, p.background)
     prop_int(n, 12, p.font)
     prop_int(n, 3, p.padding)
+    prop_int(n, 9, p.grow)
     prop_str(n, 101, p.a11y_label)
     prop_str(n, 103, p.cursor)
+    prop_int(n, 22, p.multiline)
     arena.nodes[n.id].a11y_role = "textbox"
     if p.bind__set {
         let sig = p.bind
         let nid = n.id
         arena.nodes[nid].edit_sig = sig.id
-        arena.nodes[nid].bind_fn = __intern(|| { set(sig, input_value(nd(nid))) })
+        arena.nodes[nid].bind_fn = __intern(|| { set(sig, arena.input_committed(nid)) })
     }
     if p.on_key_down__set {
         arena.nodes[n.id].kdown_fn = __intern(p.on_key_down)

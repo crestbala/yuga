@@ -776,6 +776,24 @@ fn Input(value: Signal<string>, placeholder: string) {
     }
 }
 
+/// Multiline compose field: min-height ~4 lines, same chrome as `Input`.
+fn TextArea(value: Signal<string>, placeholder: string) {
+    zeus.Box(
+        background = plate(),
+        border = HAIRLINE,
+        border_color = rule(),
+        radius = RAD_MD,
+        padding_x = 12,
+        padding_y = 8,
+        min_height = 96,
+        cursor = "text"
+    ) {
+        zeus.Input(bind = value, placeholder = placeholder,
+                   background = "", color = ink(), font = FONT_BODY,
+                   padding = 0, multiline = 1, grow = 1, a11y_label = placeholder)
+    }
+}
+
 /// Label + input, the shadcn form demo.
 fn Field(label: string, value: Signal<string>, placeholder: string) {
     Column(SPACE.Exs) {

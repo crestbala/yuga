@@ -90,6 +90,26 @@ fn flex_grow_shrink(id: int, extra: int, row: int) -> int {
     return -left
 }
 
+fn apply_input_wrap(id: int) {
+    if arena.nodes[id].kind != 10 {
+        return
+    }
+    if arena.nodes[id].wrap == 0 {
+        return
+    }
+    let inner = arena.inner_w(id)
+    if inner <= 0 {
+        return
+    }
+    let mut ww = 0
+    let mut hh = 0
+    platform.plat_measure_wrap(arena.input_shown(id), arena.nodes[id].font, inner, &mut ww, &mut hh)
+    let need = hh + arena.box_pad_y(id)
+    if need > arena.nodes[id].h {
+        arena.nodes[id].h = arena.clamp_h(id, need)
+    }
+}
+
 fn apply_label_wrap(id: int) {
     if arena.nodes[id].kind != 3 {
         return
@@ -1024,6 +1044,7 @@ fn layout_node(id: int, x: int, y: int, w: int, h: int) {
     arena.nodes[id].w = arena.clamp_w(id, w)
     arena.nodes[id].h = arena.clamp_h(id, h)
     apply_label_wrap(id)
+    apply_input_wrap(id)
     let k = arena.nodes[id].kind
     if k == 1 {
         if arena.nodes[id].dir == 0 {

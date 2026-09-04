@@ -179,3 +179,36 @@ __attribute__((export_name("zeus_key")))
 void zeus_key(int32_t key, int32_t mods) {
     zeus_handle_key_ev((int)key, (int)mods);
 }
+
+static char wasm_text_buf[4096];
+
+__attribute__((export_name("zeus_text_buf")))
+char *zeus_text_buf(void) {
+    return wasm_text_buf;
+}
+
+__attribute__((export_name("zeus_text_buf_cap")))
+int32_t zeus_text_buf_cap(void) {
+    return (int32_t)sizeof wasm_text_buf;
+}
+
+__attribute__((export_name("zeus_text")))
+void zeus_text(int32_t n) {
+    if (n < 0) n = 0;
+    if (n >= (int32_t)sizeof wasm_text_buf) n = (int32_t)sizeof wasm_text_buf - 1;
+    wasm_text_buf[n] = '\0';
+    zeus_handle_text(wasm_text_buf, (int)n);
+}
+
+__attribute__((export_name("zeus_marked")))
+void zeus_marked(int32_t n) {
+    if (n < 0) n = 0;
+    if (n >= (int32_t)sizeof wasm_text_buf) n = (int32_t)sizeof wasm_text_buf - 1;
+    wasm_text_buf[n] = '\0';
+    zeus_handle_marked(wasm_text_buf, (int)n);
+}
+
+__attribute__((export_name("zeus_captures_text")))
+int32_t zeus_captures_text(void) {
+    return zeus_focus_captures_text() ? 1 : 0;
+}

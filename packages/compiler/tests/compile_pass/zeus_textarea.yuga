@@ -1,0 +1,58 @@
+// Phase 3: multiline Input / kit.TextArea — type, newline, caret, bind.
+import "std:fmt"
+import "std:sys"
+import "std:zeus"
+import "std:kit"
+
+fn fail(what: string) {
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fail(what)
+}
+
+fn main() {
+    let draft = zeus.signal("")
+    zeus.snapshot(400, 240, fn() -> Node {
+        zeus.Box(padding = 16) {
+            kit.TextArea(draft, "Message")
+        }
+    })
+    let id = zeus.engine_find_role("textbox")
+    expect(id > 0, "textbox role")
+    zeus.engine_click(zeus.node_x(id) + 8, zeus.node_y(id) + 8)
+    zeus.engine_key(104)
+    zeus.engine_key(105)
+    expect(fmt.eq(draft.get(), "hi"), "bind hi")
+    zeus.engine_key(13)
+    zeus.engine_key(116)
+    expect(fmt.eq(draft.get(), "hi\nt"), "newline")
+    zeus.engine_key(8)
+    expect(fmt.eq(draft.get(), "hi\n"), "backspace")
+    zeus.engine_key_ev(1000, 0)
+    zeus.engine_key_ev(1000, 0)
+    zeus.engine_key(120)
+    expect(fmt.eq(draft.get(), "hxi\n"), "caret move")
+    zeus.engine_insert("yz")
+    expect(fmt.eq(draft.get(), "hxyzi\n"), "insert")
+    // Single-line Input: Enter must not insert a newline.
+    let one = zeus.signal("")
+    zeus.snapshot(320, 120, fn() -> Node {
+        zeus.Box(padding = 8) {
+            zeus.Input(bind = one, placeholder = "one")
+        }
+    })
+    let sid = zeus.engine_find_text("one")
+    expect(sid > 0, "single-line placeholder")
+    zeus.engine_click(zeus.node_x(sid) + 4, zeus.node_y(sid) + 4)
+    zeus.engine_key(97)
+    zeus.engine_key(13)
+    zeus.engine_key(98)
+    expect(fmt.eq(one.get(), "ab"), "single-line enter")
+    fmt.println("textarea ok")
+}

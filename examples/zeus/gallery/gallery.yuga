@@ -127,13 +127,14 @@ fn DisplayRow() {
     }
 }
 
-fn Field(name: Signal<string>) {
+fn Field(name: Signal<string>, note: Signal<string>) {
     kit.SectionHeader("Forms", "Input",
         "A label + input pair, shadcn style: h-9, rounded-md, hairline border.")
     kit.Card() {
         kit.Field("Name", name, "Your name")
         zeus.Text(if name.get().len < 3 { "Name must be at least 3 characters." } else { "" },
                   color = kit.danger(), font = kit.FONT_CONTROL)
+        kit.TextArea(note, "Write a note")
         kit.Button("Submit", kit.LOOK.Solid, kit.SIZE.Md, fn() => name.set(name.get()))
     }
 }
@@ -222,10 +223,11 @@ fn Data() {
 
 fn Components() {
     let name = zeus.signal("")
+    let note = zeus.signal("")
     DateSection()
     ButtonScale()
     DisplayRow()
-    Field(name)
+    Field(name, note)
     Choice()
     Controls()
     People()

@@ -245,9 +245,22 @@ void yuga_platform_plat_map_key(yuga_str spec, yuga_str action, int64_t ctx);
 int64_t yuga_platform_plat_key_ev(int64_t key, int64_t mods);
 int64_t yuga_platform_plat_edit_append(int64_t slot, int64_t key);
 int64_t yuga_platform_plat_edit_back(int64_t slot);
+int64_t yuga_platform_plat_edit_del(int64_t slot);
 int64_t yuga_platform_plat_edit_len(int64_t slot);
 yuga_str yuga_platform_plat_edit_text(int64_t slot);
+yuga_str yuga_platform_plat_edit_shown(int64_t slot);
 int64_t yuga_platform_plat_edit_set(int64_t slot, yuga_str text);
+int64_t yuga_platform_plat_edit_insert(int64_t slot, yuga_str text);
+int64_t yuga_platform_plat_edit_caret(int64_t slot);
+int64_t yuga_platform_plat_edit_anchor(int64_t slot);
+int64_t yuga_platform_plat_edit_mark(int64_t slot, yuga_str text);
+void yuga_platform_plat_edit_metrics(int64_t slot, int64_t wrap_w, int64_t font);
+int64_t yuga_platform_plat_edit_click(int64_t slot, int64_t x, int64_t y, int64_t wrap_w,
+                                      int64_t font);
+int64_t yuga_platform_plat_edit_move(int64_t slot, int64_t dir, int64_t extend);
+int64_t yuga_platform_plat_edit_caret_x(int64_t slot);
+int64_t yuga_platform_plat_edit_caret_y(int64_t slot);
+int64_t yuga_platform_plat_edit_line_h(int64_t slot);
 int64_t yuga_platform_plat_intern_fn(yuga_fn handler);
 void yuga_platform_plat_invoke_fn(int64_t id);
 /* Reactive prop thunks: interned like handlers, called for their result. */
@@ -291,6 +304,9 @@ int64_t yuga_zeus_engine_focus_step(int64_t back);
 int64_t yuga_zeus_engine_focus_captures_text(void);
 int64_t yuga_zeus_engine_key(int64_t key);
 int64_t yuga_zeus_engine_key_up(int64_t key, int64_t mods);
+void yuga_zeus_engine_set_mods(int64_t mods);
+int64_t yuga_zeus_engine_insert(yuga_str text);
+int64_t yuga_zeus_engine_marked(yuga_str text);
 
 void zeus_layout(int64_t width, int64_t height);
 int zeus_step(float dt);
@@ -303,6 +319,10 @@ const char *zeus_cursor(void);
 int zeus_handle_key(int key);
 /** Key release. Hosts that deliver key-up call this; `on_key_up` fires. */
 int zeus_handle_key_up(int key, int mods);
+/** Insert UTF-8 into the focused input (IME commit, paste). */
+int zeus_handle_text(const char *utf8, int n);
+/** IME composition overlay; n = 0 clears the mark. */
+int zeus_handle_marked(const char *utf8, int n);
 int zeus_handle_scroll(int64_t x, int64_t y, int64_t dx, int64_t dy);
 int zeus_handle_drag(int64_t x, int64_t y);
 void zeus_handle_mouseup(void);
