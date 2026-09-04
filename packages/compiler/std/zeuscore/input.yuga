@@ -207,6 +207,18 @@ fn click(px: int, py: int) -> int {
         return 0
     }
     arena.claim_focus(id)
+    if arena.nodes[id].kind == 10 {
+        let slot = arena.edit_ready(id)
+        if slot >= 0 {
+            let relx = px - arena.nodes[id].x - arena.nodes[id].pad_l - arena.nodes[id].border_w
+            let rely = py - arena.nodes[id].y - arena.nodes[id].pad_t - arena.nodes[id].border_w
+            let mut font = arena.nodes[id].font
+            if font < 8 {
+                font = 14
+            }
+            platform.plat_edit_click(slot, relx, rely, arena.input_inner_w(id), font)
+        }
+    }
     if arena.nodes[id].kind == 11 {
         if hit_h_scrollbar(id, px, py) != 0 {
             let maxs = arena.scroll_max_x(id)
@@ -697,24 +709,38 @@ fn key(k: int) -> int {
     if arena.nodes[id].kind != 10 {
         return 0
     }
-    if arena.nodes[id].edit_slot < 0 {
-        arena.stamp_edits()
-    }
-    let slot = arena.nodes[id].edit_slot
+    let slot = arena.edit_ready(id)
     if slot < 0 {
         return handled
     }
+    let extend = arena.ev_mods % 2
     let mut edited = 0
     if k == 8 {
         edited = platform.plat_edit_back(slot)
     } else if k == 127 {
-        edited = platform.plat_edit_back(slot)
+        edited = platform.plat_edit_del(slot)
     } else if k == 9 {
         edited = platform.plat_edit_append(slot, 9)
     } else if k == 10 {
-        edited = platform.plat_edit_append(slot, 10)
+        if arena.nodes[id].wrap != 0 {
+            edited = platform.plat_edit_append(slot, 10)
+        }
     } else if k == 13 {
-        edited = platform.plat_edit_append(slot, 10)
+        if arena.nodes[id].wrap != 0 {
+            edited = platform.plat_edit_append(slot, 10)
+        }
+    } else if k == 1000 {
+        edited = platform.plat_edit_move(slot, -1, extend)
+    } else if k == 1001 {
+        edited = platform.plat_edit_move(slot, 1, extend)
+    } else if k == 1002 {
+        edited = platform.plat_edit_move(slot, -3, extend)
+    } else if k == 1003 {
+        edited = platform.plat_edit_move(slot, 3, extend)
+    } else if k == 1006 {
+        edited = platform.plat_edit_move(slot, -2, extend)
+    } else if k == 1007 {
+        edited = platform.plat_edit_move(slot, 2, extend)
     } else if k >= 32 {
         if k < 127 {
             edited = platform.plat_edit_append(slot, k)
@@ -722,11 +748,51 @@ fn key(k: int) -> int {
     }
     if edited != 0 {
         /* `Input(bind = sig)` writes the edit buffer back on each edit; the
-           signal store notifies only on a real change. */
-        if arena.nodes[id].bind_fn > 0 {
-            platform.plat_invoke_fn(arena.nodes[id].bind_fn)
+           signal store notifies only on a real change. Nav keys do not write. */
+        let mut write = 1
+        if k >= 1000 {
+            if k <= 1007 {
+                write = 0
+            }
+        }
+        if write != 0 {
+            if arena.nodes[id].bind_fn > 0 {
+                platform.plat_invoke_fn(arena.nodes[id].bind_fn)
+            }
         }
         return 1
     }
     return handled
+}
+
+fn insert_text(s: string) -> int {
+    arena.ensure()
+    if arena.focus_captures_text() == 0 {
+        return 0
+    }
+    let id = arena.focus_id
+    let slot = arena.edit_ready(id)
+    if slot < 0 {
+        return 0
+    }
+    if platform.plat_edit_insert(slot, s) == 0 {
+        return 0
+    }
+    if arena.nodes[id].bind_fn > 0 {
+        platform.plat_invoke_fn(arena.nodes[id].bind_fn)
+    }
+    return 1
+}
+
+fn mark_text(s: string) -> int {
+    arena.ensure()
+    if arena.focus_captures_text() == 0 {
+        return 0
+    }
+    let id = arena.focus_id
+    let slot = arena.edit_ready(id)
+    if slot < 0 {
+        return 0
+    }
+    return platform.plat_edit_mark(slot, s)
 }

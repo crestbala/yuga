@@ -562,9 +562,54 @@ int64_t yuga_platform_plat_key_ev(int64_t key, int64_t mods) {
 static char *edit_buf[ZEUS_EDIT_SLOTS];
 static int edit_len[ZEUS_EDIT_SLOTS];
 static int edit_cap[ZEUS_EDIT_SLOTS];
+static int edit_pos[ZEUS_EDIT_SLOTS];
+static int edit_anchor[ZEUS_EDIT_SLOTS];
+static char *edit_mark[ZEUS_EDIT_SLOTS];
+static int edit_mark_len[ZEUS_EDIT_SLOTS];
+static char *edit_view[ZEUS_EDIT_SLOTS];
+static int edit_view_cap[ZEUS_EDIT_SLOTS];
+static int edit_wrap_w[ZEUS_EDIT_SLOTS];
+static int edit_font[ZEUS_EDIT_SLOTS];
 
 static int edit_ok(int64_t slot) {
     return slot >= 0 && slot < ZEUS_EDIT_SLOTS;
+}
+
+static void edit_clamp(int slot) {
+    if (edit_pos[slot] < 0) edit_pos[slot] = 0;
+    if (edit_pos[slot] > edit_len[slot]) edit_pos[slot] = edit_len[slot];
+    if (edit_anchor[slot] < 0) edit_anchor[slot] = 0;
+    if (edit_anchor[slot] > edit_len[slot]) edit_anchor[slot] = edit_len[slot];
+}
+
+static int edit_lo(int slot) {
+    return edit_pos[slot] < edit_anchor[slot] ? edit_pos[slot] : edit_anchor[slot];
+}
+
+static int edit_hi(int slot) {
+    return edit_pos[slot] > edit_anchor[slot] ? edit_pos[slot] : edit_anchor[slot];
+}
+
+static int edit_has_sel(int slot) { return edit_pos[slot] != edit_anchor[slot]; }
+
+static int utf8_next(const char *s, int n, int i) {
+    unsigned char c;
+    int adv = 1;
+    if (i >= n) return n;
+    c = (unsigned char)s[i];
+    if ((c & 0x80) == 0) adv = 1;
+    else if ((c & 0xE0) == 0xC0) adv = 2;
+    else if ((c & 0xF0) == 0xE0) adv = 3;
+    else if ((c & 0xF8) == 0xF0) adv = 4;
+    i += adv;
+    return i > n ? n : i;
+}
+
+static int utf8_prev(const char *s, int i) {
+    if (i <= 0) return 0;
+    i--;
+    while (i > 0 && ((unsigned char)s[i] & 0xC0) == 0x80) i--;
+    return i;
 }
 
 static int edit_grow(int slot, int need) {
@@ -583,13 +628,45 @@ static int edit_grow(int slot, int need) {
     return 1;
 }
 
-static int edit_put(int slot, char ch) {
+static void edit_clear_mark(int slot) {
+    if (edit_mark[slot]) edit_mark[slot][0] = '\0';
+    edit_mark_len[slot] = 0;
+}
+
+static int edit_delete_range(int slot, int lo, int hi) {
     int n = edit_len[slot];
-    if (!edit_grow(slot, n + 2)) return 1;
-    edit_buf[slot][n] = ch;
-    edit_buf[slot][n + 1] = '\0';
-    edit_len[slot] = n + 1;
+    if (lo < 0) lo = 0;
+    if (hi > n) hi = n;
+    if (hi <= lo) return 0;
+    if (edit_buf[slot]) memmove(edit_buf[slot] + lo, edit_buf[slot] + hi, (size_t)(n - hi + 1));
+    edit_len[slot] = n - (hi - lo);
+    edit_pos[slot] = lo;
+    edit_anchor[slot] = lo;
     return 1;
+}
+
+static int edit_insert_bytes(int slot, const char *p, int n) {
+    int at;
+    if (n < 0) n = 0;
+    if (edit_has_sel(slot)) edit_delete_range(slot, edit_lo(slot), edit_hi(slot));
+    edit_clear_mark(slot);
+    at = edit_pos[slot];
+    if (!edit_grow(slot, edit_len[slot] + n + 1)) return 0;
+    if (n && p) {
+        memmove(edit_buf[slot] + at + n, edit_buf[slot] + at, (size_t)(edit_len[slot] - at + 1));
+        memcpy(edit_buf[slot] + at, p, (size_t)n);
+        edit_len[slot] += n;
+        edit_pos[slot] = at + n;
+        edit_anchor[slot] = edit_pos[slot];
+    }
+    if (edit_buf[slot]) edit_buf[slot][edit_len[slot]] = '\0';
+    return 1;
+}
+
+static int edit_put(int slot, char ch) {
+    char b[1];
+    b[0] = ch;
+    return edit_insert_bytes(slot, b, 1);
 }
 
 int64_t yuga_platform_plat_edit_append(int64_t slot, int64_t key) {
@@ -607,11 +684,26 @@ int64_t yuga_platform_plat_edit_append(int64_t slot, int64_t key) {
 }
 
 int64_t yuga_platform_plat_edit_back(int64_t slot) {
+    int lo, hi;
     if (!edit_ok(slot)) return 0;
-    if (edit_len[slot] <= 0) return 0;
-    edit_len[slot]--;
-    if (edit_buf[slot]) edit_buf[slot][edit_len[slot]] = '\0';
-    return 1;
+    if (edit_has_sel((int)slot))
+        return edit_delete_range((int)slot, edit_lo((int)slot), edit_hi((int)slot));
+    if (edit_pos[slot] <= 0) return 0;
+    hi = edit_pos[slot];
+    lo = utf8_prev(edit_buf[slot] ? edit_buf[slot] : "", hi);
+    return edit_delete_range((int)slot, lo, hi);
+}
+
+int64_t yuga_platform_plat_edit_del(int64_t slot) {
+    int lo, hi, n;
+    if (!edit_ok(slot)) return 0;
+    if (edit_has_sel((int)slot))
+        return edit_delete_range((int)slot, edit_lo((int)slot), edit_hi((int)slot));
+    n = edit_len[slot];
+    if (edit_pos[slot] >= n) return 0;
+    lo = edit_pos[slot];
+    hi = utf8_next(edit_buf[slot] ? edit_buf[slot] : "", n, lo);
+    return edit_delete_range((int)slot, lo, hi);
 }
 
 int64_t yuga_platform_plat_edit_len(int64_t slot) {
@@ -634,6 +726,235 @@ int64_t yuga_platform_plat_edit_set(int64_t slot, yuga_str text) {
     if (n && text.ptr) memcpy(edit_buf[slot], text.ptr, (size_t)n);
     edit_buf[slot][n] = '\0';
     edit_len[slot] = n;
+    edit_pos[slot] = n;
+    edit_anchor[slot] = n;
+    edit_clear_mark((int)slot);
+    return 1;
+}
+
+int64_t yuga_platform_plat_edit_insert(int64_t slot, yuga_str text) {
+    int n;
+    if (!edit_ok(slot)) return 0;
+    n = text.len > 0 && text.ptr ? (int)text.len : 0;
+    if (n <= 0) return 0;
+    return edit_insert_bytes((int)slot, text.ptr, n);
+}
+
+int64_t yuga_platform_plat_edit_caret(int64_t slot) {
+    if (!edit_ok(slot)) return 0;
+    return edit_pos[slot];
+}
+
+int64_t yuga_platform_plat_edit_anchor(int64_t slot) {
+    if (!edit_ok(slot)) return 0;
+    return edit_anchor[slot];
+}
+
+int64_t yuga_platform_plat_edit_mark(int64_t slot, yuga_str text) {
+    int n;
+    char *p;
+    if (!edit_ok(slot)) return 0;
+    n = text.len > 0 && text.ptr ? (int)text.len : 0;
+    if (n <= 0) {
+        edit_clear_mark((int)slot);
+        return 1;
+    }
+    p = (char *)realloc(edit_mark[slot], (size_t)n + 1);
+    if (!p) return 0;
+    memcpy(p, text.ptr, (size_t)n);
+    p[n] = '\0';
+    edit_mark[slot] = p;
+    edit_mark_len[slot] = n;
+    return 1;
+}
+
+yuga_str yuga_platform_plat_edit_shown(int64_t slot) {
+    int n, m, at, need;
+    char *v;
+    if (!edit_ok(slot)) return (yuga_str){"", 0};
+    n = edit_len[slot];
+    m = edit_mark_len[slot];
+    if (m <= 0) {
+        if (n <= 0 || !edit_buf[slot]) return (yuga_str){"", 0};
+        return (yuga_str){edit_buf[slot], n};
+    }
+    at = edit_pos[slot];
+    if (at < 0) at = 0;
+    if (at > n) at = n;
+    need = n + m + 1;
+    if (need > edit_view_cap[slot]) {
+        v = (char *)realloc(edit_view[slot], (size_t)need);
+        if (!v) return (yuga_str){edit_buf[slot] ? edit_buf[slot] : "", n};
+        edit_view[slot] = v;
+        edit_view_cap[slot] = need;
+    }
+    v = edit_view[slot];
+    if (at && edit_buf[slot]) memcpy(v, edit_buf[slot], (size_t)at);
+    if (m && edit_mark[slot]) memcpy(v + at, edit_mark[slot], (size_t)m);
+    if (n - at > 0 && edit_buf[slot]) memcpy(v + at + m, edit_buf[slot] + at, (size_t)(n - at));
+    v[n + m] = '\0';
+    return (yuga_str){v, n + m};
+}
+
+void yuga_platform_plat_edit_metrics(int64_t slot, int64_t wrap_w, int64_t font) {
+    if (!edit_ok(slot)) return;
+    edit_wrap_w[slot] = wrap_w > 0 ? (int)wrap_w : 0;
+    edit_font[slot] = font > 0 ? (int)font : 14;
+}
+
+static int edit_xy_to_pos(int slot, int x, int y, int wrap_w, int font) {
+    const char *s = edit_buf[slot] ? edit_buf[slot] : "";
+    int n = edit_len[slot], i = 0, best = 0;
+    int64_t lh, line_w = 0, yy = 0, sw = 0, sh = 0;
+    if (n <= 0) return 0;
+    if (wrap_w < 1) wrap_w = 1 << 20;
+    if (font < 8) font = 8;
+    lh = wrap_line_h(font);
+    measure_span(" ", 1, font, &sw, &sh);
+    if (y < 0) y = 0;
+    while (i < n) {
+        int64_t ww = 0, wh = 0;
+        int j, adv;
+        if (s[i] == '\n') {
+            if (y < yy + lh) return i;
+            yy += lh;
+            line_w = 0;
+            i++;
+            best = i;
+            continue;
+        }
+        j = i;
+        while (j < n && s[j] != ' ' && s[j] != '\t' && s[j] != '\n') j++;
+        if (j == i) {
+            measure_span(s + i, 1, font, &ww, &wh);
+            adv = utf8_next(s, n, i) - i;
+            if (adv < 1) adv = 1;
+            j = i + adv;
+        } else {
+            measure_span(s + i, j - i, font, &ww, &wh);
+        }
+        if (line_w > 0 && line_w + ww > wrap_w) {
+            if (y < yy + lh) return i;
+            yy += lh;
+            line_w = 0;
+        }
+        if (y < yy + lh) {
+            int k = i;
+            int64_t cx = line_w;
+            while (k < j) {
+                int nk = utf8_next(s, n, k);
+                int64_t cw = 0, ch = 0;
+                measure_span(s + i, nk - i, font, &cw, &ch);
+                if (x < line_w + cw) {
+                    int64_t mid = (cx + line_w + cw) / 2;
+                    return x < mid ? k : nk;
+                }
+                cx = line_w + cw;
+                k = nk;
+            }
+            return j;
+        }
+        line_w += ww;
+        i = j;
+        best = i;
+    }
+    return best;
+}
+
+static void edit_pos_to_xy(int slot, int pos, int wrap_w, int font, int64_t *ox, int64_t *oy) {
+    const char *s = edit_buf[slot] ? edit_buf[slot] : "";
+    int n = edit_len[slot], i = 0;
+    int64_t lh, line_w = 0, yy = 0, sw = 0, sh = 0;
+    if (pos < 0) pos = 0;
+    if (pos > n) pos = n;
+    if (wrap_w < 1) wrap_w = 1 << 20;
+    if (font < 8) font = 8;
+    lh = wrap_line_h(font);
+    measure_span(" ", 1, font, &sw, &sh);
+    while (i < pos) {
+        int64_t ww = 0, wh = 0;
+        int j;
+        if (s[i] == '\n') {
+            yy += lh;
+            line_w = 0;
+            i++;
+            continue;
+        }
+        j = i;
+        while (j < n && j < pos && s[j] != ' ' && s[j] != '\t' && s[j] != '\n') j++;
+        if (j == i) j = utf8_next(s, n, i);
+        if (j > pos) j = pos;
+        measure_span(s + i, j - i, font, &ww, &wh);
+        if (line_w > 0 && line_w + ww > wrap_w) {
+            yy += lh;
+            line_w = 0;
+        }
+        line_w += ww;
+        i = j;
+    }
+    if (ox) *ox = line_w;
+    if (oy) *oy = yy;
+}
+
+int64_t yuga_platform_plat_edit_click(int64_t slot, int64_t x, int64_t y, int64_t wrap_w,
+                                      int64_t font) {
+    int p;
+    if (!edit_ok(slot)) return 0;
+    p = edit_xy_to_pos((int)slot, (int)x, (int)y, (int)wrap_w, (int)font);
+    edit_pos[slot] = p;
+    edit_anchor[slot] = p;
+    edit_clamp((int)slot);
+    return 1;
+}
+
+int64_t yuga_platform_plat_edit_caret_x(int64_t slot) {
+    int64_t x = 0, y = 0;
+    if (!edit_ok(slot)) return 0;
+    edit_pos_to_xy((int)slot, edit_pos[slot], edit_wrap_w[slot] ? edit_wrap_w[slot] : (1 << 20),
+                   edit_font[slot] ? edit_font[slot] : 14, &x, &y);
+    return x;
+}
+
+int64_t yuga_platform_plat_edit_caret_y(int64_t slot) {
+    int64_t x = 0, y = 0;
+    if (!edit_ok(slot)) return 0;
+    edit_pos_to_xy((int)slot, edit_pos[slot], edit_wrap_w[slot] ? edit_wrap_w[slot] : (1 << 20),
+                   edit_font[slot] ? edit_font[slot] : 14, &x, &y);
+    return y;
+}
+
+int64_t yuga_platform_plat_edit_line_h(int64_t slot) {
+    int font;
+    if (!edit_ok(slot)) return 18;
+    font = edit_font[slot] ? edit_font[slot] : 14;
+    return wrap_line_h(font);
+}
+
+int64_t yuga_platform_plat_edit_move(int64_t slot, int64_t dir, int64_t extend) {
+    int n, wrap_w, font, p;
+    int64_t x = 0, y = 0, lh;
+    if (!edit_ok(slot)) return 0;
+    n = edit_len[slot];
+    wrap_w = edit_wrap_w[slot];
+    font = edit_font[slot] ? edit_font[slot] : 14;
+    p = edit_pos[slot];
+    if (dir == -1) p = utf8_prev(edit_buf[slot] ? edit_buf[slot] : "", p);
+    else if (dir == 1) p = utf8_next(edit_buf[slot] ? edit_buf[slot] : "", n, p);
+    else if (dir == -2) {
+        while (p > 0 && edit_buf[slot] && edit_buf[slot][p - 1] != '\n') p--;
+    } else if (dir == 2) {
+        while (p < n && edit_buf[slot] && edit_buf[slot][p] != '\n') p++;
+    } else if (dir == -3 || dir == 3) {
+        lh = wrap_line_h(font);
+        edit_pos_to_xy((int)slot, p, wrap_w ? wrap_w : (1 << 20), font, &x, &y);
+        y += dir == 3 ? lh : -lh;
+        if (y < 0) y = 0;
+        p = edit_xy_to_pos((int)slot, (int)x, (int)y, wrap_w ? wrap_w : (1 << 20), font);
+    } else
+        return 0;
+    edit_pos[slot] = p;
+    if (!extend) edit_anchor[slot] = p;
+    edit_clamp((int)slot);
     return 1;
 }
 
@@ -643,6 +964,9 @@ void yuga_platform_plat_edit_reset(int64_t slot) {
     if (!edit_ok(slot)) return;
     if (edit_buf[slot]) edit_buf[slot][0] = '\0';
     edit_len[slot] = 0;
+    edit_pos[slot] = 0;
+    edit_anchor[slot] = 0;
+    edit_clear_mark((int)slot);
 }
 
 void yuga_platform_plat_measure(yuga_str s, int64_t px, int64_t *w, int64_t *h) {
@@ -866,11 +1190,30 @@ int zeus_handle_key(int key) {
     return (int)yuga_zeus_engine_key(key);
 }
 
+int zeus_handle_text(const char *utf8, int n) {
+    yuga_str s;
+    if (!utf8) utf8 = "";
+    if (n < 0) n = (int)strlen(utf8);
+    s.ptr = utf8;
+    s.len = n;
+    return (int)yuga_zeus_engine_insert(s);
+}
+
+int zeus_handle_marked(const char *utf8, int n) {
+    yuga_str s;
+    if (!utf8) utf8 = "";
+    if (n < 0) n = (int)strlen(utf8);
+    s.ptr = utf8;
+    s.len = n;
+    return (int)yuga_zeus_engine_marked(s);
+}
+
 int zeus_handle_key_up(int key, int mods) {
     return (int)yuga_zeus_engine_key_up(key, mods);
 }
 
 int zeus_handle_key_ev(int key, int mods) {
+    yuga_zeus_engine_set_mods((int64_t)mods);
     if (zeus_key_dispatch(key, mods)) return 1;
     if (key == ZEUS_K_TAB && !(mods & ~ZEUS_MOD_SHIFT))
         return zeus_focus_step(mods & ZEUS_MOD_SHIFT);

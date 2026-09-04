@@ -28,9 +28,21 @@ fn plat_map_key(spec: string, action: string, ctx: int) {}
 fn plat_key_ev(key: int, mods: int) -> int {}
 fn plat_edit_append(slot: int, key: int) -> int {}
 fn plat_edit_back(slot: int) -> int {}
+fn plat_edit_del(slot: int) -> int {}
 fn plat_edit_len(slot: int) -> int {}
 fn plat_edit_text(slot: int) -> string {}
+fn plat_edit_shown(slot: int) -> string {}
 fn plat_edit_set(slot: int, text: string) -> int {}
+fn plat_edit_insert(slot: int, text: string) -> int {}
+fn plat_edit_caret(slot: int) -> int {}
+fn plat_edit_anchor(slot: int) -> int {}
+fn plat_edit_mark(slot: int, text: string) -> int {}
+fn plat_edit_metrics(slot: int, wrap_w: int, font: int) {}
+fn plat_edit_click(slot: int, x: int, y: int, wrap_w: int, font: int) -> int {}
+fn plat_edit_move(slot: int, dir: int, extend: int) -> int {}
+fn plat_edit_caret_x(slot: int) -> int {}
+fn plat_edit_caret_y(slot: int) -> int {}
+fn plat_edit_line_h(slot: int) -> int {}
 fn plat_intern_fn(handler: fn()) -> int {}
 fn plat_invoke_fn(id: int) {}
 /// Reactive props are thunks. Interning one yields an int id, which a plain

@@ -1,0 +1,23 @@
+// DRAW-list golden: kit.TextArea after a short compose (hi + newline + t).
+// Keep stdout as the golden; no extra prints.
+
+import "std:kit"
+import "std:zeus"
+
+fn main() {
+    let draft = zeus.signal("")
+    zeus.window("zeus-snap", 400, 220)
+    zeus.root(zeus.Box(padding = 20, background = "#ffffff") {
+        kit.TextArea(draft, "Message")
+    })
+    zeus.engine_layout(400, 220)
+    let id = zeus.engine_find_role("textbox")
+    zeus.engine_click(zeus.node_x(id) + 8, zeus.node_y(id) + 8)
+    zeus.engine_key(104)
+    zeus.engine_key(105)
+    zeus.engine_key(13)
+    zeus.engine_key(116)
+    zeus.engine_layout(400, 220)
+    zeus.engine_paint()
+    zeus.dump()
+}

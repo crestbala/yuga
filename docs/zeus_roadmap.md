@@ -22,7 +22,7 @@ their exit criteria as the definition of done.
 | Networking | `std/net`: blocking POSIX sockets + Phase 1 async transport (timers, non-blocking connect/poll/send, `http.call_async`/`sse_open`/`ws_open` steppers); wasm: `fetch_rpc` + async fetch slots | TLS, streaming bodies on wasm |
 | Storage | `sys.read_file` / `write_file` (whole-file), env | KV/table store, structured persistence, fs tree, app-data paths |
 | Media | inline SVG only (paths, circles, `currentColor`) | raster images, gradients — the missing primitive |
-| Text | one weight per host, no selection, no IME on canvas | multilingual/emoji, rich text, multiline input |
+| Text | one weight per host; kind 10 multiline + caret/selection; mac IME; wasm paste | rich text spans, emoji metrics |
 | Server | single-threaded Yuga accept loop (HTTP/1.1 + h2c + one SSE/ws client per connection) | concurrency model for chat-class servers |
 | Kit | ~50 shadcn widgets, palette tokens, goldens | monolith namespace, no DCE, fixed-pixel tuning |
 
@@ -72,7 +72,7 @@ demos. Phase column points into §6.
 | # | Downside | Blocks | Effort | Phase |
 |---|---|---|---|---|
 | 1 | No raster image primitive (draw op + host decode) | product photos, avatars, feeds — every visual app | med-high (7-file pipeline) | 2 |
-| 2 | Single-line text, no IME on canvas hosts | chat input, search, forms beyond ASCII | high (host IME + multiline) | 3 |
+| 2 | ~~Single-line text, no IME on canvas hosts~~ **Phase 3** | chat compose exists; wasm IME is paste+composition, not a hidden field | — | 3 |
 | 3 | `For` rebuilds the whole list per push (recycling yes, O(n) still) | message logs, activity feeds, 10k-row tables | medium (windowed rows) | 5 |
 | 4 | No scroll physics / overscroll / nested scrollers | feed feel, long pages | medium | 5b |
 | 5 | `Signal<int>` only (no float/date/bool scalar store) | smooth animation, timestamps, charts | small-med | 6b |
@@ -176,11 +176,11 @@ thread.
 - [ ] Network image + cache hook (`Image(url, cache_key)`) once Phase 1 exists.
 - **Exit:** a golden fixture with an image draw op; avatars/product shots render in gallery.
 
-### Phase 3 — Multiline text + IME (desktop first)
-- [ ] Multiline text input (kind 10 extension or a new kind): line breaks, cursor nav, selection.
-- [ ] IME composition on mac (and canvas/wasm at least ASCII+paste).
-- [ ] Kit: `TextArea` widget (shadcn-style chrome reusing `Input` tokens).
-- **Exit:** a chat-compose headless test (type, edit, bind signal) + golden.
+### Phase 3 — Multiline text + IME
+- [x] Multiline text input (kind 10 `multiline` / `wrap`): line breaks, caret, click-to-caret, arrow/home/end, shift-select.
+- [x] IME composition on mac (`NSTextInputClient`); canvas/wasm ASCII + paste + compositionend.
+- [x] Kit: `TextArea` widget (shadcn-style chrome reusing `Input` tokens).
+- **Exit:** a chat-compose headless test (type, edit, bind signal) + golden. **Green** (`zeus_textarea.yuga`, `draw_golden/golden_textarea`).
 
 ### Phase 4 — KV persistence
 - [ ] `std/kv.yuga` over the `yuga_sys_*` seam: `get/set/delete/list`, file-backed, atomic-ish.
