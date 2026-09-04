@@ -2521,10 +2521,10 @@ fn call(c: Client, name: string, body: string) -> string {
     return rt_call(c.addr, name, body)
 }
 
-/// Awaitable unary gRPC-Web call: `let raw = await c.acall(name, body)`
+/// Awaitable unary gRPC-Web call: `let raw = await c.async_call(name, body)`
 /// inside an `async fn`. Same `#[proto]` contract as `call` / `call_async`;
 /// the await pumps the one-thread async world until the response lands.
-fn acall(c: Client, name: string, body: string) -> Future<string> {
+fn async_call(c: Client, name: string, body: string) -> Future<string> {
     let f = async.future_str()
     call_async(c, name, body, fn(out) { async.resolve(f, out) })
     return f

@@ -1,15 +1,26 @@
 // Phase 1c: `async fn` + `await` sugar (JS-shaped). `await` never blocks and
 // never threads: it re-enters the one-thread async pump until the future
-// resolves, so sequential async code reads like JS.
+// resolves, so sequential async code reads like JS. Mailboxes are `Future<T>`
+// for any Copy T, not just strings.
 
 import "std:async"
 import "std:fmt"
 import "std:sys"
 
+struct Pair {
+    a: int,
+    b: int,
+}
+
 let mut ok: int = 0
 
+fn fail(what: string) {
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
 /// One simulated async op: a future filled on the next pump tick, awaited
-/// for its value — the shape a gRPC round trip takes (`http.acall`).
+/// for its value — the shape a gRPC round trip takes (`http.async_call`).
 async fn fetch_value(tag: int) -> string {
     let f = async.future_str()
     async.spawn(|| { async.resolve(f, tag_str(tag)) })
@@ -22,6 +33,18 @@ fn tag_str(tag: int) -> string {
         return "one"
     }
     return "two"
+}
+
+async fn fetch_int(n: int) -> int {
+    let f = async.future(0)
+    async.spawn(|| { async.resolve(f, n) })
+    return await f
+}
+
+async fn fetch_pair() -> Pair {
+    let f = async.future(Pair { a: 0, b: 0 })
+    async.spawn(|| { async.resolve(f, Pair { a: 3, b: 4 }) })
+    return await f
 }
 
 /// Sequential awaits: the second only starts after the first completed.
@@ -40,23 +63,54 @@ async fn run() {
 fn main() {
     run()
     if ok != 1 {
-        fmt.println("FAIL await chain")
-        sys.exit(1)
+        fail("await chain")
     }
     // An async fn called from sync code still returns its value: awaits
     // inside it pump until done, then the value flows back normally.
     let v = fetch_value(2)
     if !fmt.eq(v, "two") {
-        fmt.println("FAIL sync call of async fn")
-        sys.exit(1)
+        fail("sync call of async fn")
     }
     // A future resolved before awaiting returns immediately.
     let pre = async.future_str()
     async.resolve(pre, "pre")
     let w = async.await_value(pre)
     if !fmt.eq(w, "pre") {
-        fmt.println("FAIL pre-resolved future")
-        sys.exit(1)
+        fail("pre-resolved future")
+    }
+    let n = fetch_int(42)
+    if n != 42 {
+        fail("Future<int>")
+    }
+    let bf = async.future(false)
+    async.resolve(bf, true)
+    if async.await_value(bf) != true {
+        fail("Future<bool>")
+    }
+    let ff = async.future(0.0)
+    async.spawn(|| { async.resolve(ff, 1.5) })
+    if async.await_value(ff) != 1.5 {
+        fail("Future<float>")
+    }
+    let p = fetch_pair()
+    if p.a != 3 {
+        fail("Future<Pair> a")
+    }
+    if p.b != 4 {
+        fail("Future<Pair> b")
+    }
+    let vf = async.future([]int {})
+    async.spawn(|| {
+        let mut xs = []int {}
+        push(xs, 8)
+        async.resolve(vf, xs)
+    })
+    let got = async.await_value(vf)
+    if got.len != 1 {
+        fail("Future<[]int> len")
+    }
+    if got[0] != 8 {
+        fail("Future<[]int> elem")
     }
     fmt.println("async await ok")
 }

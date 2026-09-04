@@ -740,6 +740,65 @@ static void emit_expr(FILE *o, AstNode *n) {
                 }
                 break;
             }
+            if (n->as.call.fut_cell == 1 && n->as.call.arg_count == 1) {
+                Type *vt = n->as.call.args[0]->ty;
+                fprintf(o, "({ ");
+                if (type_is_copy_vec(vt)) {
+                    fprintf(o, "yuga_vec _fv = yuga_vec_retain(&");
+                    emit_expr(o, n->as.call.args[0]);
+                    fprintf(o, "); yuga_fut_push(&_fv, sizeof(_fv)); })");
+                } else {
+                    emit_ctype(o, vt);
+                    fprintf(o, " _fv = ");
+                    emit_expr(o, n->as.call.args[0]);
+                    fprintf(o, "; yuga_fut_push(&_fv, sizeof(_fv)); })");
+                }
+                break;
+            }
+            if (n->as.call.fut_cell == 2 && n->as.call.arg_count == 1) {
+                fprintf(o, "({ ");
+                emit_ctype(o, n->ty);
+                fprintf(o, " _fv; yuga_fut_load(");
+                emit_expr(o, n->as.call.args[0]);
+                fprintf(o, ", &_fv, sizeof(_fv)); ");
+                if (type_is_copy_vec(n->ty))
+                    fprintf(o, "_fv = yuga_vec_retain(&_fv); ");
+                fprintf(o, "_fv; })");
+                break;
+            }
+            if (n->as.call.fut_cell == 3 && n->as.call.arg_count == 2) {
+                Type *vt = n->as.call.args[1]->ty;
+                if (type_is_copy_vec(vt)) {
+                    fprintf(o, "({ int64_t _fid = ");
+                    emit_expr(o, n->as.call.args[0]);
+                    fprintf(o, "; yuga_vec _old; yuga_fut_load(_fid, &_old, sizeof(_old)); "
+                               "yuga_vec _new = yuga_vec_retain(&");
+                    emit_expr(o, n->as.call.args[1]);
+                    fprintf(o, "); yuga_fut_store(_fid, &_new, sizeof(_new)); "
+                               "yuga_vec_drop(&_old); 0; })");
+                } else {
+                    fprintf(o, "({ ");
+                    emit_ctype(o, vt);
+                    fprintf(o, " _fv = ");
+                    emit_expr(o, n->as.call.args[1]);
+                    fprintf(o, "; yuga_fut_store(");
+                    emit_expr(o, n->as.call.args[0]);
+                    fprintf(o, ", &_fv, sizeof(_fv)); 0; })");
+                }
+                break;
+            }
+            if (n->as.call.fut_cell == 4 && n->as.call.arg_count == 1) {
+                fprintf(o, "yuga_fut_ready(");
+                emit_expr(o, n->as.call.args[0]);
+                fprintf(o, ")");
+                break;
+            }
+            if (n->as.call.fut_cell == 5 && n->as.call.arg_count == 1) {
+                fprintf(o, "(yuga_fut_clear(");
+                emit_expr(o, n->as.call.args[0]);
+                fprintf(o, "), 0)");
+                break;
+            }
             if (n->as.call.is_wrapping_add) {
                 fprintf(o, "yuga_wrapping_add(");
                 emit_expr(o, n->as.call.args[0]);
@@ -1174,6 +1233,10 @@ static void emit_struct_type(FILE *o, Type *t) {
 }
 
 static void emit_struct(FILE *o, AstNode *st) {
+    if (st->as.strct.name && strcmp(st->as.strct.name, "Future") == 0) {
+        fprintf(o, "typedef struct Future {\n    int64_t id;\n} Future;\n\n");
+        return;
+    }
     if (st->as.strct.tparam_count) return;
     if (st->ty)
         emit_struct_type(o, st->ty);
@@ -1649,6 +1712,47 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
                             lv(in->args[1]));
                     emit_ctype(o, vt);
                     fprintf(o, ")); yuga_track_notify(%s); }\n", lv(in->args[0]));
+                }
+                break;
+            }
+            if (in->op == IR_CALL && in->callee && strcmp(in->callee, "yuga_fut_push") == 0 &&
+                in->nargs >= 1 && in->dst >= 0) {
+                Type *vt = in->ty;
+                if (type_is_copy_vec(vt)) {
+                    fprintf(o, "{ yuga_vec _fv = yuga_vec_retain(&%s); %s = yuga_fut_push(&_fv, sizeof(_fv)); }\n",
+                            lv(in->args[0]), lv(in->dst));
+                } else {
+                    fprintf(o, "%s = yuga_fut_push(&%s, sizeof(", lv(in->dst), lv(in->args[0]));
+                    emit_ctype(o, vt);
+                    fprintf(o, "));\n");
+                }
+                break;
+            }
+            if (in->op == IR_CALL && in->callee && strcmp(in->callee, "yuga_fut_load") == 0 &&
+                in->nargs >= 1 && in->dst >= 0) {
+                fprintf(o, "yuga_fut_load(%s, &%s, sizeof(", lv(in->args[0]), lv(in->dst));
+                emit_ctype(o, in->ty);
+                fprintf(o, "));\n");
+                if (type_is_copy_vec(in->ty)) {
+                    indent(o, 1);
+                    fprintf(o, "%s = yuga_vec_retain(&%s);\n", lv(in->dst), lv(in->dst));
+                }
+                break;
+            }
+            if (in->op == IR_CALL && in->callee && strcmp(in->callee, "yuga_fut_store") == 0 &&
+                in->nargs >= 2) {
+                Type *vt = in->ty;
+                if (vt && vt->kind == TY_VOID && in->args[1] >= 0 && in->args[1] < CF->nlocals)
+                    vt = CF->locals[in->args[1]].ty;
+                if (type_is_copy_vec(vt)) {
+                    fprintf(o, "{ yuga_vec _old; yuga_fut_load(%s, &_old, sizeof(_old)); "
+                               "yuga_vec _new = yuga_vec_retain(&%s); yuga_fut_store(%s, &_new, sizeof(_new)); "
+                               "yuga_vec_drop(&_old); }\n",
+                            lv(in->args[0]), lv(in->args[1]), lv(in->args[0]));
+                } else {
+                    fprintf(o, "yuga_fut_store(%s, &%s, sizeof(", lv(in->args[0]), lv(in->args[1]));
+                    emit_ctype(o, vt);
+                    fprintf(o, "));\n");
                 }
                 break;
             }
@@ -2226,7 +2330,8 @@ void codegen_emit_c(FILE *out, YugaModule *mods, int nmods, const char *rt_path)
     }
     for (int i = 0; i < typecheck_struct_inst_count(); i++) {
         Type *t = typecheck_struct_inst(i);
-        if (t && t->name && strcmp(t->name, "Signal") == 0) continue;
+        if (t && t->name && (strcmp(t->name, "Signal") == 0 || strcmp(t->name, "Future") == 0))
+            continue;
         if (t && struct_targs_concrete(t)) emit_struct_type(out, t);
     }
 

@@ -1050,6 +1050,12 @@ static Type *finish_proc_call(AstNode *n, Type *ft, AstNode *named) {
              strcmp(named->as.fn.cname, "yuga_zeus_set") == 0) &&
             !type_is_copy(bound[0]))
             err(n->loc, "Signal<%s> requires a Copy type", type_name(bound[0]));
+        if (named->as.fn.cname && bound && bound[0] &&
+            (strcmp(named->as.fn.cname, "yuga_async_future") == 0 ||
+             strcmp(named->as.fn.cname, "yuga_async_resolve") == 0 ||
+             strcmp(named->as.fn.cname, "yuga_async_await_value") == 0) &&
+            !type_is_copy(bound[0]))
+            err(n->loc, "Future<%s> requires a Copy type", type_name(bound[0]));
         free(bound);
     }
     n->ty = ret;
@@ -1433,6 +1439,76 @@ static Type *check_call(AstNode *n, Type *expect) {
             if (!type_eq(a, ty_int()))
                 err(n->as.call.args[0]->loc, "__sig_store requires int id");
             n->as.call.sig_cell = 3;
+            n->ty = ty_void();
+            n->place_mut = 0;
+            return n->ty;
+        }
+        if (strcmp(nm, "__fut_push") == 0) {
+            if (n->as.call.arg_count != 1) {
+                err(n->loc, "__fut_push expects 1 argument");
+                return ty_void();
+            }
+            Type *a = check_expr(n->as.call.args[0]);
+            n->as.call.fut_cell = 1;
+            n->ty = ty_int();
+            n->place_mut = 0;
+            (void)a;
+            return n->ty;
+        }
+        if (strcmp(nm, "__fut_load") == 0) {
+            if (n->as.call.arg_count != 1) {
+                err(n->loc, "__fut_load expects 1 argument");
+                return ty_void();
+            }
+            Type *a = check_expr(n->as.call.args[0]);
+            if (!type_eq(a, ty_int()))
+                err(n->as.call.args[0]->loc, "__fut_load requires int id");
+            if (!expect || expect->kind == TY_VOID) {
+                err(n->loc, "cannot infer type of __fut_load");
+                n->ty = ty_void();
+                return n->ty;
+            }
+            n->as.call.fut_cell = 2;
+            n->ty = expect;
+            n->place_mut = 0;
+            return n->ty;
+        }
+        if (strcmp(nm, "__fut_store") == 0) {
+            if (n->as.call.arg_count != 2) {
+                err(n->loc, "__fut_store expects 2 arguments");
+                return ty_void();
+            }
+            Type *a = check_expr(n->as.call.args[0]);
+            check_expr(n->as.call.args[1]);
+            if (!type_eq(a, ty_int()))
+                err(n->as.call.args[0]->loc, "__fut_store requires int id");
+            n->as.call.fut_cell = 3;
+            n->ty = ty_void();
+            n->place_mut = 0;
+            return n->ty;
+        }
+        if (strcmp(nm, "__fut_ready") == 0) {
+            if (n->as.call.arg_count != 1) {
+                err(n->loc, "__fut_ready expects 1 argument");
+                return ty_void();
+            }
+            Type *a = check_expr(n->as.call.args[0]);
+            if (!type_eq(a, ty_int()))
+                err(n->as.call.args[0]->loc, "__fut_ready requires int id");
+            n->as.call.fut_cell = 4;
+            n->ty = ty_int();
+            n->place_mut = 0;
+            return n->ty;
+        }
+        if (strcmp(nm, "__fut_clear") == 0) {
+            if (n->as.call.arg_count != 1) {
+                err(n->loc, "__fut_clear expects 1 argument");
+                return ty_void();
+            }
+            Type *a = check_expr(n->as.call.args[0]);
+            if (!type_eq(a, ty_int()))
+                err(n->as.call.args[0]->loc, "__fut_clear requires int id");
+            n->as.call.fut_cell = 5;
             n->ty = ty_void();
             n->place_mut = 0;
             return n->ty;
