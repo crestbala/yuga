@@ -18,6 +18,13 @@ fn plat_set_window(title: string, width: int, height: int) {}
 fn plat_view_width() -> int {}
 fn plat_view_height() -> int {}
 fn plat_svg(x: int, y: int, w: int, h: int, markup: string, rgb: int, alpha: int) {}
+/// Raster image. `src` is a path, data URI, or http(s) URL. Decode is in the
+/// host (PNG / JPEG / WebP / GIF); this seam only forwards the string.
+fn plat_image(x: int, y: int, w: int, h: int, src: string, radius: int, alpha: int, fit: int) {}
+/// Open a host image picker. Returns a path / blob URL immediately, or empty
+/// if the host completes later via `engine_picked_image`. `w`/`h` are the
+/// image's intrinsic size in layout points (0 if still loading).
+fn plat_pick_image(w: &mut int, h: &mut int) -> string {}
 fn plat_save() {}
 fn plat_clip(x: int, y: int, w: int, h: int) {}
 fn plat_restore() {}

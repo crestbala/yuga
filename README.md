@@ -178,8 +178,9 @@ Golden programs under `packages/compiler/tests/golden/` (hello, fib, fizzbuzz,
 | `counter` | Full-stack: shared `#[proto]` contract, Yuga backend, Zeus UI on web / macOS / iOS / Android. |
 
 ```
-./run.sh gallery
-./run.sh gallery wasm32
+./run.sh gallery              # Vite wasm UI at http://127.0.0.1:5174
+./run.sh gallery web          # same
+./run.sh gallery macos        # Cocoa
 ./run.sh dashboard ios
 ```
 

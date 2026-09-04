@@ -588,6 +588,115 @@ static void mac_svg(void *ctx, int64_t x, int64_t y, int64_t w, int64_t h,
     svg_draw_tree(&body, st, ox, oy, scale, rgb, alpha, NULL);
 }
 
+/* PNG / JPEG / WebP / GIF via ImageIO. Cache by src; http(s) loads off-thread. */
+static NSMutableDictionary *g_img;
+static NSMutableSet *g_img_load;
+
+static void mac_img_put(NSString *key, NSImage *img) {
+    [g_img setObject:(img ? (id)img : (id)[NSNull null]) forKey:key];
+    [img release];
+}
+
+static NSImage *mac_img_get(const char *src) {
+    NSString *key;
+    NSImage *img;
+    if (!src || !src[0]) return nil;
+    if (!g_img) {
+        g_img = [[NSMutableDictionary alloc] init];
+        g_img_load = [[NSMutableSet alloc] init];
+    }
+    key = [NSString stringWithUTF8String:src];
+    img = [g_img objectForKey:key];
+    if (img) return img == (id)[NSNull null] ? nil : img;
+    if ([g_img_load containsObject:key]) return nil;
+    if ([key hasPrefix:@"data:"]) {
+        NSRange comma = [key rangeOfString:@","];
+        NSData *data = nil;
+        if (comma.location != NSNotFound)
+            data = [[NSData alloc] initWithBase64EncodedString:[key substringFromIndex:comma.location + 1]
+                                                       options:NSDataBase64DecodingIgnoreUnknownCharacters];
+        img = data ? [[NSImage alloc] initWithData:data] : nil;
+        [data release];
+        mac_img_put(key, img);
+        return img;
+    }
+    if ([key hasPrefix:@"http://"] || [key hasPrefix:@"https://"]) {
+        NSURL *url = [NSURL URLWithString:key];
+        if (!url) {
+            mac_img_put(key, nil);
+            return nil;
+        }
+        [g_img_load addObject:key];
+        [[[NSURLSession sharedSession] dataTaskWithURL:url
+                                     completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+            (void)resp;
+            (void)err;
+            NSImage *im = data ? [[NSImage alloc] initWithData:data] : nil;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                mac_img_put(key, im);
+                [g_img_load removeObject:key];
+                if (g_view) [g_view setNeedsDisplay:YES];
+            });
+        }] resume];
+        return nil;
+    }
+    if ([key hasPrefix:@"file://"])
+        img = [[NSImage alloc] initWithContentsOfURL:[NSURL URLWithString:key]];
+    else
+        img = [[NSImage alloc] initWithContentsOfFile:key];
+    mac_img_put(key, img);
+    return img;
+}
+
+static NSRect mac_image_dest(int64_t x, int64_t y, int64_t w, int64_t h,
+                             int64_t iw, int64_t ih, int64_t fit) {
+    int64_t dw, dh;
+    if (fit != 1 && fit != 2 && fit != 3) return NSMakeRect((CGFloat)x, (CGFloat)y, (CGFloat)w, (CGFloat)h);
+    if (iw <= 0 || ih <= 0) return NSMakeRect((CGFloat)x, (CGFloat)y, (CGFloat)w, (CGFloat)h);
+    if (fit == 3) return NSMakeRect((CGFloat)x, (CGFloat)y, (CGFloat)iw, (CGFloat)ih);
+    if ((fit == 1 && iw * h <= ih * w) || (fit == 2 && iw * h >= ih * w)) {
+        dh = h;
+        dw = iw * h / ih;
+    } else {
+        dw = w;
+        dh = ih * w / iw;
+    }
+    return NSMakeRect((CGFloat)(x + (w - dw) / 2), (CGFloat)(y + (h - dh) / 2),
+                      (CGFloat)dw, (CGFloat)dh);
+}
+
+static void mac_image(void *ctx, int64_t x, int64_t y, int64_t w, int64_t h,
+                      const char *src, int64_t radius, int64_t alpha, int64_t fit) {
+    NSImage *img;
+    NSRect box, dest;
+    NSSize sz;
+    CGFloat a, rad;
+    (void)ctx;
+    if (w <= 0 || h <= 0) return;
+    img = mac_img_get(src);
+    if (!img) return;
+    a = alpha < 0 ? 0 : (alpha > 255 ? 1.0 : (CGFloat)alpha / 255.0);
+    sz = [img size];
+    box = NSMakeRect((CGFloat)x, (CGFloat)y, (CGFloat)w, (CGFloat)h);
+    dest = mac_image_dest(x, y, w, h, (int64_t)(sz.width + 0.5), (int64_t)(sz.height + 0.5), fit);
+    [NSGraphicsContext saveGraphicsState];
+    if (radius > 0) {
+        rad = (CGFloat)radius;
+        if (rad > box.size.width / 2) rad = box.size.width / 2;
+        if (rad > box.size.height / 2) rad = box.size.height / 2;
+        [[NSBezierPath bezierPathWithRoundedRect:box xRadius:rad yRadius:rad] addClip];
+    } else {
+        [[NSBezierPath bezierPathWithRect:box] addClip];
+    }
+    [img drawInRect:dest
+           fromRect:NSZeroRect
+          operation:NSCompositingOperationSourceOver
+           fraction:a
+     respectFlipped:YES
+              hints:nil];
+    [NSGraphicsContext restoreGraphicsState];
+}
+
 static void mac_redraw(void) {
     [g_view setNeedsDisplay:YES];
 }
@@ -668,6 +777,7 @@ static NSCursor *zeus_cursor_for(const char *name) {
         d.clip = mac_clip;
         d.restore = mac_restore;
         d.svg = mac_svg;
+        d.image = mac_image;
         zeus_paint(NULL, d);
         /* setNeedsDisplay inside drawRect is dropped by AppKit; queue the next frame. */
         if (more && g_view) {
@@ -986,7 +1096,37 @@ static void mac_run(void) {
     }
 }
 
+static void mac_pick_image(char *out, int cap, int64_t *w, int64_t *h) {
+    NSOpenPanel *p;
+    NSString *path;
+    const char *utf;
+    NSImage *img;
+    NSSize sz;
+    if (w) *w = 0;
+    if (h) *h = 0;
+    if (!out || cap <= 0) return;
+    out[0] = 0;
+    p = [NSOpenPanel openPanel];
+    [p setCanChooseFiles:YES];
+    [p setCanChooseDirectories:NO];
+    [p setAllowsMultipleSelection:NO];
+    [p setAllowedFileTypes:[NSArray arrayWithObjects:@"png", @"jpg", @"jpeg", @"gif",
+                                                     @"webp", nil]];
+    if ([p runModal] != NSModalResponseOK) return;
+    path = [[p URL] path];
+    utf = path ? [path UTF8String] : NULL;
+    if (!utf) return;
+    strncpy(out, utf, (size_t)cap - 1);
+    out[cap - 1] = 0;
+    img = mac_img_get(utf);
+    if (!img) return;
+    sz = [img size];
+    if (w) *w = (int64_t)(sz.width + 0.5);
+    if (h) *h = (int64_t)(sz.height + 0.5);
+}
+
 __attribute__((constructor))
 static void zeus_mac_register(void) {
     zeus_set_platform(mac_run, mac_measure, mac_redraw);
+    zeus_set_pick_image(mac_pick_image);
 }

@@ -174,11 +174,18 @@ typedef struct {
     /* SVG markup in `markup`; `currentColor` paints as `rgb`. alpha is 0..255. */
     void (*svg)(void *ctx, int64_t x, int64_t y, int64_t w, int64_t h,
                 const char *markup, int64_t rgb, int64_t alpha);
+    /* Raster image. `src` is a path, data URI, or URL. Decode is in the host
+       (PNG / JPEG / WebP / GIF); NULL skips. radius clips; alpha is 0..255.
+       fit: 0 stretch, 1 contain, 2 cover, 3 none. */
+    void (*image)(void *ctx, int64_t x, int64_t y, int64_t w, int64_t h,
+                  const char *src, int64_t radius, int64_t alpha, int64_t fit);
 } ZeusDraw;
 
 void zeus_set_platform(void (*run)(void),
                       void (*measure)(const char *s, int64_t px, int64_t *w, int64_t *h),
                       void (*redraw)(void));
+void zeus_set_pick_image(void (*pick)(char *out, int cap, int64_t *w, int64_t *h));
+void zeus_picked_image(const char *src, int64_t w, int64_t h);
 void zeus_bind_draw(ZeusDraw draw);
 
 /* Empty std/zeus.yuga fns → these C symbols. */
@@ -202,6 +209,9 @@ int64_t yuga_zeus_plat_view_width(void);
 int64_t yuga_zeus_plat_view_height(void);
 void yuga_zeus_plat_svg(int64_t x, int64_t y, int64_t w, int64_t h, yuga_str markup,
                        int64_t rgb, int64_t alpha);
+void yuga_zeus_plat_image(int64_t x, int64_t y, int64_t w, int64_t h, yuga_str src,
+                         int64_t radius, int64_t alpha, int64_t fit);
+yuga_str yuga_zeus_plat_pick_image(int64_t *w, int64_t *h);
 void yuga_zeus_plat_save(void);
 void yuga_zeus_plat_clip(int64_t x, int64_t y, int64_t w, int64_t h);
 void yuga_zeus_plat_restore(void);
@@ -235,6 +245,9 @@ int64_t yuga_platform_plat_view_width(void);
 int64_t yuga_platform_plat_view_height(void);
 void yuga_platform_plat_svg(int64_t x, int64_t y, int64_t w, int64_t h, yuga_str markup,
                             int64_t rgb, int64_t alpha);
+void yuga_platform_plat_image(int64_t x, int64_t y, int64_t w, int64_t h, yuga_str src,
+                              int64_t radius, int64_t alpha, int64_t fit);
+yuga_str yuga_platform_plat_pick_image(int64_t *w, int64_t *h);
 void yuga_platform_plat_save(void);
 void yuga_platform_plat_clip(int64_t x, int64_t y, int64_t w, int64_t h);
 void yuga_platform_plat_restore(void);
@@ -307,6 +320,7 @@ int64_t yuga_zeus_engine_key_up(int64_t key, int64_t mods);
 void yuga_zeus_engine_set_mods(int64_t mods);
 int64_t yuga_zeus_engine_insert(yuga_str text);
 int64_t yuga_zeus_engine_marked(yuga_str text);
+void yuga_zeus_engine_picked_image(yuga_str src, int64_t w, int64_t h);
 
 void zeus_layout(int64_t width, int64_t height);
 int zeus_step(float dt);

@@ -609,6 +609,109 @@ static void ios_svg(void *ctx, int64_t x, int64_t y, int64_t w, int64_t h,
     svg_draw_tree(&body, st, ox, oy, scale, rgb, alpha, NULL);
 }
 
+/* PNG / JPEG / WebP / GIF via ImageIO. Cache by src; http(s) loads off-thread. */
+static NSMutableDictionary *g_img;
+static NSMutableSet *g_img_load;
+
+static void ios_img_put(NSString *key, UIImage *img) {
+    [g_img setObject:(img ? (id)img : (id)[NSNull null]) forKey:key];
+    [img release];
+}
+
+static UIImage *ios_img_get(const char *src) {
+    NSString *key;
+    UIImage *img;
+    if (!src || !src[0]) return nil;
+    if (!g_img) {
+        g_img = [[NSMutableDictionary alloc] init];
+        g_img_load = [[NSMutableSet alloc] init];
+    }
+    key = [NSString stringWithUTF8String:src];
+    img = [g_img objectForKey:key];
+    if (img) return img == (id)[NSNull null] ? nil : img;
+    if ([g_img_load containsObject:key]) return nil;
+    if ([key hasPrefix:@"data:"]) {
+        NSRange comma = [key rangeOfString:@","];
+        NSData *data = nil;
+        if (comma.location != NSNotFound)
+            data = [[NSData alloc] initWithBase64EncodedString:[key substringFromIndex:comma.location + 1]
+                                                       options:NSDataBase64DecodingIgnoreUnknownCharacters];
+        img = data ? [[UIImage alloc] initWithData:data] : nil;
+        [data release];
+        ios_img_put(key, img);
+        return img;
+    }
+    if ([key hasPrefix:@"http://"] || [key hasPrefix:@"https://"]) {
+        NSURL *url = [NSURL URLWithString:key];
+        if (!url) {
+            ios_img_put(key, nil);
+            return nil;
+        }
+        [g_img_load addObject:key];
+        [[[NSURLSession sharedSession] dataTaskWithURL:url
+                                     completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+            (void)resp;
+            (void)err;
+            UIImage *im = data ? [[UIImage alloc] initWithData:data] : nil;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                ios_img_put(key, im);
+                [g_img_load removeObject:key];
+                if (g_view) [g_view setNeedsDisplay];
+            });
+        }] resume];
+        return nil;
+    }
+    if ([key hasPrefix:@"file://"])
+        img = [[UIImage alloc] initWithContentsOfFile:[[NSURL URLWithString:key] path]];
+    else
+        img = [[UIImage alloc] initWithContentsOfFile:key];
+    ios_img_put(key, img);
+    return img;
+}
+
+static CGRect ios_image_dest(int64_t x, int64_t y, int64_t w, int64_t h,
+                             int64_t iw, int64_t ih, int64_t fit) {
+    int64_t dw, dh;
+    if (fit != 1 && fit != 2 && fit != 3) return CGRectMake((CGFloat)x, (CGFloat)y, (CGFloat)w, (CGFloat)h);
+    if (iw <= 0 || ih <= 0) return CGRectMake((CGFloat)x, (CGFloat)y, (CGFloat)w, (CGFloat)h);
+    if (fit == 3) return CGRectMake((CGFloat)x, (CGFloat)y, (CGFloat)iw, (CGFloat)ih);
+    if ((fit == 1 && iw * h <= ih * w) || (fit == 2 && iw * h >= ih * w)) {
+        dh = h;
+        dw = iw * h / ih;
+    } else {
+        dw = w;
+        dh = ih * w / iw;
+    }
+    return CGRectMake((CGFloat)(x + (w - dw) / 2), (CGFloat)(y + (h - dh) / 2),
+                      (CGFloat)dw, (CGFloat)dh);
+}
+
+static void ios_image(void *ctx, int64_t x, int64_t y, int64_t w, int64_t h,
+                      const char *src, int64_t radius, int64_t alpha, int64_t fit) {
+    UIImage *img;
+    CGRect box, dest;
+    CGFloat a, rad;
+    (void)ctx;
+    if (w <= 0 || h <= 0) return;
+    img = ios_img_get(src);
+    if (!img) return;
+    a = alpha < 0 ? 0 : (alpha > 255 ? 1.0 : (CGFloat)alpha / 255.0);
+    box = CGRectMake((CGFloat)x, (CGFloat)y, (CGFloat)w, (CGFloat)h);
+    dest = ios_image_dest(x, y, w, h, (int64_t)(img.size.width + 0.5),
+                          (int64_t)(img.size.height + 0.5), fit);
+    CGContextSaveGState(UIGraphicsGetCurrentContext());
+    if (radius > 0) {
+        rad = (CGFloat)radius;
+        if (rad > box.size.width / 2) rad = box.size.width / 2;
+        if (rad > box.size.height / 2) rad = box.size.height / 2;
+        [[UIBezierPath bezierPathWithRoundedRect:box cornerRadius:rad] addClip];
+    } else {
+        [[UIBezierPath bezierPathWithRect:box] addClip];
+    }
+    [img drawInRect:dest blendMode:kCGBlendModeNormal alpha:a];
+    CGContextRestoreGState(UIGraphicsGetCurrentContext());
+}
+
 static void ios_redraw(void) {
     [g_view setNeedsDisplay];
 }
@@ -680,6 +783,7 @@ static CGPoint zeus_content_point(UIView *v, CGPoint p) {
     d.clip = ios_clip;
     d.restore = ios_restore;
     d.svg = ios_svg;
+    d.image = ios_image;
     zeus_paint(NULL, d);
 }
 
@@ -729,7 +833,8 @@ static CGPoint zeus_content_point(UIView *v, CGPoint p) {
 }
 @end
 
-@interface ZeusViewController : UIViewController
+@interface ZeusViewController : UIViewController <UINavigationControllerDelegate,
+                                                  UIImagePickerControllerDelegate>
 @end
 
 @implementation ZeusViewController
@@ -738,6 +843,22 @@ static CGPoint zeus_content_point(UIView *v, CGPoint p) {
 }
 - (BOOL)prefersHomeIndicatorAutoHidden {
     return YES;
+}
+- (void)imagePickerController:(UIImagePickerController *)p
+    didFinishPickingMediaWithInfo:(NSDictionary *)info {
+    UIImage *img = [info objectForKey:UIImagePickerControllerOriginalImage];
+    NSData *data;
+    NSString *path;
+    [p dismissViewControllerAnimated:YES completion:nil];
+    if (!img) return;
+    data = UIImageJPEGRepresentation(img, 0.9f);
+    path = [NSTemporaryDirectory() stringByAppendingPathComponent:@"zeus-pick.jpg"];
+    [data writeToFile:path atomically:YES];
+    zeus_picked_image([path UTF8String], (int64_t)(img.size.width + 0.5),
+                      (int64_t)(img.size.height + 0.5));
+}
+- (void)imagePickerControllerDidCancel:(UIImagePickerController *)p {
+    [p dismissViewControllerAnimated:YES completion:nil];
 }
 @end
 
@@ -784,7 +905,23 @@ int main(int argc, char *argv[]) {
     }
 }
 
+static void ios_pick_image(char *out, int cap, int64_t *w, int64_t *h) {
+    UIViewController *vc;
+    UIImagePickerController *p;
+    if (w) *w = 0;
+    if (h) *h = 0;
+    if (out && cap > 0) out[0] = 0;
+    vc = g_window ? g_window.rootViewController : nil;
+    if (!vc) return;
+    p = [[UIImagePickerController alloc] init];
+    p.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
+    p.delegate = (id)vc;
+    [vc presentViewController:p animated:YES completion:nil];
+    [p release];
+}
+
 __attribute__((constructor))
 static void zeus_ios_register(void) {
     zeus_set_platform(ios_run, ios_measure, ios_redraw);
+    zeus_set_pick_image(ios_pick_image);
 }

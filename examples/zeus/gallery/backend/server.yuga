@@ -1,0 +1,12 @@
+//! Native HTTP listener for the gallery example (`:8081`).
+//!
+//! The kit catalog is a client-only UI (no RPCs yet). This process exists so
+//! the example matches the counter layout: `backend/` + `frontend/`.
+
+import "std:http"
+import "std:fmt"
+
+fn main() {
+    fmt.println("gallery backend: http://127.0.0.1:8081  (no RPCs)")
+    http.app().listen(8081)
+}

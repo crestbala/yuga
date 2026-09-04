@@ -193,20 +193,99 @@ fn Controls() {
     }
 }
 
+// 1×1 PNG data URIs (stretched). Hosts also decode JPEG / WebP / GIF.
+let IMG_ADA = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mNYuHAVAAPTAe2W6vg1AAAAAElFTkSuQmCC"
+let IMG_BEA = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mMICooGAAH5AQB0T+hDAAAAAElFTkSuQmCC"
+let IMG_SHOE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mOwbvoGAAKvAbSJsn7VAAAAAElFTkSuQmCC"
+let IMG_BAG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mP4Oo8bAAQqAZ9SpbPIAAAAAElFTkSuQmCC"
+let IMG_MUG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mMQ2NkIAAInAUt79MTdAAAAAElFTkSuQmCC"
+
 fn People() {
     kit.SectionTitle("People", "Avatars and stats")
     kit.Row(SPACE.Md) {
         kit.Card() {
-            kit.User("AP", "Ada Park", "Operator")
-            kit.User("BL", "Bea Liu", "Editor")
+            kit.User("AP", "Ada Park", "Operator", IMG_ADA)
+            kit.User("BL", "Bea Liu", "Editor", IMG_BEA)
             kit.Row(SPACE.Xs) {
-                kit.Avatar("AP", 32)
-                kit.Avatar("BL", 40)
+                kit.Avatar("AP", 32, IMG_ADA)
+                kit.Avatar("BL", 40, IMG_BEA)
                 kit.Avatar("CD", 48)
             }
         }
         kit.Stat("Uptime", "99.9%", kit.TINT.Ok)
         kit.Stat("Errors", "2", kit.TINT.Danger)
+    }
+}
+
+fn Catalog() {
+    kit.SectionHeader("Media", "Product shots",
+        "Raster images (PNG, JPEG, WebP, GIF). fit is stretch, contain, or cover; radius clips.")
+    kit.Row(SPACE.Md) {
+        kit.Card() {
+            kit.Image(IMG_SHOE, width = 160, height = 100, radius = 8)
+            kit.Title("Runner")
+            kit.Body("$128")
+        }
+        kit.Card() {
+            kit.Image(IMG_BAG, width = 160, height = 100, radius = 8)
+            kit.Title("Tote")
+            kit.Body("$64")
+        }
+        kit.Card() {
+            kit.Image(IMG_MUG, width = 160, height = 100, radius = 8)
+            kit.Title("Mug")
+            kit.Body("$18")
+        }
+    }
+}
+
+fn Upload() {
+    let photo = zeus.signal("")
+    let pw = zeus.signal(0)
+    let ph = zeus.signal(0)
+    kit.SectionHeader("Media", "Upload",
+        "Choose a PNG, JPEG, WebP, or GIF. The preview keeps aspect and shrinks to the card.")
+    kit.Card() {
+        kit.Row(SPACE.Sm) {
+            kit.Button("Choose image", kit.LOOK.Solid, kit.SIZE.Md, fn() {
+                zeus.pick_image(photo, pw, ph)
+            })
+            kit.Button("Clear", kit.LOOK.Ghost, kit.SIZE.Md, fn() {
+                photo.set("")
+                pw.set(0)
+                ph.set(0)
+            })
+        }
+        let host = zeus.Box(
+            align_direction = DIRECTION.Row,
+            align_items = ALIGN.Center,
+            justify = ALIGN.Center,
+            radius = 8,
+            background = kit.raised(),
+            max_width = || {
+                let w = pw.get()
+                if w > 0 { w } else { 100000 }
+            }) {
+            zeus.Text("No image yet", color = kit.mute(), font = kit.FONT_CAPTION,
+                      show = || { photo.get().len == 0 })
+            kit.Image(|| { photo.get() },
+                       position = zeus.pos_absolute(), left = 0, top = 0, right = 0, bottom = 0,
+                       radius = 8, fit = IMAGE_FIT.Contain,
+                       show = || { photo.get().len > 0 })
+        }
+        zeus.styled(host, || {
+            let iw = pw.get()
+            let ih = ph.get()
+            if iw > 0 {
+                if ih > 0 {
+                    zeus.aspect(host, iw, ih)
+                    zeus.h(host, -1)
+                    return
+                }
+            }
+            zeus.aspect(host, 0, 0)
+            zeus.h(host, 200)
+        })
     }
 }
 
@@ -234,27 +313,37 @@ fn Components() {
     Choice()
     Controls()
     People()
+    Catalog()
+    Upload()
     Data()
 }
 
-fn NameRow(i: int, name: string) {
+fn NameRow(name: string) -> Node {
     kit.Row(SPACE.Sm) {
         kit.Pip(kit.mute(), 6)
         kit.Body(name)
     }
 }
 
-fn LiveList(names: Signal<[]string>) {
+fn LiveList() {
+    let n = zeus.signal(2)
     kit.SectionHeader("Lists", "Growing rows",
-        "zeus.For rebuilds this column when you push_item.")
+        "Add and remove rows. Extra rows are shown, not rebuilt with zeus.For.")
     kit.Card() {
-        zeus.For(names, NameRow)
+        zeus.show_ge(NameRow("Ada"), n, 1)
+        zeus.show_ge(NameRow("Bea"), n, 2)
+        zeus.show_ge(NameRow("Row"), n, 3)
+        zeus.show_ge(NameRow("Row"), n, 4)
         kit.Row(SPACE.Sm) {
             kit.Button("Add row", kit.LOOK.Solid, kit.SIZE.Md, fn() {
-                zeus.push_item(names, "Row")
+                if n.get() < 4 {
+                    n.set(n.get() + 1)
+                }
             })
             kit.Button("Remove", kit.LOOK.Ghost, kit.SIZE.Md, fn() {
-                zeus.pop_item(names)
+                if n.get() > 0 {
+                    n.set(n.get() - 1)
+                }
             })
         }
     }
@@ -379,10 +468,7 @@ fn ChartCards() {
 }
 
 fn Patterns() {
-    let names = zeus.signal([]string {})
-    zeus.push_item(names, "Ada")
-    zeus.push_item(names, "Bea")
-    LiveList(names)
+    LiveList()
     Cards()
     ChartCards()
     Skeletons()
@@ -391,26 +477,20 @@ fn Patterns() {
 
 fn Kit() {
     let page = zeus.signal(1)
-
     kit.Page() {
         Navbar(page)
-        let foundations = kit.Column(kit.SECTION) {
+        zeus.show_eq(kit.Column(kit.SECTION) {
             Foundations()
-        }
-        zeus.show_eq(foundations, page, 0)
-        let components = kit.Column(kit.SECTION) {
+        }, page, 0)
+        zeus.show_eq(kit.Column(kit.SECTION) {
             Components()
-        }
-        zeus.show_eq(components, page, 1)
-        let patterns = kit.Column(kit.SECTION) {
+        }, page, 1)
+        zeus.show_eq(kit.Column(kit.SECTION) {
             Patterns()
-        }
-        zeus.show_eq(patterns, page, 2)
+        }, page, 2)
     }
 }
 
-fn main() {
-    zeus.App("Zeus Kit", 960, 860, fn() {
-        Kit()
-    })
+fn Screen() {
+    Kit()
 }

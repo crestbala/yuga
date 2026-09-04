@@ -1,16 +1,27 @@
 package com.yuga.zeus;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.os.Build;
+import android.util.Base64;
 import android.view.Choreographer;
 import android.view.MotionEvent;
 import android.view.View;
+import android.net.Uri;
 import android.view.WindowInsets;
+
+import java.io.InputStream;
+import java.net.URL;
+import java.util.HashMap;
+import java.util.HashSet;
 
 /**
  * Zeus host view. Density-scaled so layout units match iOS points. Touch is
@@ -24,6 +35,10 @@ public class ZeusView extends View implements Choreographer.FrameCallback {
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final HashMap<String, Bitmap> imgCache = new HashMap<String, Bitmap>();
+    private final HashSet<String> imgLoading = new HashSet<String>();
+    private static final Bitmap IMG_FAIL = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
     private final Choreographer choreographer = Choreographer.getInstance();
     private boolean started;
     private boolean framed;
@@ -46,6 +61,42 @@ public class ZeusView extends View implements Choreographer.FrameCallback {
     native void nativePointerMove(int x, int y, int dx, int dy);
     native void nativePointerUp();
     native void nativeKey(int key, int mods);
+    native void nativePicked(String src, int w, int h);
+
+    static final int PICK_IMAGE = 1;
+
+    void jniPick() {
+        Context ctx = getContext();
+        if (!(ctx instanceof Activity)) return;
+        Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+        i.setType("image/*");
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        ((Activity) ctx).startActivityForResult(Intent.createChooser(i, "Image"), PICK_IMAGE);
+    }
+
+    void pickedUri(Uri uri) {
+        if (uri == null) return;
+        String src = uri.toString();
+        int w = 0, h = 0;
+        InputStream in = null;
+        try {
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            in = getContext().getContentResolver().openInputStream(uri);
+            BitmapFactory.decodeStream(in, null, o);
+            w = o.outWidth;
+            h = o.outHeight;
+        } catch (Exception e) {
+        } finally {
+            if (in != null) {
+                try {
+                    in.close();
+                } catch (Exception e) {
+                }
+            }
+        }
+        nativePicked(src, w, h);
+    }
 
     @Override
     protected void onAttachedToWindow() {
@@ -187,6 +238,116 @@ public class ZeusView extends View implements Choreographer.FrameCallback {
 
     void jniSvg(Canvas c, int x, int y, int w, int h, String markup, int rgb, int alpha) {
         Svg.draw(c, x, y, w, h, markup, rgb, alpha, fill, stroke);
+    }
+
+    void jniImage(Canvas c, int x, int y, int w, int h, String src, int radius, int alpha, int fit) {
+        if (src == null || src.length() == 0 || w <= 0 || h <= 0) return;
+        Bitmap bmp = imgGet(src);
+        if (bmp == null || bmp == IMG_FAIL) return;
+        int a = alpha < 0 ? 0 : (alpha > 255 ? 255 : alpha);
+        bitmapPaint.setAlpha(a);
+        int iw = bmp.getWidth();
+        int ih = bmp.getHeight();
+        float dx = x, dy = y, dw = w, dh = h;
+        if (fit == 3 && iw > 0 && ih > 0) {
+            dw = iw;
+            dh = ih;
+        } else if ((fit == 1 || fit == 2) && iw > 0 && ih > 0) {
+            if ((fit == 1 && iw * (long) h <= ih * (long) w)
+                    || (fit == 2 && iw * (long) h >= ih * (long) w)) {
+                dh = h;
+                dw = iw * (float) h / ih;
+            } else {
+                dw = w;
+                dh = ih * (float) w / iw;
+            }
+            dx = x + (w - dw) / 2f;
+            dy = y + (h - dh) / 2f;
+        }
+        c.save();
+        if (radius > 0) {
+            float rad = radius;
+            if (rad > w / 2f) rad = w / 2f;
+            if (rad > h / 2f) rad = h / 2f;
+            Path p = new Path();
+            p.addRoundRect(new RectF(x, y, x + w, y + h), rad, rad, Path.Direction.CW);
+            c.clipPath(p);
+        } else {
+            c.clipRect(x, y, x + w, y + h);
+        }
+        c.drawBitmap(bmp, null, new RectF(dx, dy, dx + dw, dy + dh), bitmapPaint);
+        c.restore();
+    }
+
+    private Bitmap imgGet(String src) {
+        Bitmap hit = imgCache.get(src);
+        if (hit != null) return hit;
+        if (imgLoading.contains(src)) return null;
+        if (src.startsWith("data:")) {
+            int comma = src.indexOf(',');
+            Bitmap bmp = null;
+            if (comma > 0) {
+                try {
+                    byte[] raw = Base64.decode(src.substring(comma + 1), Base64.DEFAULT);
+                    bmp = BitmapFactory.decodeByteArray(raw, 0, raw.length);
+                } catch (Exception e) {
+                    bmp = null;
+                }
+            }
+            imgCache.put(src, bmp != null ? bmp : IMG_FAIL);
+            return bmp;
+        }
+        if (src.startsWith("content:")) {
+            Bitmap bmp = null;
+            InputStream in = null;
+            try {
+                in = getContext().getContentResolver().openInputStream(Uri.parse(src));
+                bmp = BitmapFactory.decodeStream(in);
+            } catch (Exception e) {
+                bmp = null;
+            } finally {
+                if (in != null) {
+                    try {
+                        in.close();
+                    } catch (Exception e) {
+                    }
+                }
+            }
+            imgCache.put(src, bmp != null ? bmp : IMG_FAIL);
+            return bmp;
+        }
+        if (src.startsWith("http://") || src.startsWith("https://")) {
+            imgLoading.add(src);
+            final String key = src;
+            new Thread(() -> {
+                Bitmap bmp = null;
+                InputStream in = null;
+                try {
+                    in = new URL(key).openStream();
+                    bmp = BitmapFactory.decodeStream(in);
+                } catch (Exception e) {
+                    bmp = null;
+                } finally {
+                    if (in != null) {
+                        try {
+                            in.close();
+                        } catch (Exception e) {
+                        }
+                    }
+                }
+                final Bitmap got = bmp;
+                post(() -> {
+                    imgCache.put(key, got != null ? got : IMG_FAIL);
+                    imgLoading.remove(key);
+                    invalidate();
+                });
+            }).start();
+            return null;
+        }
+        String path = src.startsWith("file://") ? src.substring(7) : src;
+        Bitmap bmp = BitmapFactory.decodeFile(path);
+        imgCache.put(src, bmp != null ? bmp : IMG_FAIL);
+        return bmp;
     }
 
     long jniMeasure(String s, int px) {

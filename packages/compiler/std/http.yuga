@@ -2703,37 +2703,36 @@ fn io_pump() {
 
 /// Unary gRPC-Web call whose completion runs `cb` on the UI thread (inside a
 /// frame's async tick) with the same protobuf `out` `call` returns. Native:
-/// non-blocking TCP, pumped per frame. Wasm: the JS async fetch fallback.
+/// non-blocking TCP, pumped per frame. Wasm: JS fetch slots (`http.client("")`
+/// is same-origin). Prefer `await c.async_call(...)` inside an `async fn`.
 fn call_async(c: Client, name: string, body: string, cb: fn(string)) {
     let path = name_to_path(name)
     if path.len == 0 {
         cb("")
         return
     }
-    let hp = parse_addr(c.addr)
-    if hp.port == 0 {
-        cb("")
-        return
-    }
     let framed = frame_str(body)
-    let req = client_post(hp.host, hp.port, path, framed)
+    let hp = parse_addr(c.addr)
     if astep_on == 0 {
         astep_on = 1
         async.add_step(|| { io_pump() })
     }
     let cbid = acbs.len
     push(acbs, cb)
-    let fd = net.tcp_nb_connect(hp.host, hp.port)
-    if fd >= 0 {
-        push(acalls, RpcCall { req: req, sent: 0, fd: fd, stage: 1, acc: "",
-                               cbid: cbid, at: async.now_ms() + 8000 })
-        async.io_open()
-        return
+    if hp.port != 0 {
+        let fd = net.tcp_nb_connect(hp.host, hp.port)
+        if fd >= 0 {
+            let req = client_post(hp.host, hp.port, path, framed)
+            push(acalls, RpcCall { req: req, sent: 0, fd: fd, stage: 1, acc: "",
+                                   cbid: cbid, at: async.now_ms() + 8000 })
+            async.io_open()
+            return
+        }
     }
-    // No TCP here (wasm): fall back to the async fetch slots. Native connect
-    // failure fails the call the same way `call` does.
-    if net.fetch_issue(path, framed) == 0 {
-        push(acalls, RpcCall { req: req, sent: 0, fd: -1, stage: 4, acc: "",
+    // Wasm: no TCP. Empty addr is same-origin (`http.client("")`); a host:port
+    // still falls through to the JS fetch slots. Native connect failure is "".
+    if net.fetch_issue(path, framed) >= 0 {
+        push(acalls, RpcCall { req: "", sent: 0, fd: -1, stage: 4, acc: "",
                                cbid: cbid, at: async.now_ms() + 8000 })
         async.io_open()
         return

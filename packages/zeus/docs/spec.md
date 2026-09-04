@@ -30,7 +30,7 @@ component fn
   → Node tree (zeus)
   → layout / hit-test (zeus, shared)
   → scene draw list (zeus)
-  → native: Cocoa / iOS / Android  plat_fill / plat_text
+  → native: Cocoa / iOS / Android  plat_fill / plat_text / plat_image
      wasm:   Canvas2D imports in loader.js
 ```
 

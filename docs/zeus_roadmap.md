@@ -21,7 +21,7 @@ their exit criteria as the definition of done.
 | Data plane | `#[proto]` codecs + unary gRPC-Web / h2c client **and** server, `Result<T>`, async `call_async` client, SSE + WebSocket streams (Phase 1b), bearer-token auth (`set_token` + `app.before`) | no bidirectional streaming, no TLS |
 | Networking | `std/net`: blocking POSIX sockets + Phase 1 async transport (timers, non-blocking connect/poll/send, `http.call_async`/`sse_open`/`ws_open` steppers); wasm: `fetch_rpc` + async fetch slots | TLS, streaming bodies on wasm |
 | Storage | `sys.read_file` / `write_file` (whole-file), env | KV/table store, structured persistence, fs tree, app-data paths |
-| Media | inline SVG only (paths, circles, `currentColor`) | raster images, gradients — the missing primitive |
+| Media | inline SVG + raster `Image` (PNG / JPEG / WebP / GIF, host decode) | gradients |
 | Text | one weight per host; kind 10 multiline + caret/selection; mac IME; wasm paste | rich text spans, emoji metrics |
 | Server | single-threaded Yuga accept loop (HTTP/1.1 + h2c + one SSE/ws client per connection) | concurrency model for chat-class servers |
 | Kit | ~50 shadcn widgets, palette tokens, goldens | monolith namespace, no DCE, fixed-pixel tuning |
@@ -71,7 +71,7 @@ demos. Phase column points into §6.
 
 | # | Downside | Blocks | Effort | Phase |
 |---|---|---|---|---|
-| 1 | No raster image primitive (draw op + host decode) | product photos, avatars, feeds — every visual app | med-high (7-file pipeline) | 2 |
+| 1 | ~~No raster image primitive (draw op + host decode)~~ **Phase 2** | `zeus.Image`; hosts decode PNG/JPEG/WebP/GIF | — | 2 |
 | 2 | ~~Single-line text, no IME on canvas hosts~~ **Phase 3** | chat compose exists; wasm IME is paste+composition, not a hidden field | — | 3 |
 | 3 | `For` rebuilds the whole list per push (recycling yes, O(n) still) | message logs, activity feeds, 10k-row tables | medium (windowed rows) | 5 |
 | 4 | No scroll physics / overscroll / nested scrollers | feed feel, long pages | medium | 5b |
@@ -81,6 +81,7 @@ demos. Phase column points into §6.
 | 8 | Fixed-pixel tuning; no density/font scaling | devices, accessibility | small | 7c |
 | 9 | No TLS | anything beyond localhost | med | 6 |
 | 10 | ~~No KV/persistence beyond whole-file read/write~~ **Phase 4** | `std:kv` file-backed; wasm is memory-only | — | 4 |
+| 11 | Gallery wasm first paint ~3 min (counter wasm is instant) | kit catalog in the browser | med | follow-up |
 
 Resolved by the landed phases: blocking sockets/async runtime (Phase 1), and no realtime transport (Phase 1b) — ws/SSE + the auth/session convention exist; what remains for chat-class servers is the §5.3 reactor (concurrent connections) and wasm ws via the browser's WebSocket.
 
@@ -171,10 +172,11 @@ thread.
 - [x] Follow-ups: widen `Future<T>` beyond string payloads; loop-and-branch-heavy bodies are already fine (no CPS split in this design) but want a stress test.
 
 ### Phase 2 — Image primitive
-- [ ] New draw op kind (raster) through scene → platform → C → hosts + canvas loaders.
-- [ ] PNG decode in hosts (JPEG next); `zeus.Image(...)` widget + `SvgProps`-style props.
-- [ ] Network image + cache hook (`Image(url, cache_key)`) once Phase 1 exists.
-- **Exit:** a golden fixture with an image draw op; avatars/product shots render in gallery.
+- [x] New draw op kind (raster) through scene → platform → C trampoline → hosts + canvas loaders.
+- [x] Host decode of PNG / JPEG / WebP / GIF (ImageIO, Canvas `Image`, BitmapFactory); `zeus.Image(...)` widget + `SvgProps`-style props (`width` / `height` / `radius` clip).
+- [x] Network image + cache by `src` (path, `data:` URI, or `http(s):` URL; http loads off the UI thread, next frame paints).
+- **Exit:** a golden fixture with an image draw op; avatars/product shots render in gallery. **Green** (`draw_golden/golden_image`; gallery People + Catalog).
+- [ ] Follow-up (not Vite): `examples/zeus/gallery` wasm takes ~3 minutes to fully paint the UI in the browser. `app.wasm` (~428K) and `loader.js` arrive in milliseconds on Vite and on a plain static host; counter wasm loads immediately. The stall is `zeus_start` / first layout of the kit catalog (all three tabs via `show_eq`, SVG-heavy widgets). Cocoa gallery is fine. Check later: construct only the visible tab without losing `kit.Page` section gaps; idle rAF like mac (`engine_next_ms`); skip layout of `show_eq`-hidden subtrees on wasm.
 
 ### Phase 3 — Multiline text + IME
 - [x] Multiline text input (kind 10 `multiline` / `wrap`): line breaks, caret, click-to-caret, arrow/home/end, shift-select.
@@ -188,7 +190,7 @@ thread.
 - **Exit:** a compile_pass test that round-trips rows across two "processes"
   (reopen), plus gallery draft/autosave demo. **Green** (`kv_roundtrip.yuga`; gallery Forms draft).
 
-### Phase 5 — Virtualized lists + scroll
+### Phase 5 — Virtualized lists + Virtualized table + scroll
 - [ ] Windowed `For` (render visible rows ± margin; recycle beyond the window).
 - [ ] Append/insert row ops that do not rebuild the whole list.
 - [ ] Scroll physics: momentum, overscroll clamp, `scroll_to` (signal-driven).

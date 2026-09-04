@@ -173,6 +173,9 @@
   }
 
   let mem = null;
+  const imgCache = new Map();
+  let fileInput = null;
+  let exp = null;
   function u8() {
     return new Uint8Array(mem.buffer);
   }
@@ -203,6 +206,8 @@
       },
     },
     zeus: {
+      request_frame: () => {},
+      now_ms: () => BigInt(Math.floor(performance.now())),
       write: (p, n) => {
         const t = bytes(p, n);
         if (t) console.log(t);
@@ -260,6 +265,94 @@
         ctx.clip();
       },
       restore: () => ctx.restore(),
+      pick_image: () => {
+        if (!fileInput) {
+          fileInput = document.createElement("input");
+          fileInput.type = "file";
+          fileInput.accept = "image/png,image/jpeg,image/webp,image/gif";
+          fileInput.style.display = "none";
+          document.body.appendChild(fileInput);
+          fileInput.addEventListener("change", () => {
+            const f = fileInput.files && fileInput.files[0];
+            fileInput.value = "";
+            if (!f || !exp || !mem) return;
+            const url = URL.createObjectURL(f);
+            const im = new Image();
+            im.onload = () => {
+              imgCache.set(url, im);
+              const bytes = new TextEncoder().encode(url);
+              const cap = exp.zeus_text_buf_cap ? exp.zeus_text_buf_cap() : 0;
+              const ptr = exp.zeus_text_buf ? exp.zeus_text_buf() : 0;
+              if (!ptr || cap < 2) return;
+              const n = Math.min(bytes.length, cap - 1);
+              new Uint8Array(mem.buffer, ptr, n).set(bytes.subarray(0, n));
+              if (exp.zeus_picked) exp.zeus_picked(n, im.naturalWidth, im.naturalHeight);
+            };
+            im.onerror = () => {
+              imgCache.set(url, "fail");
+            };
+            im.src = url;
+          });
+        }
+        fileInput.click();
+      },
+      /* PNG / JPEG / WebP / GIF via the browser decoder. Cache by src.
+         fit: 0 stretch, 1 contain, 2 cover, 3 none. */
+      image: (x, y, w, h, ptr, radius, alpha, fit) => {
+        const src = cstr(ptr);
+        if (!src || w <= 0 || h <= 0) return;
+        let rec = imgCache.get(src);
+        if (rec === "fail") return;
+        if (!rec) {
+          const im = new Image();
+          im.onload = () => {};
+          im.onerror = () => {
+            imgCache.set(src, "fail");
+          };
+          im.src = src;
+          imgCache.set(src, im);
+          rec = im;
+        }
+        if (!rec.complete || !rec.naturalWidth) return;
+        const iw = rec.naturalWidth;
+        const ih = rec.naturalHeight;
+        let dx = x, dy = y, dw = w, dh = h;
+        if (fit === 3) {
+          dw = iw;
+          dh = ih;
+        } else if (fit === 1 || fit === 2) {
+          if ((fit === 1 && iw * h <= ih * w) || (fit === 2 && iw * h >= ih * w)) {
+            dh = h;
+            dw = ih ? (iw * h) / ih : w;
+          } else {
+            dw = w;
+            dh = iw ? (ih * w) / iw : h;
+          }
+          dx = x + (w - dw) / 2;
+          dy = y + (h - dh) / 2;
+        }
+        ctx.save();
+        if (radius > 0) {
+          let r = radius;
+          if (r > w / 2) r = w / 2;
+          if (r > h / 2) r = h / 2;
+          ctx.beginPath();
+          ctx.moveTo(x + r, y);
+          ctx.arcTo(x + w, y, x + w, y + h, r);
+          ctx.arcTo(x + w, y + h, x, y + h, r);
+          ctx.arcTo(x, y + h, x, y, r);
+          ctx.arcTo(x, y, x + w, y, r);
+          ctx.closePath();
+          ctx.clip();
+        } else {
+          ctx.beginPath();
+          ctx.rect(x, y, w, h);
+          ctx.clip();
+        }
+        ctx.globalAlpha = alpha >= 0 && alpha < 255 ? alpha / 255 : 1;
+        ctx.drawImage(rec, dx, dy, dw, dh);
+        ctx.restore();
+      },
       svg: (x, y, w, h, ptr, color, alpha) => {
         const markup = cstr(ptr);
         if (!markup || w <= 0 || h <= 0) return;
@@ -344,7 +437,7 @@
     .then((r) => r.arrayBuffer())
     .then((buf) => WebAssembly.instantiate(buf, imports))
     .then((r) => {
-      const exp = r.instance.exports;
+      exp = r.instance.exports;
       mem = exp.memory;
       const sz = sizeCanvas();
       exp.zeus_start();
