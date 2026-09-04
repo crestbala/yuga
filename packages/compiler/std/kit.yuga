@@ -776,8 +776,11 @@ fn Input(value: Signal<string>, placeholder: string) {
     }
 }
 
+fn __nedit() {}
+
 /// Multiline compose field: min-height ~4 lines, same chrome as `Input`.
-fn TextArea(value: Signal<string>, placeholder: string) {
+/// `on_edit` runs on key-up (autosave).
+fn TextArea(value: Signal<string>, placeholder: string, on_edit: fn() = __nedit) {
     zeus.Box(
         background = plate(),
         border = HAIRLINE,
@@ -790,7 +793,8 @@ fn TextArea(value: Signal<string>, placeholder: string) {
     ) {
         zeus.Input(bind = value, placeholder = placeholder,
                    background = "", color = ink(), font = FONT_BODY,
-                   padding = 0, multiline = 1, grow = 1, a11y_label = placeholder)
+                   padding = 0, multiline = 1, grow = 1, a11y_label = placeholder,
+                   on_key_up = on_edit)
     }
 }
 

@@ -84,7 +84,7 @@
     "modules": {
       "patterns": [
         {
-          "match": "\\b(fmt|async|zeus|kit|http|sys|net|maya|icons)\\b(?=\\s*\\.)",
+          "match": "\\b(fmt|async|zeus|kit|http|sys|net|maya|kv|icons)\\b(?=\\s*\\.)",
           "name": "entity.name.namespace.yuga"
         }
       ]

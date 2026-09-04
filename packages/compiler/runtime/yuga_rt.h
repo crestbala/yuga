@@ -470,6 +470,15 @@ static inline yuga_str yuga_sys_read_file(yuga_str path) {
     (void)path;
     return (yuga_str){"", 0};
 }
+static inline int64_t yuga_sys_mkdir(yuga_str path) {
+    (void)path;
+    return 1;
+}
+static inline int64_t yuga_sys_rename(yuga_str from, yuga_str to) {
+    (void)from;
+    (void)to;
+    return 1;
+}
 #else
 #include <sys/wait.h>
 
@@ -595,6 +604,37 @@ static inline yuga_str yuga_sys_read_file(yuga_str path) {
     fclose(f);
     p[n] = 0;
     return (yuga_str){p, (int64_t)n};
+}
+
+#include <sys/stat.h>
+
+static int yuga_sys_cpath(yuga_str path, char *buf, size_t cap) {
+    if (!path.ptr || path.len <= 0 || (size_t)path.len + 1 > cap) return 1;
+    memcpy(buf, path.ptr, (size_t)path.len);
+    buf[path.len] = 0;
+    return 0;
+}
+
+static inline int64_t yuga_sys_mkdir(yuga_str path) {
+    char buf[4096];
+    size_t i, n;
+    if (yuga_sys_cpath(path, buf, sizeof buf)) return 1;
+    n = (size_t)path.len;
+    for (i = 1; i <= n; i++) {
+        char save;
+        if (i != n && buf[i] != '/') continue;
+        save = buf[i];
+        buf[i] = 0;
+        if (buf[0] && mkdir(buf, 0755) != 0 && errno != EEXIST) return 1;
+        buf[i] = save;
+    }
+    return 0;
+}
+
+static inline int64_t yuga_sys_rename(yuga_str from, yuga_str to) {
+    char a[4096], b[4096];
+    if (yuga_sys_cpath(from, a, sizeof a) || yuga_sys_cpath(to, b, sizeof b)) return 1;
+    return rename(a, b) == 0 ? 0 : 1;
 }
 #endif
 

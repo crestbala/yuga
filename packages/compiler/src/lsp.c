@@ -15,12 +15,17 @@
 #include <string.h>
 #include <ctype.h>
 #include <strings.h>
+#include <dirent.h>
 
 static YugaSession Gsess;
 static char *Guri;
 static char *Gpath;
 static char *Gtext;
 static int Ghave;
+
+static void load_std_names(void);
+static int in_import_str(const char *src, int off);
+static void import_str_prefix(const char *src, int off, char *pre, size_t cap);
 
 /** Read exactly `n` bytes from stdin. */
 static char *read_exact(size_t n) {
@@ -755,6 +760,8 @@ typedef struct {
     int n, cap;
 } Completions;
 
+static void add_std_import_comps(Completions *c, const char *prefix);
+
 static void completions_free(Completions *c) {
     for (int i = 0; i < c->n; i++) {
         free(c->labels[i]);
@@ -1019,6 +1026,15 @@ static void handle_completion(const char *msg, const char *id) {
     prefix[plen] = '\0';
     int after_dot = (j > 0 && src[j - 1] == '.');
     YugaModule *cur = mod_for_uri(uri);
+    if (in_import_str(src, off)) {
+        char ipre[128];
+        import_str_prefix(src, off, ipre, sizeof ipre);
+        add_std_import_comps(&c, ipre);
+        send_completions(id, &c);
+        completions_free(&c);
+        free(uri);
+        return;
+    }
     if (after_dot) {
         int recv_off = j - 1;
         while (recv_off > 0 && isspace((unsigned char)src[recv_off - 1])) recv_off--;
@@ -1542,6 +1558,73 @@ static TokenKind st_at(Token *ts, int n, int i) {
 static char st_mods[ST_MAX_MOD][64];
 static int st_nmods;
 
+#ifndef YUGA_STD_DIR
+#define YUGA_STD_DIR "packages/compiler/std"
+#endif
+
+static char std_names[32][32];
+static int nstd_names;
+
+static void load_std_names(void) {
+    DIR *d;
+    struct dirent *ent;
+    if (nstd_names) return;
+    d = opendir(YUGA_STD_DIR);
+    if (d) {
+        while ((ent = readdir(d))) {
+            size_t n = strlen(ent->d_name);
+            if (n <= 5 || strcmp(ent->d_name + n - 5, ".yuga") != 0) continue;
+            if (nstd_names >= 32) break;
+            n -= 5;
+            if (n == 0 || n >= 31) continue;
+            memcpy(std_names[nstd_names], ent->d_name, n);
+            std_names[nstd_names][n] = 0;
+            nstd_names++;
+        }
+        closedir(d);
+    }
+    if (!nstd_names) {
+        const char *fb[] = {"fmt", "async", "zeus", "kit", "http", "sys", "net",
+                            "maya", "kv", NULL};
+        for (int i = 0; fb[i] && nstd_names < 32; i++) {
+            snprintf(std_names[nstd_names], sizeof std_names[0], "%s", fb[i]);
+            nstd_names++;
+        }
+    }
+}
+
+static int in_import_str(const char *src, int off) {
+    int i = off;
+    if (!src || off < 0) return 0;
+    while (i > 0 && src[i - 1] != '\n') i--;
+    while (src[i] == ' ' || src[i] == '\t') i++;
+    return strncmp(src + i, "import", 6) == 0;
+}
+
+static void import_str_prefix(const char *src, int off, char *pre, size_t cap) {
+    int q = off;
+    if (!pre || cap == 0) return;
+    pre[0] = 0;
+    if (!src) return;
+    while (q > 0 && src[q - 1] != '"' && src[q - 1] != '\n') q--;
+    if ((size_t)(off - q) >= cap) {
+        memcpy(pre, src + q, cap - 1);
+        pre[cap - 1] = 0;
+    } else {
+        memcpy(pre, src + q, (size_t)(off - q));
+        pre[off - q] = 0;
+    }
+}
+
+static void add_std_import_comps(Completions *c, const char *prefix) {
+    char lab[64];
+    load_std_names();
+    for (int i = 0; i < nstd_names; i++) {
+        snprintf(lab, sizeof lab, "std:%s", std_names[i]);
+        add_comp(c, lab, "module", 9, prefix);
+    }
+}
+
 static void st_add_mod(const char *s, int n) {
     if (st_nmods >= ST_MAX_MOD || n <= 0 || n >= 63) return;
     for (int i = 0; i < st_nmods; i++) {
@@ -1661,14 +1744,9 @@ static void handle_semantic_tokens(const char *msg, const char *id) {
     SemToks toks;
     memset(&toks, 0, sizeof toks);
     st_nmods = 0;
-    st_add_mod("fmt", 3);
-    st_add_mod("async", 5);
-    st_add_mod("zeus", 4);
-    st_add_mod("kit", 3);
-    st_add_mod("http", 4);
-    st_add_mod("sys", 3);
-    st_add_mod("net", 3);
-    st_add_mod("maya", 4);
+    load_std_names();
+    for (int i = 0; i < nstd_names; i++)
+        st_add_mod(std_names[i], (int)strlen(std_names[i]));
     if (src && src[0]) {
         Token *ts = NULL;
         int ntok = 0, tcap = 0;

@@ -80,7 +80,7 @@ demos. Phase column points into §6.
 | 7 | a11y = labels only; no focus ring, thin keyboard model | enterprise + compliance | ongoing | 7b |
 | 8 | Fixed-pixel tuning; no density/font scaling | devices, accessibility | small | 7c |
 | 9 | No TLS | anything beyond localhost | med | 6 |
-| 10 | No KV/persistence beyond whole-file read/write | drafts, caches, offline, cart | small-med | 4 |
+| 10 | ~~No KV/persistence beyond whole-file read/write~~ **Phase 4** | `std:kv` file-backed; wasm is memory-only | — | 4 |
 
 Resolved by the landed phases: blocking sockets/async runtime (Phase 1), and no realtime transport (Phase 1b) — ws/SSE + the auth/session convention exist; what remains for chat-class servers is the §5.3 reactor (concurrent connections) and wasm ws via the browser's WebSocket.
 
@@ -183,10 +183,10 @@ thread.
 - **Exit:** a chat-compose headless test (type, edit, bind signal) + golden. **Green** (`zeus_textarea.yuga`, `draw_golden/golden_textarea`).
 
 ### Phase 4 — KV persistence
-- [ ] `std/kv.yuga` over the `yuga_sys_*` seam: `get/set/delete/list`, file-backed, atomic-ish.
-- [ ] App-data path helper per host (desktop: `~/Library/Application Support/...`; wasm: in-memory fallback).
+- [x] `std/kv.yuga` over the `yuga_sys_*` seam: `get/set/delete/list`, file-backed, atomic-ish (`write` + `rename`).
+- [x] App-data path helper (`kv.data_dir`, `~/Library/Application Support/<app>`; wasm: empty → in-memory).
 - **Exit:** a compile_pass test that round-trips rows across two "processes"
-  (reopen), plus gallery draft/autosave demo.
+  (reopen), plus gallery draft/autosave demo. **Green** (`kv_roundtrip.yuga`; gallery Forms draft).
 
 ### Phase 5 — Virtualized lists + scroll
 - [ ] Windowed `For` (render visible rows ± margin; recycle beyond the window).

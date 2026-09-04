@@ -1,0 +1,297 @@
+//! `kv` — file-backed string store (`std:kv`).
+//!
+//! Rows are `string` keys and values. Native hosts persist a length-prefixed
+//! file under the app-data directory (`sys.data_dir`); writes go to `*.tmp`
+//! then `rename` (atomic-ish). Wasm keeps the same API in memory only.
+//!
+//! ```
+//! import "std:kv"
+//!
+//! let s = kv.open("my-app")
+//! kv.set(s, "draft", "hello")
+//! let v = kv.get(s, "draft")
+//! ```
+
+import "std:sys"
+import "std:fmt"
+
+/// Copy handle. The rows live in module tables keyed by `id`.
+struct Store {
+    id: int,
+}
+
+struct Cur {
+    at: int,
+}
+
+let mut st_path: []string = []string {}
+let mut st_keys: [][]string = [][]string {}
+let mut st_vals: [][]string = [][]string {}
+
+fn dirname(path: string) -> string {
+    let mut last = -1
+    let n = path.len
+    for i in 0..n {
+        if path[i] == 47 {
+            last = i
+        }
+    }
+    if last <= 0 {
+        return ""
+    }
+    let mut b = []int {}
+    for i in 0..last {
+        b.push(path[i])
+    }
+    return string_from_bytes(b)
+}
+
+fn take_int(s: string, c: &mut Cur) -> int {
+    let mut n = 0
+    while c.at < s.len {
+        let d = s[c.at]
+        if d < 48 {
+            break
+        }
+        if d > 57 {
+            break
+        }
+        n = n * 10 + (d - 48)
+        c.at = c.at + 1
+    }
+    if c.at < s.len {
+        if s[c.at] == 10 {
+            c.at = c.at + 1
+        }
+    }
+    return n
+}
+
+fn take_n(s: string, c: &mut Cur, n: int) -> string {
+    let mut b = []int {}
+    let mut left = n
+    while left > 0 {
+        if c.at >= s.len {
+            break
+        }
+        b.push(s[c.at])
+        c.at = c.at + 1
+        left = left - 1
+    }
+    if c.at < s.len {
+        if s[c.at] == 10 {
+            c.at = c.at + 1
+        }
+    }
+    return string_from_bytes(b)
+}
+
+fn magic_ok(s: string) -> int {
+    let m = "YUGAKV1\n"
+    if s.len < m.len {
+        return 0
+    }
+    let mut i = 0
+    while i < m.len {
+        if s[i] != m[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+fn encode(keys: []string, vals: []string) -> string {
+    let n = keys.len
+    let mut out = "YUGAKV1\n{{n}}\n"
+    let mut i = 0
+    while i < n {
+        let k = keys[i]
+        let v = vals[i]
+        out = "{{out}}{{k.len}}\n{{k}}\n{{v.len}}\n{{v}}\n"
+        i = i + 1
+    }
+    return out
+}
+
+fn persist(id: int) {
+    if id < 0 {
+        return
+    }
+    if id >= st_path.len {
+        return
+    }
+    let path = st_path[id]
+    if path.len == 0 {
+        return
+    }
+    let dir = dirname(path)
+    if dir.len > 0 {
+        sys.mkdir(dir)
+    }
+    let body = encode(st_keys[id], st_vals[id])
+    let tmp = "{{path}}.tmp"
+    if sys.write_file(tmp, body) != 0 {
+        return
+    }
+    if sys.rename(tmp, path) != 0 {
+        sys.write_file(path, body)
+    }
+}
+
+fn load_file(path: string) -> int {
+    let mut keys = []string {}
+    let mut vals = []string {}
+    if path.len > 0 {
+        let body = sys.read_file(path)
+        if magic_ok(body) != 0 {
+            let mut c = Cur { at: 8 }
+            let n = take_int(body, c)
+            let mut i = 0
+            while i < n {
+                let kn = take_int(body, c)
+                let k = take_n(body, c, kn)
+                let vn = take_int(body, c)
+                let v = take_n(body, c, vn)
+                push(keys, k)
+                push(vals, v)
+                i = i + 1
+            }
+        }
+    }
+    push(st_path, path)
+    push(st_keys, keys)
+    push(st_vals, vals)
+    return st_path.len - 1
+}
+
+fn safe_app(app: string) -> string {
+    let mut b = []int {}
+    let n = app.len
+    for i in 0..n {
+        let mut c = app[i]
+        let ok = (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) ||
+                 c == 46 || c == 45 || c == 95
+        if !ok {
+            c = 95
+        }
+        b.push(c)
+    }
+    return string_from_bytes(b)
+}
+
+/// App-data directory for `app`. `YUGA_KV_DIR` overrides the parent. Empty
+/// when `HOME` is unset (wasm). Desktop: `~/Library/Application Support/<app>`.
+fn data_dir(app: string) -> string {
+    let name = safe_app(app)
+    let ov = sys.env("YUGA_KV_DIR")
+    if ov.len > 0 {
+        return "{{ov}}/{{name}}"
+    }
+    let home = sys.env("HOME")
+    if home.len == 0 {
+        return ""
+    }
+    return "{{home}}/Library/Application Support/{{name}}"
+}
+
+/// Open a named store under `data_dir(app)` (`kv.dat`). Memory-only if the
+/// directory cannot be created (wasm).
+fn open(app: string) -> Store {
+    let dir = data_dir(app)
+    if dir.len == 0 {
+        return Store { id: load_file("") }
+    }
+    sys.mkdir(dir)
+    return Store { id: load_file("{{dir}}/kv.dat") }
+}
+
+/// Open a store at an explicit file path. Empty path is memory-only.
+fn open_path(path: string) -> Store {
+    return Store { id: load_file(path) }
+}
+
+fn find(id: int, key: string) -> int {
+    if id < 0 {
+        return -1
+    }
+    if id >= st_keys.len {
+        return -1
+    }
+    let keys = st_keys[id]
+    let n = keys.len
+    let mut i = 0
+    while i < n {
+        if fmt.eq(keys[i], key) {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+/// Value for `key`, or empty if missing.
+fn get(s: Store, key: string) -> string {
+    let at = find(s.id, key)
+    if at < 0 {
+        return ""
+    }
+    return st_vals[s.id][at]
+}
+
+/// Insert or replace `key`. Persists when the store has a path.
+fn set(s: Store, key: string, val: string) {
+    let at = find(s.id, key)
+    if at >= 0 {
+        st_vals[s.id][at] = val
+        persist(s.id)
+        return
+    }
+    let mut keys = st_keys[s.id]
+    let mut vals = st_vals[s.id]
+    push(keys, key)
+    push(vals, val)
+    st_keys[s.id] = keys
+    st_vals[s.id] = vals
+    persist(s.id)
+}
+
+/// Drop `key` if present.
+fn delete(s: Store, key: string) {
+    let at = find(s.id, key)
+    if at < 0 {
+        return
+    }
+    let keys = st_keys[s.id]
+    let vals = st_vals[s.id]
+    let n = keys.len
+    let mut nk = []string {}
+    let mut nv = []string {}
+    let mut i = 0
+    while i < n {
+        if i != at {
+            push(nk, keys[i])
+            push(nv, vals[i])
+        }
+        i = i + 1
+    }
+    st_keys[s.id] = nk
+    st_vals[s.id] = nv
+    persist(s.id)
+}
+
+/// Keys in insertion order.
+fn list(s: Store) -> []string {
+    if s.id < 0 {
+        return []string {}
+    }
+    if s.id >= st_keys.len {
+        return []string {}
+    }
+    return st_keys[s.id]
+}
+
+/// Flush (already persisted on each write) so a later `open_path` sees rows.
+fn close(s: Store) {
+    persist(s.id)
+}

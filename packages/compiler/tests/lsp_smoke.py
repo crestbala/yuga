@@ -121,6 +121,17 @@ def main() -> int:
     )
     async_uri = (ROOT / "tmp" / "lsp_async.yuga").resolve().as_uri()
 
+    kv_src = (
+        'import "std:kv"\n'
+        "\n"
+        "fn main() {\n"
+        "    let s = kv.open_path(\"/tmp/yuga_lsp_kv.kv\")\n"
+        "    kv.set(s, \"a\", \"1\")\n"
+        "    kv.\n"
+        "}\n"
+    )
+    kv_uri = (ROOT / "tmp" / "lsp_kv.yuga").resolve().as_uri()
+
     payload = (
         rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"capabilities": {}}})
         + rpc({"jsonrpc": "2.0", "method": "initialized", "params": {}})
@@ -340,6 +351,52 @@ def main() -> int:
                 "params": {"textDocument": {"uri": uri}, "position": {"line": 5, "character": 16}},
             }
         )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": kv_uri,
+                        "languageId": "yuga",
+                        "version": 1,
+                        "text": kv_src,
+                    }
+                },
+            }
+        )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 20,
+                "method": "textDocument/hover",
+                "params": {"textDocument": {"uri": kv_uri}, "position": {"line": 0, "character": 12}},
+            }
+        )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 21,
+                "method": "textDocument/completion",
+                "params": {"textDocument": {"uri": kv_uri}, "position": {"line": 5, "character": 7}},
+            }
+        )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 22,
+                "method": "textDocument/semanticTokens/full",
+                "params": {"textDocument": {"uri": kv_uri}},
+            }
+        )
+        + rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 23,
+                "method": "textDocument/completion",
+                "params": {"textDocument": {"uri": kv_uri}, "position": {"line": 0, "character": 12}},
+            }
+        )
         + rpc({"jsonrpc": "2.0", "id": 6, "method": "shutdown", "params": None})
         + rpc({"jsonrpc": "2.0", "method": "exit"})
     )
@@ -553,6 +610,51 @@ def main() -> int:
     value_back = hover_text(back_hover[0].get("result"))
     if "add" not in value_back or "fn(" not in value_back:
         return fail("hover should switch back to the first doc's fn add", value_back)
+
+    kv_hover = [m for m in messages if m.get("id") == 20 and "result" in m]
+    if not kv_hover:
+        return fail("no hover result for import std:kv", messages)
+    value_kv = hover_text(kv_hover[0].get("result"))
+    if "kv" not in value_kv.lower() and "module" not in value_kv:
+        return fail("hover on import std:kv should show module kv", value_kv)
+
+    kvcomp = [m for m in messages if m.get("id") == 21 and "result" in m]
+    if not kvcomp:
+        return fail("no completion result for kv.", messages)
+    kvres = kvcomp[0].get("result")
+    kvitems = kvres.get("items") if isinstance(kvres, dict) else kvres
+    kvlabs = [it.get("label") for it in kvitems if isinstance(it, dict)] if isinstance(kvitems, list) else []
+    if "get" not in kvlabs or "set" not in kvlabs:
+        return fail("completion after kv. should list get/set", kvlabs[:40])
+
+    kvtoks = [m for m in messages if m.get("id") == 22 and "result" in m]
+    if not kvtoks:
+        return fail("no semanticTokens/full result for kv buffer", messages)
+    kdata = kvtoks[0].get("result", {}).get("data")
+    if not isinstance(kdata, list) or len(kdata) < 5:
+        return fail("kv semantic tokens empty", kvtoks[0].get("result"))
+    kline = kcol = 0
+    kpos = {}
+    for j in range(0, len(kdata) - 4, 5):
+        kline += kdata[j]
+        if kdata[j] == 0:
+            kcol += kdata[j + 1]
+        else:
+            kcol = kdata[j + 1]
+        kpos[(kline, kcol, kdata[j + 2])] = kdata[j + 3]
+    klines = kv_src.split("\n")
+    kcol0 = klines[3].index("kv.")
+    if kpos.get((3, kcol0, 2)) != 0:
+        return fail("kv. prefix should be namespace type 0", kpos)
+
+    icomp = [m for m in messages if m.get("id") == 23 and "result" in m]
+    if not icomp:
+        return fail("no completion result inside import string", messages)
+    ires = icomp[0].get("result")
+    iitems = ires.get("items") if isinstance(ires, dict) else ires
+    ilabs = [it.get("label") for it in iitems if isinstance(it, dict)] if isinstance(iitems, list) else []
+    if "std:kv" not in ilabs:
+        return fail("import completion should list std:kv", ilabs[:40])
 
     print("ok   yuga-lsp (%d diagnostic(s), hover, definition, completion, semantic tokens)" % len(items))
     return 0
