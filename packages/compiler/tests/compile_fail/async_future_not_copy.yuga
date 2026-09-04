@@ -1,0 +1,6 @@
+// Future<T> requires a Copy payload — Box is not Copy.
+import "std:async"
+
+fn main() {
+    let f = async.future(Box::new(1))
+}

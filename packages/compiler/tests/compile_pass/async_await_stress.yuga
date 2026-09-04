@@ -1,0 +1,115 @@
+// Phase 1c follow-up: loop- and branch-heavy `async fn` bodies. There is no
+// CPS split — `await` is a typed call that re-enters the pump — so for/while
+// / if / match / continue / break around awaits must just work.
+
+import "std:async"
+import "std:fmt"
+import "std:sys"
+
+fn fail(what: string) {
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+async fn after_int(n: int) -> int {
+    let f = async.future(0)
+    async.spawn(|| { async.resolve(f, n) })
+    return await f
+}
+
+async fn after_str(s: string) -> string {
+    let f = async.future_str()
+    async.spawn(|| { async.resolve(f, s) })
+    return await f
+}
+
+/// for + continue + break around awaits. Skips 2, stops at 5: 0+1+3+4 = 8.
+/// `after_int` is an `async fn` that already pumps; the `await` here is on
+/// a fresh mailbox, so the loop itself suspends (no CPS split).
+async fn loop_sum() -> int {
+    let mut s = 0
+    for i in 0..8 {
+        let f = async.future(0)
+        async.spawn(|| { async.resolve(f, i) })
+        let v = await f
+        if v == 2 {
+            continue
+        }
+        if v == 5 {
+            break
+        }
+        s = s + v
+    }
+    return s
+}
+
+/// Nested while + if/else. Each branch awaits a different mailbox, and
+/// calling another `async fn` from an `async fn` is a plain call (it returns
+/// the value, not a Future).
+async fn nested_branch() -> int {
+    let mut i = 0
+    let mut acc = 0
+    while i < 3 {
+        i = i + 1
+        let inner = after_int(i)
+        if inner == 2 {
+            acc = acc + after_int(100)
+        } else {
+            let f = async.future(0)
+            async.spawn(|| { async.resolve(f, inner) })
+            acc = acc + await f
+        }
+    }
+    return acc
+}
+
+async fn pick(flag: int) -> int {
+    if flag == 1 {
+        return after_int(10)
+    }
+    if flag == 2 {
+        let f = async.future(0)
+        async.spawn(|| { async.resolve(f, 20) })
+        return await f
+    }
+    return after_int(30)
+}
+
+async fn label_of(flag: int) -> string {
+    match flag == 1 {
+        true => {
+            return after_str("yes")
+        }
+        false => {
+            let f = async.future_str()
+            async.spawn(|| { async.resolve(f, "no") })
+            return await f
+        }
+    }
+}
+
+fn main() {
+    if loop_sum() != 8 {
+        fail("loop_sum")
+    }
+    // i=1 else +1; i=2 then +100; i=3 else +3 → 104
+    if nested_branch() != 104 {
+        fail("nested_branch")
+    }
+    if pick(1) != 10 {
+        fail("pick 1")
+    }
+    if pick(2) != 20 {
+        fail("pick 2")
+    }
+    if pick(0) != 30 {
+        fail("pick else")
+    }
+    if !fmt.eq(label_of(1), "yes") {
+        fail("match yes")
+    }
+    if !fmt.eq(label_of(0), "no") {
+        fail("match no")
+    }
+    fmt.println("async await stress ok")
+}

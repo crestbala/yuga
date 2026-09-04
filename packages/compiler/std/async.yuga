@@ -39,9 +39,9 @@ struct Timer {
     cb: fn(),
 }
 
-/// A single-use string mailbox: created by `future_str`, filled by
-/// `resolve`, drained by `await_value` (the `await` sugar). v1 carries
-/// strings — RPC bodies — the generic `T` is the type for later versions.
+/// A single-use mailbox: created by `future` / `future_str`, filled by
+/// `resolve`, drained by `await_value` (the `await` sugar). `T` must be Copy
+/// (`int`, `string`, `float`, `bool`, `[]U` when `U` is Copy, or a Copy struct).
 struct Future<T> {
     id: int,
 }
@@ -239,7 +239,7 @@ fn tick() {
     }
 }
 
-// --- Futures: `await`-able string mailboxes ---------------------------
+// --- Futures: `await`-able typed mailboxes ---------------------------
 // The `await expr` syntax in an `async fn` is sugar for `await_value(expr)`
 // (see parser.c). Awaiting re-enters the one-thread pump: timers, spawns,
 // and the http socket steppers keep running until `resolve` fills the
@@ -247,43 +247,35 @@ fn tick() {
 // should keep using callbacks; `await` fits startup sequences and headless
 // flows (the counter app fetches before its App starts).
 
-let mut fut_vals: []string = []string {}
-let mut fut_ok: []int = []int {}
+/// Allocate a fresh future. `init` is the value until `resolve` fills it
+/// (and the timeout fallback if the mailbox never resolves).
+fn future<T>(init: T) -> Future<T> {
+    return Future { id: __fut_push(init) }
+}
 
-/// Allocate a fresh string future (one value, one consumer).
+/// Allocate a fresh string future (RPC bodies, `http.async_call`).
 fn future_str() -> Future<string> {
-    push(fut_ok, 0)
-    push(fut_vals, "")
-    return Future { id: fut_ok.len - 1 }
+    return future("")
 }
 
 /// Resolve `f` with `v`; an `await_value` pumping on it returns next tick.
-fn resolve(f: Future<string>, v: string) {
-    if f.id >= 0 {
-        if f.id < fut_ok.len {
-            fut_vals[f.id] = v
-            fut_ok[f.id] = 1
-        }
-    }
+fn resolve<T>(f: Future<T>, v: T) {
+    __fut_store(f.id, v)
 }
 
 /// Wait for `f` while pumping the async world. Bounded (~20s at 1ms ticks)
 /// so a never-resolved future fails instead of hanging the process.
-fn await_value(f: Future<string>) -> string {
+fn await_value<T>(f: Future<T>) -> T {
     let mut guard = 0
     while guard < 20000 {
-        if f.id >= 0 {
-            if f.id < fut_ok.len {
-                if fut_ok[f.id] != 0 {
-                    let v = fut_vals[f.id]
-                    fut_ok[f.id] = 0
-                    return v
-                }
-            }
+        if __fut_ready(f.id) != 0 {
+            let v: T = __fut_load(f.id)
+            __fut_clear(f.id)
+            return v
         }
         tick()
         sleep(1)
         guard = guard + 1
     }
-    return ""
+    return __fut_load(f.id)
 }

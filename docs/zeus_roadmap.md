@@ -164,11 +164,11 @@ sequential code reads like JS and still never touches a socket on the UI
 thread.
 
 - [x] Grammar + sema: `async fn name(...)`, `await expr` (contextual keywords — parser desugars `await e` to `async.await_value(e)`; typecheck rejects `await` outside an `async fn` body or inside a closure, like JS).
-- [x] Awaitable surface v1: `Future<string>` mailboxes in `std:async` (`future_str` / `resolve` / `await_value` — pure Yuga, no C); `http.acall(c, name, body)` is the awaitable gRPC-Web call; awaiting pumps timers/spawns/socket steppers until `resolve`, then returns the value.
-- [x] Demo + tests: `examples/zeus/counter/macos/app.yuga` is `async fn main` with two awaited RPCs (`let raw = await c.acall(...)`) feeding the App; `compile_pass/async_await.yuga` (sequential awaits, sync call of an async fn, pre-resolved future); `compile_fail/async_await_ctx.yuga`.
+- [x] Awaitable surface: `Future<T>` mailboxes in `std:async` (`future` / `future_str` / `resolve` / `await_value` — Copy `T`; cells in `yuga_rt.h`); `http.async_call(c, name, body)` is the awaitable gRPC-Web call (`Future<string>`); awaiting pumps timers/spawns/socket steppers until `resolve`, then returns the value.
+- [x] Demo + tests: `examples/zeus/counter/macos/app.yuga` is `async fn main` with two awaited RPCs (`let raw = await c.async_call(...)`) feeding the App; `compile_pass/async_await.yuga` (sequential awaits, sync call of an async fn, pre-resolved future, `Future<int>` / `bool` / `float` / Copy struct / `[]int`); `compile_pass/async_await_stress.yuga` (for/while/if/match/continue/break around awaits); `compile_fail/async_await_ctx.yuga`, `compile_fail/async_future_not_copy.yuga`.
 - **Exit:** sequential awaited values flow in order through the pump and repaint; awaits outside `async fn` are compile errors. **Green** — caveat: awaiting re-enters the pump on the UI thread, so an await inside an event handler pauses host repaint until it returns; init/startup awaits (the counter App) and headless flows are the sweet spot, callbacks stay the reactive path.
 - [x] Follow-up: `async`/`await` highlighting landed in the tree-sitter grammar + Zed/VSCode grammars (violet scopes in VSCode).
-- [ ] Follow-ups: widen `Future<T>` beyond string payloads; loop-and-branch-heavy bodies are already fine (no CPS split in this design) but want a stress test.
+- [x] Follow-ups: widen `Future<T>` beyond string payloads; loop-and-branch-heavy bodies are already fine (no CPS split in this design) but want a stress test.
 
 ### Phase 2 — Image primitive
 - [ ] New draw op kind (raster) through scene → platform → C → hosts + canvas loaders.

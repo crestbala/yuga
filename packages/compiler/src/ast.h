@@ -211,6 +211,7 @@ struct AstNode {
             const char *resolved_cname;
             int is_fn_val;
             int sig_cell; /* 1 = __sig_push, 2 = __sig_load, 3 = __sig_store */
+            int fut_cell; /* 1 = __fut_push, 2 = load, 3 = store, 4 = ready, 5 = clear */
         } call;
         struct {
             AstNode *target;

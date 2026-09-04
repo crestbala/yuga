@@ -598,8 +598,76 @@ static inline yuga_str yuga_sys_read_file(yuga_str path) {
 }
 #endif
 
-/* --- async: std/async.yuga (clock + sleep). All timers/queues live in Yuga; ---
-   --- the C seam is only a monotonic clock and a blocking sleep.        --- */
+/* --- async: std/async.yuga. Timers/queues live in Yuga; the C seam is a  ---
+   --- monotonic clock, a blocking sleep, and typed Future<T> mailboxes.  --- */
+
+typedef struct {
+    void *ptr;
+    size_t sz;
+    int64_t ready;
+} yuga_fut_slot;
+
+static yuga_fut_slot *yuga_fut_slots;
+static size_t yuga_fut_n;
+static size_t yuga_fut_cap;
+
+static inline int64_t yuga_fut_push(const void *val, size_t sz) {
+    yuga_fut_slot s;
+    if (yuga_fut_n == yuga_fut_cap) {
+        size_t nc = yuga_fut_cap ? yuga_fut_cap * 2 : 16;
+        yuga_fut_slot *next = (yuga_fut_slot *)realloc(yuga_fut_slots, nc * sizeof(yuga_fut_slot));
+        if (!next) yuga_panic(__FILE__, __LINE__, "out of memory");
+        yuga_fut_slots = next;
+        yuga_fut_cap = nc;
+    }
+    s.sz = sz;
+    s.ready = 0;
+    s.ptr = malloc(sz ? sz : 1);
+    if (!s.ptr) yuga_panic(__FILE__, __LINE__, "out of memory");
+    if (val && sz) memcpy(s.ptr, val, sz);
+    else memset(s.ptr, 0, sz ? sz : 1);
+    yuga_fut_slots[yuga_fut_n] = s;
+    return (int64_t)yuga_fut_n++;
+}
+
+static inline int yuga_fut_live(int64_t id) {
+    return id >= 0 && (size_t)id < yuga_fut_n && yuga_fut_slots[id].ptr != NULL;
+}
+
+static inline int64_t yuga_fut_ready(int64_t id) {
+    if (!yuga_fut_live(id)) return 0;
+    return yuga_fut_slots[id].ready;
+}
+
+static inline void yuga_fut_clear(int64_t id) {
+    if (!yuga_fut_live(id)) return;
+    yuga_fut_slots[id].ready = 0;
+}
+
+static inline void yuga_fut_load(int64_t id, void *out, size_t sz) {
+    size_t n;
+    if (!out) return;
+    if (!yuga_fut_live(id)) {
+        memset(out, 0, sz);
+        return;
+    }
+    n = sz < yuga_fut_slots[id].sz ? sz : yuga_fut_slots[id].sz;
+    if (n) memcpy(out, yuga_fut_slots[id].ptr, n);
+    if (sz > n) memset((char *)out + n, 0, sz - n);
+}
+
+static inline void yuga_fut_store(int64_t id, const void *val, size_t sz) {
+    if (!yuga_fut_live(id) || !val) return;
+    if (sz != yuga_fut_slots[id].sz) {
+        free(yuga_fut_slots[id].ptr);
+        yuga_fut_slots[id].ptr = malloc(sz ? sz : 1);
+        if (!yuga_fut_slots[id].ptr) yuga_panic(__FILE__, __LINE__, "out of memory");
+        yuga_fut_slots[id].sz = sz;
+    }
+    if (sz) memcpy(yuga_fut_slots[id].ptr, val, sz);
+    yuga_fut_slots[id].ready = 1;
+}
+
 #ifdef __wasm32__
 __attribute__((import_module("zeus"), import_name("now_ms")))
 int64_t zeus_js_now_ms(void);

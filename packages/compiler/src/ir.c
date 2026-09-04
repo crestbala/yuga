@@ -439,6 +439,29 @@ static int lower_call(AstNode *n) {
         else i->callee = "yuga_sig_store";
         return n->as.call.sig_cell == 3 ? -1 : dst;
     }
+    if (n->as.call.fut_cell) {
+        size_t ac = n->as.call.arg_count;
+        int *args = ac ? (int *)calloc(ac, sizeof(int)) : NULL;
+        for (size_t k = 0; k < ac; k++)
+            args[k] = lower_expr(n->as.call.args[k]);
+        IrInst *i = emit(IR_CALL, n->loc);
+        int no_dst = n->as.call.fut_cell == 3 || n->as.call.fut_cell == 5;
+        i->dst = no_dst ? -1 : dst;
+        i->args = args;
+        i->nargs = (int)ac;
+        if (n->as.call.fut_cell == 1 && ac)
+            i->ty = ir_subst(n->as.call.args[0]->ty);
+        else if (n->as.call.fut_cell == 3 && ac >= 2)
+            i->ty = ir_subst(n->as.call.args[1]->ty);
+        else
+            i->ty = ir_subst(n->ty);
+        if (n->as.call.fut_cell == 1) i->callee = "yuga_fut_push";
+        else if (n->as.call.fut_cell == 2) i->callee = "yuga_fut_load";
+        else if (n->as.call.fut_cell == 3) i->callee = "yuga_fut_store";
+        else if (n->as.call.fut_cell == 4) i->callee = "yuga_fut_ready";
+        else i->callee = "yuga_fut_clear";
+        return no_dst ? -1 : dst;
+    }
     if (n->as.call.is_println) return lower_println(n);
     if (n->as.call.is_vec_push) {
         int *args = (int *)calloc(2, sizeof(int));
