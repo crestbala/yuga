@@ -1,0 +1,20 @@
+// DRAW-list golden: zeus.App paints the page background on its root
+// scroller (theme-aware, like `Page`), so the viewport behind short
+// content — and the strips revealed while content rubber-bands past an
+// edge — stays paper, never the host's clear color (black on a dark
+// window / wasm page). Byte-exact on deterministic metrics.
+// Keep stdout as the golden; no extra prints.
+
+import "std:zeus"
+
+fn main() {
+    zeus.App("zeus-snap", 420, 320, fn() {
+        zeus.Page() {
+            zeus.Display("Short page")
+            zeus.Body("Content ends here; the area below stays paper,")
+            zeus.Body("and edge overscroll reveals paper, not black.")
+        }
+    })
+    zeus.engine_paint()
+    zeus.dump()
+}
