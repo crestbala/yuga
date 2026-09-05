@@ -1,0 +1,22 @@
+// DRAW-list golden: the keyboard focus ring. A themed button is focused via
+// a tab step (kb_focus), so paint adds the 4 ring fills around its box in
+// theme role 36 (foreground). Mouse focus never paints the ring — clicks
+// clear `kb_focus` (input.click). Byte-exact on deterministic metrics.
+// Keep stdout as the golden; no extra prints.
+
+import "std:zeus"
+
+fn main() {
+    let on = zeus.signal(0)
+    zeus.window("zeus-snap", 360, 200)
+    zeus.root(zeus.Page() {
+        zeus.Row(SPACE.Sm) {
+            zeus.Button("Save", look = zeus.LOOK.Solid, size = zeus.SIZE.Md,
+                        on_click = fn() => on.set(1))
+        }
+    })
+    zeus.engine_layout(360, 200)
+    zeus.engine_focus_step(0)
+    zeus.engine_paint()
+    zeus.dump()
+}

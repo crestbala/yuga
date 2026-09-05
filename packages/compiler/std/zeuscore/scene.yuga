@@ -483,6 +483,30 @@ fn paint_node(id: int) {
             }
         }
     }
+    // Focus ring: a 2px outline on the keyboard-focused node (desktop
+    // convention — mouse clicks clear `kb_focus`). Text inputs carry their
+    // caret + native accent already; overlays/scrollers are not ring targets.
+    if arena.kb_focus != 0 {
+        if id == arena.focus_id {
+            let mut ring = 1
+            if k == 9 {
+                ring = 0
+            }
+            if k == 10 {
+                ring = 0
+            }
+            if k == 11 {
+                ring = 0
+            }
+            if ring != 0 {
+                let c = arena.focus_ring_rgb()
+                fill(x - 2, y - 2, w + 4, 2, c, 0)
+                fill(x - 2, y + h, w + 4, 2, c, 0)
+                fill(x - 2, y, 2, h, c, 0)
+                fill(x + w, y, 2, h, c, 0)
+            }
+        }
+    }
 }
 
 fn paint_floaters(id: int) {

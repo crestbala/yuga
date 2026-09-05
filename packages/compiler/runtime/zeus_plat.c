@@ -1266,8 +1266,11 @@ int zeus_handle_key_up(int key, int mods) {
 int zeus_handle_key_ev(int key, int mods) {
     yuga_zeus_engine_set_mods((int64_t)mods);
     if (zeus_key_dispatch(key, mods)) return 1;
+    /* Plain Tab / Shift-Tab: the engine decides — step the focus ring, or
+       insert a tab when a multiline field is focused (single-line fields
+       step focus like the web). Keymaps win via dispatch above. */
     if (key == ZEUS_K_TAB && !(mods & ~ZEUS_MOD_SHIFT))
-        return zeus_focus_step(mods & ZEUS_MOD_SHIFT);
+        return zeus_handle_key(key);
     if (mods & ~ZEUS_MOD_SHIFT) return 0;
     return zeus_handle_key(key);
 }

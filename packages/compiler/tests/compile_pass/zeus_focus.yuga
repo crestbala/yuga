@@ -1,0 +1,142 @@
+// A11y probe: interactive roles, keyboard focus order, the painted focus
+// ring (keyboard-only), Enter/Space activation, and Tab semantics for
+// single-line vs multiline fields. Roles/focus order = Phase 7 exit test.
+import "std:fmt"
+import "std:sys"
+import "std:zeus"
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn main() {
+    let name = zeus.signal("")
+    let draft = zeus.signal("")
+    let agree = zeus.signal(0)
+    let pick = zeus.signal(0)
+    let saves = zeus.signal(0)
+    zeus.window("focus", 640, 480)
+    zeus.root(zeus.Box(padding = 24, align_direction = DIRECTION.Column, spacing = 8) {
+        zeus.TextInput(name, "Name")
+        zeus.Checkbox("Agree", agree)
+        zeus.Switch(pick)
+        zeus.Button("Save", look = zeus.LOOK.Solid, size = zeus.SIZE.Md,
+                    on_click = fn() => saves.set(saves.get() + 1))
+        zeus.TextArea(draft, "Note")
+    })
+    zeus.engine_layout(640, 480)
+
+    // Roles resolve to distinct interactive nodes.
+    let tb = zeus.engine_find_role("textbox")
+    let cb = zeus.engine_find_role("checkbox")
+    let sw = zeus.engine_find_role("switch")
+    let btn = zeus.engine_find_role("button")
+    expect(tb > 0, "textbox role")
+    expect(cb > 0, "checkbox role")
+    expect(sw > 0, "switch role")
+    expect(btn > 0, "button role")
+    expect(tb != cb && cb != sw && btn != sw, "roles are distinct")
+
+    // Tab order is document order: textbox -> checkbox -> switch -> button
+    // -> textarea (the second textbox), then wraps to the first control.
+    expect(zeus.engine_focus_step(0) == 1, "step onto textbox")
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == tb, "focus 1 = textbox")
+    expect(zeus.engine_focus_step(0) == 1, "step onto checkbox")
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == cb, "focus 2 = checkbox")
+    expect(zeus.engine_focus_step(0) == 1, "step onto switch")
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == sw, "focus 3 = switch")
+    expect(zeus.engine_focus_step(0) == 1, "step onto button")
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == btn, "focus 4 = button")
+    let ta = zeus.engine_find_text("Note")
+    expect(ta > 0, "textarea found")
+    expect(zeus.engine_focus_step(0) == 1, "step onto textarea")
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == ta, "focus 5 = textarea")
+    // Wraps back to the first control.
+    expect(zeus.engine_focus_step(0) == 1, "wrap to textbox")
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == tb, "focus wraps to textbox")
+    // Shift-tab walks backwards to the textarea.
+    expect(zeus.engine_focus_step(1) == 1, "back to textarea")
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == ta, "shift-tab = textarea")
+    expect(zeus.engine_focus_step(1) == 1, "back to button")
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == btn, "shift-tab twice = button")
+
+    // Enter / Space activate the focused control.
+    expect(saves.get() == 0, "saves start at 0")
+    zeus.engine_key(13)
+    expect(saves.get() == 1, "enter pressed save")
+    expect(zeus.engine_focus_step(1) == 1, "back to switch")
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == sw, "focus switch")
+    zeus.engine_key(32)
+    expect(pick.get() == 1, "space toggled switch")
+    expect(zeus.engine_focus_step(1) == 1, "back to checkbox")
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == cb, "focus checkbox")
+    zeus.engine_key(32)
+    expect(agree.get() == 1, "space checked checkbox")
+
+    // The focus ring paints only for keyboard focus: 4 ring fills appear
+    // after a tab step; a pointer click clears the ring again.
+    zeus.engine_paint()
+    let ring_on = zeus.draw_count()
+    zeus.engine_click(5, 5)
+    zeus.engine_paint()
+    let ring_off = zeus.draw_count()
+    expect(ring_on == ring_off + 4, "ring painted on keyboard focus")
+    // Focus stays on the checkbox after the miss; one tab step (to the
+    // switch) repaints the ring.
+    expect(zeus.engine_focus_step(0) == 1, "step to switch")
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == sw, "focus switch again")
+    zeus.engine_paint()
+    let ring_again = zeus.draw_count()
+    expect(ring_again == ring_off + 4, "ring returns with tab")
+
+    // Tab moves non-input controls; ring has five stops here (the two
+    // textboxes, checkbox, switch, button).
+    zeus.engine_key(9)
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == btn, "tab from switch = button")
+    zeus.engine_key(9)
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == ta, "tab reaches the textarea")
+
+    // Tab inside a multiline field inserts a soft tab (4 spaces) instead
+    // of moving on.
+    zeus.engine_key(9)
+    expect(fmt.eq(draft.get(), "    "), "tab inserted in multiline field")
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == ta, "focus stayed on textarea")
+
+    // Back to the button, then walk forward to the single-line field and
+    // show that Tab leaves it.
+    zeus.engine_focus_step(1)
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == btn, "back to button")
+    zeus.engine_focus_step(0)
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == ta, "forward to textarea")
+    zeus.engine_focus_step(0)
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == tb, "wrap to textbox")
+    zeus.engine_key(9)
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == cb, "tab leaves single-line input")
+
+    // Escape clears focus (and the ring flag with it).
+    zeus.engine_key(27)
+    zeus.engine_fill_focus()
+    expect(zeus.engine_focus_node(0) == 0, "escape clears focus")
+}

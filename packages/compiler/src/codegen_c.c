@@ -12,6 +12,7 @@
  * Closures are env-struct + fn-pointer (`IR_CLOS`). Intrinsics have no C body.
  */
 #include "codegen_c.h"
+#include "dce.h"
 #include "ir.h"
 #include "lexer.h"
 #include "sema/type.h"
@@ -2344,6 +2345,11 @@ static void clear_subst(void) {
 
 /** Write a complete C translation unit for `mods`. */
 void codegen_emit_c(FILE *out, YugaModule *mods, int nmods, const char *rt_path) {
+    /* Per-widget opt-in: emit only decls reachable from the entry module and
+       the C-seam entry points. Typecheck/IR still cover everything. Set
+       YUGA_NO_DCE=1 to emit the full monolith (debug / size comparisons). */
+    if (!getenv("YUGA_NO_DCE"))
+        yuga_dce_run(mods, nmods);
     IrModule *ir = ir_lower(mods, nmods);
     (void)ir_verify(ir);
     emit_ir_mod = ir;
@@ -2358,8 +2364,23 @@ void codegen_emit_c(FILE *out, YugaModule *mods, int nmods, const char *rt_path)
         fprintf(out, "#include \"maya_rt.h\"\n");
     fprintf(out, "\n");
 
+    /* Closures only from kept fn bodies (plus module-level inits, whose
+       `__init` is always emitted). Closures of pruned fns would otherwise
+       drag their whole subtree back into the C. */
     nclos_nodes = 0;
-    for (int m = 0; m < nmods; m++) collect_clos(mods[m].ast);
+    for (int m = 0; m < nmods; m++) {
+        AstNode *p = mods[m].ast;
+        if (!p) continue;
+        for (size_t i = 0; i < p->as.program.decl_count; i++) {
+            AstNode *d = p->as.program.decls[i];
+            if (d->kind == AST_FN_DECL) {
+                if (d->as.fn.tparam_count || !yuga_dce_keep(d)) continue;
+                collect_clos(d->as.fn.body);
+            } else if (d->kind == AST_VAR_DECL) {
+                collect_clos(d->as.var.init);
+            }
+        }
+    }
 
     for (int m = 0; m < nmods; m++) {
         AstNode *p = mods[m].ast;
@@ -2406,6 +2427,7 @@ void codegen_emit_c(FILE *out, YugaModule *mods, int nmods, const char *rt_path)
             AstNode *d = p->as.program.decls[i];
             if (d->kind != AST_FN_DECL || d->as.fn.is_intrinsic || d->as.fn.tparam_count)
                 continue;
+            if (!yuga_dce_keep(d)) continue;
             int is_main = (m == 0 && strcmp(d->as.fn.name, "main") == 0);
             if (is_main) continue;
             emit_fn_sig(out, d, 0);
@@ -2428,7 +2450,7 @@ void codegen_emit_c(FILE *out, YugaModule *mods, int nmods, const char *rt_path)
     }
     for (int i = 0; i < typecheck_mono_count(); i++) {
         AstNode *fn = typecheck_mono_fn(i);
-        if (!fn) continue;
+        if (!fn || !yuga_dce_keep(fn)) continue;
         set_mono_subst(i);
         emit_fn_sig(out, fn, 0);
         fprintf(out, ";\n");
@@ -2442,7 +2464,7 @@ void codegen_emit_c(FILE *out, YugaModule *mods, int nmods, const char *rt_path)
         for (size_t i = 0; i < p->as.program.decl_count; i++) {
             AstNode *d = p->as.program.decls[i];
             if (d->kind == AST_FN_DECL && d->as.fn.used_as_value && !d->as.fn.is_intrinsic &&
-                !d->as.fn.tparam_count)
+                !d->as.fn.tparam_count && yuga_dce_keep(d))
                 emit_as_fn_tramp(out, d);
         }
     }
@@ -2460,7 +2482,7 @@ void codegen_emit_c(FILE *out, YugaModule *mods, int nmods, const char *rt_path)
 
     for (int i = 0; i < typecheck_mono_count(); i++) {
         AstNode *fn = typecheck_mono_fn(i);
-        if (!fn) continue;
+        if (!fn || !yuga_dce_keep(fn)) continue;
         set_mono_subst(i);
         emit_fn(out, fn, 0);
         clear_subst();
@@ -2482,6 +2504,7 @@ void codegen_emit_c(FILE *out, YugaModule *mods, int nmods, const char *rt_path)
             AstNode *d = p->as.program.decls[i];
             if (d->kind != AST_FN_DECL || d->as.fn.is_intrinsic || d->as.fn.tparam_count)
                 continue;
+            if (!yuga_dce_keep(d)) continue;
             int is_main = (m == 0 && strcmp(d->as.fn.name, "main") == 0);
             emit_fn(out, d, is_main);
         }

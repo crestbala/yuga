@@ -151,6 +151,9 @@ let mut focus_at: int = -1
 let mut chain_nodes: []int = []int {}
 let mut chain_ctxs: []int = []int {}
 let mut focus_ring: []int = []int {}
+/// 1 = focus arrived by keyboard (tab/shift-tab); the painted focus ring
+/// shows only then, and a pointer click clears it (desktop convention).
+let mut kb_focus: int = 0
 let mut paint_sy: int = 0
 let mut paint_sx: int = 0
 let mut drag_id: int = 0
@@ -1375,6 +1378,13 @@ fn is_floater(id: int) -> int {
     return 0
 }
 
+/// Paint-time ring color for the keyboard-focused node. Theme slot 36 is
+/// registered by the design system's `roles()` (foreground in both
+/// appearances); before that it falls back to paint_rgb(0) = black.
+fn focus_ring_rgb() -> int {
+    return paint_rgb(2130706432 + 36)
+}
+
 fn is_focusable(id: int) -> int {
     if id <= 0 {
         return 0
@@ -1538,6 +1548,7 @@ fn focus_step(back: int) -> int {
         return 0
     }
     focus_id = focus_ring[next]
+    kb_focus = 1
     return 1
 }
 

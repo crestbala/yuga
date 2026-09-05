@@ -77,14 +77,14 @@ demos. Phase column points into §6.
 | 3 | ~~`For` rebuilds the whole list per push (recycling yes, O(n) still)~~ **Phase 5** | `VirtualList` / windowed `For` / `VirtualTable`; `push_item` / `insert_item` | — | 5 |
 | 4 | Nested scroll chaining (momentum + overscroll **Phase 5**) | nested feed/page scrollers | medium | 5b |
 | 5 | ~~`Signal<int>` only (no float/date/bool scalar store)~~ **Phase 6** | float signals + float timestamp scalars (the byte-typed cell store was already generic; exit test proves it) | — | 6 |
-| 6 | Zeus monolith, no dead-code elimination | web bundle size, componentization | medium | 7 |
-| 7 | a11y = labels only; no focus ring, thin keyboard model | enterprise + compliance | ongoing | 7b |
-| 8 | Fixed-pixel tuning; no density/font scaling | devices, accessibility | small | 7c |
+| 6 | ~~Zeus monolith, no dead-code elimination~~ **Phase 7** | web bundle size, componentization | — | 7 |
+| 7 | ~~a11y = labels only; no focus ring, thin keyboard model~~ **Phase 7** | visible keyboard focus + tab order across interactive chrome | — | 7 |
+| 8 | ~~Fixed-pixel tuning; no density/font scaling~~ **Phase 7** | `set_scale` percent + `tk` tokens; components read the scale, not constants | — | 7 |
 | 9 | ~~No TLS~~ **Phase 6** | blocking `net.tls_connect` (SecureTransport, macOS) + `https://` `Client` addresses; wasm keeps browser TLS via `fetch` | — | 6 |
 | 10 | ~~No KV/persistence beyond whole-file read/write~~ **Phase 4** | `std:kv` file-backed; wasm is memory-only | — | 4 |
 | 11 | Gallery wasm first paint ~3 min (counter wasm is instant) | catalog in the browser | med | follow-up |
 
-Resolved by the landed phases: blocking sockets/async runtime (Phase 1), and no realtime transport (Phase 1b) — ws/SSE + the auth/session convention exist; what remains for chat-class servers is the §5.3 reactor (concurrent connections) and wasm ws via the browser's WebSocket.
+Resolved by the landed phases: blocking sockets/async runtime (Phase 1), and no realtime transport (Phase 1b) — ws/SSE + the auth/session convention exist; what remains for chat-class servers is the §5.3 reactor (concurrent connections) and wasm ws via the browser's WebSocket. Phase 7 adds: per-widget dead-decl elimination (reachability-pruned codegen — the monolith stays one cycle-free module, but unused decls stop shipping), a keyboard focus ring with document-order tab traversal and Enter/Space activation, and a UI-scale token (`set_scale` / `tk`) that every chrome size reads.
 
 ## 5. Architecture decisions (the reasoning to preserve)
 
@@ -219,10 +219,13 @@ thread.
   `https://` address parsing).
 
 ### Phase 7 — Design system & a11y growth discipline
-- [ ] Zeus namespace pass or per-widget opt-in (DCE) before the monolith doubles.
-- [ ] Focus ring painting + visible tab order on native hosts.
-- [ ] Density/font-scale tokens (components read a scale signal, not constants).
-- **Exit:** gallery unchanged visually at scale 1.0 (golden); a11y probe test asserts roles/focus order.
+- [x] Zeus namespace pass or per-widget opt-in (DCE) before the monolith doubles.
+- [x] Focus ring painting + visible tab order on native hosts.
+- [x] Density/font-scale tokens (components read a scale signal, not constants).
+- **Exit:** gallery unchanged visually at scale 1.0 (golden); a11y probe test asserts roles/focus order. **Green** — chose per-widget opt-in over a namespace split: the monolith stays one cycle-free module, and codegen now emits only decls reachable from the entry module + the C-seam roots (`yuga_zeus_engine_*` etc. in `src/dce.c`, gated in `codegen_c.c`; typecheck/IR still verify everything, `YUGA_NO_DCE=1` restores full emission). Generated C: spec −64%, counter −47%, gallery −8%; counter wasm byte-identical (it reaches the whole engine).
+- [x] Focus ring + tab order: `kb_focus` (keyboard-only ring — clicks clear it), 4-fill ring in theme role 36 painted in `scene`, every click target is a tab stop (Enter/Space activate it), Tab leaves single-line fields and soft-tabs (4 spaces) in multiline ones (`input.yuga` + `zeus_plat.c` reroute plain Tab through the engine), roles/labels on interactive chrome (checkbox / radio / switch / slider / tab / combobox).
+- [x] Scale tokens: `set_scale(50..200)` percent + `tk(x)` (identity at 100, so goldens hold); fonts, control geometry, glyph icons, and form chrome read `tk` instead of constants. Retained trees read the scale at build; `zeus.view` apps re-read it every frame (live zoom).
+- **Tests:** `zeus_focus.yuga` (roles → document-order tab traversal → ring paint deltas → Enter/Space activation → Tab semantics), `zeus_scale.yuga` (150/100/clamp round-trips), `golden_focus_ring` (ring fills byte-exact), `golden_scale_gallery` (gallery chrome at scale 1.0); every pre-existing DRAW golden stays byte-identical.
 
 ### Phase 8 — Revisit only if demanded
 - [ ] Language threads + Send discipline + channels (CPU-bound workloads).
