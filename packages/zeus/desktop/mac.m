@@ -92,8 +92,11 @@ static void mac_text(void *ctx, int64_t x, int64_t y, const char *s,
     [str drawAtPoint:NSMakePoint((CGFloat)x, (CGFloat)y) withAttributes:zeus_attrs(rgb, font)];
 }
 
-/* Rotated text around the top-left corner of the line box. AppKit angles are
-   CCW in its y-up frame, so negate: engine degrees are clockwise on screen. */
+/* Rotated text around the top-left corner of the line box. The view is
+   flipped (y grows down), where a positive AppKit rotation appears
+   clockwise on screen — exactly the engine's convention (UiNode.text_rot:
+   "clockwise-on-screen degrees"). Web (canvas rotate(+deg)) renders the
+   same way. */
 static void mac_text_rot(void *ctx, int64_t x, int64_t y, const char *s,
                          int64_t rgb, int64_t font, int64_t deg) {
     (void)ctx;
@@ -101,7 +104,7 @@ static void mac_text_rot(void *ctx, int64_t x, int64_t y, const char *s,
     [NSGraphicsContext saveGraphicsState];
     NSAffineTransform *t = [NSAffineTransform transform];
     [t translateXBy:(CGFloat)x yBy:(CGFloat)y];
-    [t rotateByDegrees:-(CGFloat)deg];
+    [t rotateByDegrees:(CGFloat)deg];
     [t concat];
     [str drawAtPoint:NSZeroPoint withAttributes:zeus_attrs(rgb, font)];
     [NSGraphicsContext restoreGraphicsState];
