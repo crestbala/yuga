@@ -1,0 +1,53 @@
+// Language: bitwise operators `& | ^ ~ << >>` (int only) and the compound
+// forms `&= |= ^= <<= >>= %=`. Precedence is C-compatible.
+import "std:fmt"
+import "std:sys"
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn main() {
+    let f = 12 // 1100b
+    let g = 10 // 1010b
+    expect((f & g) == 8, "and")
+    expect((f | g) == 14, "or")
+    expect((f ^ g) == 6, "xor")
+    expect((1 << 4) == 16, "shl")
+    expect((256 >> 4) == 16, "shr")
+    expect((~0) == -1, "not")
+    expect((~12) == -13, "not value")
+
+    // Compounds.
+    let mut h = 12
+    h &= 10
+    expect(h == 8, "&=")
+    h |= 1
+    expect(h == 9, "|=")
+    h ^= 15
+    expect(h == 6, "^=")
+    h <<= 2
+    expect(h == 24, "<<=")
+    h >>= 1
+    expect(h == 12, ">>=")
+    let mut m = 17
+    m %= 5
+    expect(m == 2, "%=")
+    m += 3
+    m *= 4
+    expect(m == 20, "arithmetic compounds still fine")
+
+    // C-like precedence: + - bind tighter than shifts; & tighter than ^
+    // tighter than |.
+    expect((8 >> 1 + 1) == 2, "shift binds looser than +")
+    expect((1 | 2 ^ 3 & 4) == 3, "& tighter than ^ tighter than |")
+    expect((2 + 3 & 12) == 4, "& looser than +")
+
+    // Masks work as conditions through comparison.
+    let flags = 10
+    expect(((flags & 2) != 0) == true, "mask test")
+}

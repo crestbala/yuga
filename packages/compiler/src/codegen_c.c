@@ -52,6 +52,7 @@ static void emit_cond(FILE *o, AstNode *n);
 static void emit_stmt(FILE *o, AstNode *n, int ind);
 static void emit_block_body(FILE *o, AstNode *b, int ind, int is_main);
 static IrFn *find_ir_fn(const char *cname);
+static const char *c_assignop(int op);
 
 /** C type for a Yuga Type (int64_t, yuga_str, yuga_fn, T*, …). */
 static void emit_ctype(FILE *o, Type *t) {
@@ -628,6 +629,7 @@ static void emit_expr(FILE *o, AstNode *n) {
                 else if (op == TOK_MINUS) s = "-";
                 else if (op == TOK_STAR) s = "*";
                 else if (op == TOK_SLASH) s = "/";
+                else if (op == TOK_PERCENT) s = "%";
                 else if (op == TOK_EQ_EQ) s = "==";
                 else if (op == TOK_BANG_EQ) s = "!=";
                 else if (op == TOK_LT) s = "<";
@@ -636,6 +638,11 @@ static void emit_expr(FILE *o, AstNode *n) {
                 else if (op == TOK_GT_EQ) s = ">=";
                 else if (op == TOK_AMP_AMP) s = "&&";
                 else if (op == TOK_PIPE_PIPE) s = "||";
+                else if (op == TOK_AMP) s = "&";
+                else if (op == TOK_PIPE) s = "|";
+                else if (op == TOK_CARET) s = "^";
+                else if (op == TOK_SHL) s = "<<";
+                else if (op == TOK_SHR) s = ">>";
                 fprintf(o, "(");
                 emit_expr(o, n->as.binary.left);
                 fprintf(o, " %s ", s);
@@ -647,10 +654,30 @@ static void emit_expr(FILE *o, AstNode *n) {
         case AST_UNARY:
             fprintf(o, "(");
             if (n->as.unary.op == TOK_BANG) fprintf(o, "!");
+            else if (n->as.unary.op == TOK_TILDE) fprintf(o, "~");
             else fprintf(o, "-");
             emit_expr(o, n->as.unary.operand);
             fprintf(o, ")");
             break;
+        case AST_INCDEC: {
+            /* Read-modify-write of the operand place. GCC/Clang statement
+               expression: the place is addressed once (side effects in an
+               index or field base run once). */
+            fprintf(o, "({ ");
+            emit_ctype(o, n->ty);
+            fprintf(o, " *_p = &");
+            emit_place(o, n->as.incdec.operand);
+            fprintf(o, "; ");
+            if (n->as.incdec.is_post) {
+                emit_ctype(o, n->ty);
+                fprintf(o, " _old = *_p; *_p = _old ");
+                fprintf(o, n->as.incdec.is_dec ? "- 1; _old; })" : "+ 1; _old; })");
+            } else {
+                fprintf(o, "*_p = *_p ");
+                fprintf(o, n->as.incdec.is_dec ? "- 1; *_p; })" : "+ 1; *_p; })");
+            }
+            break;
+        }
         case AST_CAST:
             fprintf(o, "((");
             emit_ctype(o, n->ty);
@@ -968,6 +995,14 @@ static void emit_assign(FILE *o, AstNode *n, int ind) {
         fprintf(o, ";\n");
         return;
     }
+    const char *aop = c_assignop(n->as.assign.op);
+    if (aop) {
+        emit_place(o, n->as.assign.left);
+        fprintf(o, " %s ", aop);
+        emit_expr(o, n->as.assign.right);
+        fprintf(o, ";\n");
+        return;
+    }
     if (n->as.assign.left && n->as.assign.left->ty && n->as.assign.left->ty->kind == TY_FLOAT) {
         const char *op = "+=";
         if (n->as.assign.op == TOK_MINUS_EQ) op = "-=";
@@ -983,6 +1018,7 @@ static void emit_assign(FILE *o, AstNode *n, int ind) {
     if (n->as.assign.op == TOK_MINUS_EQ) fn = "yuga_sub_i64";
     else if (n->as.assign.op == TOK_STAR_EQ) fn = "yuga_mul_i64";
     else if (n->as.assign.op == TOK_SLASH_EQ) fn = "yuga_div_i64";
+    else if (n->as.assign.op == TOK_PERCENT_EQ) fn = "yuga_mod_i64";
     emit_place(o, n->as.assign.left);
     fprintf(o, " = %s(", fn);
     emit_place(o, n->as.assign.left);
@@ -1365,7 +1401,24 @@ static const char *c_binop(int op) {
         case TOK_GT_EQ: return ">=";
         case TOK_AMP_AMP: return "&&";
         case TOK_PIPE_PIPE: return "||";
+        case TOK_AMP: return "&";
+        case TOK_PIPE: return "|";
+        case TOK_CARET: return "^";
+        case TOK_SHL: return "<<";
+        case TOK_SHR: return ">>";
         default: return "?";
+    }
+}
+
+/** `op=` text for the non-arithmetic compound assignments. */
+static const char *c_assignop(int op) {
+    switch ((TokenKind)op) {
+        case TOK_AMP_EQ: return "&=";
+        case TOK_PIPE_EQ: return "|=";
+        case TOK_CARET_EQ: return "^=";
+        case TOK_SHL_EQ: return "<<=";
+        case TOK_SHR_EQ: return ">>=";
+        default: return NULL;
     }
 }
 
@@ -1379,7 +1432,8 @@ static const char *chk_fn(int op) {
         case TOK_STAR_EQ: return "yuga_mul_i64";
         case TOK_SLASH:
         case TOK_SLASH_EQ: return "yuga_div_i64";
-        case TOK_PERCENT: return "yuga_mod_i64";
+        case TOK_PERCENT:
+        case TOK_PERCENT_EQ: return "yuga_mod_i64";
         default: return NULL;
     }
 }
@@ -1552,7 +1606,8 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
             const char *cf = chk_fn(in->binop);
             if (cf && in->ty && in->ty->kind == TY_FLOAT) cf = NULL;
             if (cf && (in->binop == TOK_PLUS_EQ || in->binop == TOK_MINUS_EQ ||
-                       in->binop == TOK_STAR_EQ || in->binop == TOK_SLASH_EQ)) {
+                       in->binop == TOK_STAR_EQ || in->binop == TOK_SLASH_EQ ||
+                       in->binop == TOK_PERCENT_EQ)) {
                 emit_ir_place(o, in->place);
                 fprintf(o, " = %s(", cf);
                 emit_ir_place(o, in->place);
@@ -1560,35 +1615,43 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
                 emit_ir_loc(o, in->loc);
                 fprintf(o, ");\n");
             } else if (in->binop == TOK_PLUS_EQ || in->binop == TOK_MINUS_EQ ||
-                       in->binop == TOK_STAR_EQ || in->binop == TOK_SLASH_EQ) {
+                       in->binop == TOK_STAR_EQ || in->binop == TOK_SLASH_EQ ||
+                       in->binop == TOK_PERCENT_EQ) {
                 const char *op = "+=";
                 if (in->binop == TOK_MINUS_EQ) op = "-=";
                 else if (in->binop == TOK_STAR_EQ) op = "*=";
                 else if (in->binop == TOK_SLASH_EQ) op = "/=";
+                else if (in->binop == TOK_PERCENT_EQ) op = "%=";
                 emit_ir_place(o, in->place);
                 fprintf(o, " %s %s;\n", op, lv(in->a));
-            } else if (in->ty && in->ty->kind == TY_VEC && type_is_copy(in->ty)) {
-                fprintf(o, "{\n        yuga_vec _repl = ");
-                emit_ir_place(o, in->place);
-                fprintf(o, ";\n        ");
-                emit_ir_place(o, in->place);
-                fprintf(o, " = yuga_vec_retain(&%s);\n", lv(in->a));
-                emit_drop_place(o, "_repl", in->ty, 1);
-                fprintf(o, "    }\n");
-            } else if (in->ty && type_needs_drop(in->ty) && in->ty->kind != TY_ARRAY) {
-                char cn[256];
-                format_ctype(cn, sizeof cn, in->ty);
-                fprintf(o, "{\n        %s _repl = ", cn);
-                emit_ir_place(o, in->place);
-                fprintf(o, ";\n        ");
-                emit_ir_place(o, in->place);
-                fprintf(o, " = %s;\n", lv(in->a));
-                emit_steal(o, lv(in->a), in->ty, 1);
-                emit_drop_place(o, "_repl", in->ty, 1);
-                fprintf(o, "    }\n");
             } else {
-                emit_ir_place(o, in->place);
-                fprintf(o, " = %s;\n", lv(in->a));
+                const char *aop = NULL;
+                if ((aop = c_assignop(in->binop)) != NULL) {
+                    emit_ir_place(o, in->place);
+                    fprintf(o, " %s %s;\n", aop, lv(in->a));
+                } else if (in->ty && in->ty->kind == TY_VEC && type_is_copy(in->ty)) {
+                    fprintf(o, "{\n        yuga_vec _repl = ");
+                    emit_ir_place(o, in->place);
+                    fprintf(o, ";\n        ");
+                    emit_ir_place(o, in->place);
+                    fprintf(o, " = yuga_vec_retain(&%s);\n", lv(in->a));
+                    emit_drop_place(o, "_repl", in->ty, 1);
+                    fprintf(o, "    }\n");
+                } else if (in->ty && type_needs_drop(in->ty) && in->ty->kind != TY_ARRAY) {
+                    char cn[256];
+                    format_ctype(cn, sizeof cn, in->ty);
+                    fprintf(o, "{\n        %s _repl = ", cn);
+                    emit_ir_place(o, in->place);
+                    fprintf(o, ";\n        ");
+                    emit_ir_place(o, in->place);
+                    fprintf(o, " = %s;\n", lv(in->a));
+                    emit_steal(o, lv(in->a), in->ty, 1);
+                    emit_drop_place(o, "_repl", in->ty, 1);
+                    fprintf(o, "    }\n");
+                } else {
+                    emit_ir_place(o, in->place);
+                    fprintf(o, " = %s;\n", lv(in->a));
+                }
             }
             break;
         }
@@ -1646,7 +1709,8 @@ static void emit_ir_inst(FILE *o, const IrInst *in) {
         }
         case IR_UN:
             fprintf(o, "%s = (%s%s);\n", lv(in->dst),
-                    in->binop == TOK_BANG ? "!" : "-", lv(in->a));
+                    in->binop == TOK_BANG ? "!" : (in->binop == TOK_TILDE ? "~" : "-"),
+                    lv(in->a));
             break;
         case IR_CAST:
             fprintf(o, "%s = (", lv(in->dst));
@@ -2181,6 +2245,9 @@ static void collect_clos(AstNode *n) {
             break;
         case AST_UNARY:
             collect_clos(n->as.unary.operand);
+            break;
+        case AST_INCDEC:
+            collect_clos(n->as.incdec.operand);
             break;
         case AST_CAST:
             collect_clos(n->as.cast.expr);

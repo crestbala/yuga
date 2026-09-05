@@ -1,0 +1,60 @@
+// Language: `++` / `--` prefix and postfix. Postfix yields the old value,
+// prefix the new one; works on locals, fields, and indexed places, on int
+// and float, inside expressions, and inside closures (state path).
+import "std:fmt"
+import "std:sys"
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+struct S {
+    n: int,
+}
+
+fn main() {
+    let mut i = 0
+    i++
+    i++
+    i--
+    expect(i == 1, "basic ++/--")
+
+    let mut a = 5
+    let p = a++
+    let q = ++a
+    expect(a == 7 && p == 5 && q == 7, "postfix yields old, prefix new")
+
+    let mut b = 10
+    b--
+    expect(b == 9, "postfix --")
+
+    let mut c = 2.5
+    c++
+    let d = c--
+    expect(c == 2.5 && d == 3.5, "float ++/--")
+
+    let mut s = S { n: 4 }
+    s.n++
+    expect(s.n == 5, "field ++")
+
+    let mut xs = []int { 1, 2, 3 }
+    xs[1]++
+    expect(xs[1] == 3, "indexed ++")
+    let mut k = 0
+    let at = xs[k++]
+    expect(at == 1 && k == 1, "postfix in index")
+    expect(xs[0] + ++k == 3 && k == 2, "prefix in expression")
+
+    // Loop counting.
+    let mut n = 0
+    let mut sum = 0
+    while n < 5 {
+        sum += n
+        n++
+    }
+    expect(sum == 10 && n == 5, "while with ++")
+}

@@ -687,6 +687,12 @@ static AstNode *parse_postfix(Parser *p, AstNode *left) {
             left = ast_cast(left, ty, loc);
             continue;
         }
+        /* Postfix ++/--: `i++` / `i--`. */
+        if (match(p, TOK_PLUS_PLUS) || match(p, TOK_MINUS_MINUS)) {
+            int dec = p->previous.kind == TOK_MINUS_MINUS;
+            left = ast_incdec(left, dec, 1, loc);
+            continue;
+        }
         break;
     }
     return left;
@@ -715,23 +721,33 @@ static AstNode *parse_unary(Parser *p) {
         return ast_addr(parse_unary(p), mut, loc);
     }
     if (match(p, TOK_STAR)) return ast_deref(parse_unary(p), loc);
-    if (match(p, TOK_BANG) || match(p, TOK_MINUS)) {
+    if (match(p, TOK_BANG) || match(p, TOK_MINUS) || match(p, TOK_TILDE)) {
         TokenKind op = p->previous.kind;
         return ast_unary(op, parse_unary(p), loc);
+    }
+    /* Prefix ++/--: `++i` / `--i`. */
+    if (match(p, TOK_PLUS_PLUS) || match(p, TOK_MINUS_MINUS)) {
+        int dec = p->previous.kind == TOK_MINUS_MINUS;
+        return ast_incdec(parse_unary(p), dec, 0, loc);
     }
     return parse_postfix(p, parse_primary(p));
 }
 
-/** Binding power for Pratt parsing of binary operators. */
+/** Binding power for Pratt parsing of binary operators. C-compatible order
+ *  (low -> high): ||, &&, |, ^, &, equality, relational, shifts, additive,
+ *  multiplicative. `..` stays lowest (range sugar). */
 static int precedence(TokenKind k) {
     if (k == TOK_DOT_DOT) return 1;
     if (k == TOK_PIPE_PIPE) return 2;
     if (k == TOK_AMP_AMP) return 3;
-    if (k == TOK_EQ_EQ || k == TOK_BANG_EQ || k == TOK_LT || k == TOK_GT ||
-        k == TOK_LT_EQ || k == TOK_GT_EQ)
-        return 4;
-    if (k == TOK_PLUS || k == TOK_MINUS) return 5;
-    if (k == TOK_STAR || k == TOK_SLASH || k == TOK_PERCENT) return 6;
+    if (k == TOK_PIPE) return 4;
+    if (k == TOK_CARET) return 5;
+    if (k == TOK_AMP) return 6;
+    if (k == TOK_EQ_EQ || k == TOK_BANG_EQ) return 7;
+    if (k == TOK_LT || k == TOK_GT || k == TOK_LT_EQ || k == TOK_GT_EQ) return 8;
+    if (k == TOK_SHL || k == TOK_SHR) return 9;
+    if (k == TOK_PLUS || k == TOK_MINUS) return 10;
+    if (k == TOK_STAR || k == TOK_SLASH || k == TOK_PERCENT) return 11;
     return 0;
 }
 
@@ -790,7 +806,9 @@ static AstNode *parse_let(Parser *p) {
 
 static int is_assign_op(TokenKind k) {
     return k == TOK_EQ || k == TOK_PLUS_EQ || k == TOK_MINUS_EQ ||
-           k == TOK_STAR_EQ || k == TOK_SLASH_EQ;
+           k == TOK_STAR_EQ || k == TOK_SLASH_EQ || k == TOK_PERCENT_EQ ||
+           k == TOK_AMP_EQ || k == TOK_PIPE_EQ || k == TOK_CARET_EQ ||
+           k == TOK_SHL_EQ || k == TOK_SHR_EQ;
 }
 
 /** One match pattern: literal or `_`. */
