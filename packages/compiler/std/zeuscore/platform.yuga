@@ -14,7 +14,10 @@ fn plat_measure_int(v: int, px: int, w: &mut int, h: &mut int) {}
 fn plat_measure_wrap(s: string, px: int, max_w: int, w: &mut int, h: &mut int) {}
 fn plat_text_wrap(x: int, y: int, s: string, rgb: int, font: int, max_w: int) {}
 fn plat_set_window(title: string, width: int, height: int) {}
-/// Host view size in points (browser canvas or native content view).
+/// Host view size in points (browser canvas or native content view). On
+/// desktop hosts before the window exists this is the device screen's work
+/// area (window_size() → the default window is screen-filling); after the
+/// window opens it is the live view size.
 fn plat_view_width() -> int {}
 fn plat_view_height() -> int {}
 fn plat_svg(x: int, y: int, w: int, h: int, markup: string, rgb: int, alpha: int) {}

@@ -205,7 +205,14 @@ static void (*plat_redraw)(void);
 static void (*plat_pick_image)(char *out, int cap, int64_t *w, int64_t *h);
 
 static char *win_title;
-static int64_t win_w = 640, win_h = 480;
+static int64_t win_w = ZEUS_DEFAULT_WIN_W, win_h = ZEUS_DEFAULT_WIN_H;
+
+/* Desktop "initial view" providers: the size the host will open its window
+   at (device screen work area). Only consulted before the window exists and
+   only on real (non-headless) runs, so headless layout stays deterministic. */
+static int64_t (*plat_initial_w)(void);
+static int64_t (*plat_initial_h)(void);
+static int opened_window;
 
 static void *paint_ctx;
 static ZeusDraw paint_draw;
@@ -494,6 +501,13 @@ int64_t yuga_zeus_plat_view_width(void) {
     int32_t w = zeus_js_view_w();
     if (w > 0) return (int64_t)w;
 #endif
+    /* Desktop: before the window exists, report the size the host will open
+       it at (full device screen) instead of the 640×480 placeholder, so an
+       app that passes zeus.window_size() to zeus.App opens screen-filling. */
+    if (!opened_window && !yuga_zeus_plat_headless() && plat_initial_w) {
+        int64_t w = plat_initial_w();
+        if (w > 0) return w;
+    }
     return win_w;
 }
 
@@ -502,12 +516,25 @@ int64_t yuga_zeus_plat_view_height(void) {
     int32_t h = zeus_js_view_h();
     if (h > 0) return (int64_t)h;
 #endif
+    if (!opened_window && !yuga_zeus_plat_headless() && plat_initial_h) {
+        int64_t h = plat_initial_h();
+        if (h > 0) return h;
+    }
     return win_h;
 }
 
 void zeus_set_window_size(int64_t width, int64_t height) {
     if (width > 0) win_w = width;
     if (height > 0) win_h = height;
+}
+
+void zeus_set_initial_view(int64_t (*width)(void), int64_t (*height)(void)) {
+    plat_initial_w = width;
+    plat_initial_h = height;
+}
+
+void zeus_window_opened(void) {
+    opened_window = 1;
 }
 
 static int64_t g_inset_t, g_inset_r, g_inset_b, g_inset_l;
