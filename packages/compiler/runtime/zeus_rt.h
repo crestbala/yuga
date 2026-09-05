@@ -347,5 +347,19 @@ const char *zeus_window_title(void);
 int64_t zeus_window_width(void);
 int64_t zeus_window_height(void);
 void zeus_set_window_size(int64_t width, int64_t height);
+/**
+ * Pre-window "initial view" size on desktop hosts. Until the native window
+ * is created (zeus_window_opened), zeus.window_size() reports this instead of
+ * the placeholder default so desktop apps default to a screen-filling
+ * window. Hosts register lazy getters (no AppKit calls at registration).
+ */
+void zeus_set_initial_view(int64_t (*width)(void), int64_t (*height)(void));
+void zeus_window_opened(void);
+
+/* Built-in placeholder window size used before a host reports a real view.
+ * Desktop hosts treat a request for exactly this as "no preference" and open
+ * the window at the device screen size instead. */
+#define ZEUS_DEFAULT_WIN_W 640
+#define ZEUS_DEFAULT_WIN_H 480
 
 #endif

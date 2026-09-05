@@ -1071,6 +1071,9 @@ static NSCursor *zeus_cursor_for(const char *name) {
 }
 @end
 
+static NSRect mac_screen_visible(void);
+static int mac_window_fills_screen(void);
+
 static void mac_run(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
@@ -1088,6 +1091,9 @@ static void mac_run(void) {
                                                         defer:NO];
         const char *t = zeus_window_title();
         [win setTitle:t ? [NSString stringWithUTF8String:t] : @"Zeus"];
+        /* The window clears to white until the engine's first paper fill, so
+           scroll edges / the first frame never flash black. */
+        [win setBackgroundColor:[NSColor whiteColor]];
         ZeusView *view = [[ZeusView alloc] initWithFrame:frame];
         g_view = view;
         [win setReleasedWhenClosed:YES];
@@ -1095,12 +1101,57 @@ static void mac_run(void) {
         [win setCollectionBehavior:NSWindowCollectionBehaviorFullScreenPrimary];
         [view setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
         [win setContentView:view];
+        /* Native desktop default: the window fills the device screen. An app
+           that asks for zeus.window_size() (or never overrides the engine's
+           placeholder) gets the full main-screen work area instead of a
+           centered 640×480 box. Explicit sizes are honored as-is. */
+        if (mac_window_fills_screen()) {
+            [win setFrame:mac_screen_visible() display:YES];
+        } else {
+            [win center];
+        }
+        zeus_window_opened();
         [win makeFirstResponder:view];
-        [win center];
         [win makeKeyAndOrderFront:nil];
         [NSApp activateIgnoringOtherApps:YES];
         [NSApp run];
     }
+}
+
+/* ── screen-size plumbing ────────────────────────────────────────────
+   The engine's pre-window window_size() and the native default window both
+   come from the main screen's work area (points, like the whole engine). */
+static NSRect mac_screen_visible(void) {
+    NSRect vis = [[NSScreen mainScreen] visibleFrame];
+    if (vis.size.width < 1 || vis.size.height < 1) {
+        /* No main screen yet (pre-WindowServer / headless launch): keep a
+           sane desktop default instead of a zero-sized frame. */
+        vis = NSMakeRect(0, 0, (CGFloat)ZEUS_DEFAULT_WIN_W, (CGFloat)ZEUS_DEFAULT_WIN_H);
+    }
+    return vis;
+}
+
+static int64_t mac_initial_w(void) {
+    NSRect vis = mac_screen_visible();
+    return (int64_t)(vis.size.width + 0.5);
+}
+
+static int64_t mac_initial_h(void) {
+    NSRect vis = mac_screen_visible();
+    return (int64_t)(vis.size.height + 0.5);
+}
+
+/* True when the app asked for the screen-filling default: either the size
+   zeus.window_size() reported (the device screen) or the engine's built-in
+   placeholder that predates any host knowledge of the device. */
+static int mac_window_fills_screen(void) {
+    NSRect vis = mac_screen_visible();
+    int64_t want_w = zeus_window_width();
+    int64_t want_h = zeus_window_height();
+    if (vis.size.width < 1 || vis.size.height < 1) return 0;
+    if (want_w == ZEUS_DEFAULT_WIN_W && want_h == ZEUS_DEFAULT_WIN_H) return 1;
+    return (int64_t)(vis.size.width + 0.5) == want_w &&
+           (int64_t)(vis.size.height + 0.5) == want_h;
 }
 
 static void mac_pick_image(char *out, int cap, int64_t *w, int64_t *h) {
