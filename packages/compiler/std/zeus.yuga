@@ -2773,6 +2773,11 @@ fn App(title: string, width: int, height: int, build: fn()) {
     init()
     window(title, width, height)
     let top = raw_scroll()
+    // Paint the page background on the root scroller itself (theme-aware,
+    // like `Page`): when content rubber-bands past the top/bottom edge or
+    // ends short of the viewport, the revealed strip stays paper instead of
+    // showing the host's clear color (black on a dark window / wasm page).
+    prop_str(top, 15, paper)
     __ui_push(top.id)
     build()
     __ui_pop()

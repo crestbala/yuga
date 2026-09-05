@@ -124,7 +124,8 @@ struct UiNode {
     list_n: int,
     row_h: int,
     /// Scroll physics. Wheel / pan writes a velocity; `physics_step` coasts
-    /// and rubber-bands overscroll back into 0..max.
+    /// and stops exactly at the content bounds (0..max — never past them, so
+    /// no blank strip is ever revealed past the first/last content).
     vel_x: int,
     vel_y: int,
     a11y_label: string,
@@ -956,11 +957,6 @@ fn scrolls_x(id: int) -> int {
     return 0
 }
 
-/// How far a scroller may travel past 0 / max while rubber-banding.
-fn overscroll_px() -> int {
-    return 96
-}
-
 fn phys_axis_live(pos: int, vel: int, maxs: int) -> int {
     if vel != 0 {
         return 1
@@ -1000,25 +996,15 @@ fn physics_axis(pos: int, vel: int, maxs: int) -> Axis {
     let mut y = pos + vel
     let mut v = vel * 92 / 100
     let mut dirty = 0
+    // Hard clamp at the content bounds: momentum never overshoots, so the
+    // viewport can never show a blank strip past the first/last content.
     if y < 0 {
-        v = v + (0 - y) * 18 / 100
-        v = v * 85 / 100
-        if y > -2 {
-            if v * v < 4 {
-                y = 0
-                v = 0
-            }
-        }
+        y = 0
+        v = 0
         dirty = 1
     } else if y > maxs {
-        v = v + (maxs - y) * 18 / 100
-        v = v * 85 / 100
-        if y < maxs + 2 {
-            if v * v < 4 {
-                y = maxs
-                v = 0
-            }
-        }
+        y = maxs
+        v = 0
         dirty = 1
     } else if v * v < 4 {
         v = 0
@@ -1062,10 +1048,11 @@ fn physics_step() -> int {
     return dirty
 }
 
-/// Apply a pan delta with overscroll resistance. `momentum` 1 arms the
-/// coast (touch pans, precise trackpads); 0 is a discrete wheel click, which
-/// must stop exactly where it lands and hard-clamps at the edges (nothing
-/// rubber-bands it back). Returns 1 if `scroll_y` changed.
+/// Apply a pan delta. `momentum` 1 arms the coast (touch pans, precise
+/// trackpads); 0 is a discrete wheel click, which must stop exactly where it
+/// lands. Both clamp at the content bounds — a scroll ends at the first or
+/// last content, never past it (no blank strip). Returns 1 if `scroll_y`
+/// changed.
 fn apply_delta_y(id: int, dy: int, momentum: int) -> int {
     if id <= 0 {
         return 0
@@ -1074,42 +1061,20 @@ fn apply_delta_y(id: int, dy: int, momentum: int) -> int {
         return 0
     }
     let my = scroll_max(id)
-    if momentum == 0 {
-        let mut ny = nodes[id].scroll_y + dy
-        if ny < 0 {
-            ny = 0
-        }
-        if ny > my {
-            ny = my
-        }
-        nodes[id].vel_y = 0
-        if ny == nodes[id].scroll_y {
-            return 0
-        }
-        nodes[id].scroll_y = ny
-        if nodes[id].bind_sig > 0 {
-            store_sig(nodes[id].bind_sig, ny)
-        }
-        return 1
-    }
-    let slack = overscroll_px()
     let mut ny = nodes[id].scroll_y + dy
-    if ny < 0 {
-        if nodes[id].scroll_y <= 0 {
-            ny = nodes[id].scroll_y + dy / 3
-        }
-        if ny < -slack {
-            ny = -slack
-        }
-    } else if ny > my {
-        if nodes[id].scroll_y >= my {
-            ny = nodes[id].scroll_y + dy / 3
-        }
-        if ny > my + slack {
-            ny = my + slack
-        }
+    let mut v = dy
+    if momentum == 0 {
+        v = 0
     }
-    nodes[id].vel_y = dy
+    if ny < 0 {
+        ny = 0
+        v = 0
+    }
+    if ny > my {
+        ny = my
+        v = 0
+    }
+    nodes[id].vel_y = v
     if ny == nodes[id].scroll_y {
         return 0
     }
@@ -1128,39 +1093,20 @@ fn apply_delta_x(id: int, dx: int, momentum: int) -> int {
         return 0
     }
     let mx = scroll_max_x(id)
-    if momentum == 0 {
-        let mut nx = nodes[id].scroll_x + dx
-        if nx < 0 {
-            nx = 0
-        }
-        if nx > mx {
-            nx = mx
-        }
-        nodes[id].vel_x = 0
-        if nx == nodes[id].scroll_x {
-            return 0
-        }
-        nodes[id].scroll_x = nx
-        return 1
-    }
-    let slack = overscroll_px()
     let mut nx = nodes[id].scroll_x + dx
-    if nx < 0 {
-        if nodes[id].scroll_x <= 0 {
-            nx = nodes[id].scroll_x + dx / 3
-        }
-        if nx < -slack {
-            nx = -slack
-        }
-    } else if nx > mx {
-        if nodes[id].scroll_x >= mx {
-            nx = nodes[id].scroll_x + dx / 3
-        }
-        if nx > mx + slack {
-            nx = mx + slack
-        }
+    let mut v = dx
+    if momentum == 0 {
+        v = 0
     }
-    nodes[id].vel_x = dx
+    if nx < 0 {
+        nx = 0
+        v = 0
+    }
+    if nx > mx {
+        nx = mx
+        v = 0
+    }
+    nodes[id].vel_x = v
     if nx == nodes[id].scroll_x {
         return 0
     }
@@ -1175,37 +1121,19 @@ fn clamp_scroll(id: int) {
     if id >= nodes.len {
         return
     }
+    if nodes[id].scroll_x < 0 {
+        nodes[id].scroll_x = 0
+    }
+    if nodes[id].scroll_y < 0 {
+        nodes[id].scroll_y = 0
+    }
     let mx = scroll_max_x(id)
     let my = scroll_max(id)
-    let mut live = 0
-    if phys_axis_live(nodes[id].scroll_x, nodes[id].vel_x, mx) != 0 {
-        live = 1
+    if nodes[id].scroll_x > mx {
+        nodes[id].scroll_x = mx
     }
-    if phys_axis_live(nodes[id].scroll_y, nodes[id].vel_y, my) != 0 {
-        live = 1
-    }
-    let mut xmin = 0
-    let mut xmax = mx
-    let mut ymin = 0
-    let mut ymax = my
-    if live != 0 {
-        let slack = overscroll_px()
-        xmin = -slack
-        xmax = mx + slack
-        ymin = -slack
-        ymax = my + slack
-    }
-    if nodes[id].scroll_x < xmin {
-        nodes[id].scroll_x = xmin
-    }
-    if nodes[id].scroll_x > xmax {
-        nodes[id].scroll_x = xmax
-    }
-    if nodes[id].scroll_y < ymin {
-        nodes[id].scroll_y = ymin
-    }
-    if nodes[id].scroll_y > ymax {
-        nodes[id].scroll_y = ymax
+    if nodes[id].scroll_y > my {
+        nodes[id].scroll_y = my
     }
 }
 

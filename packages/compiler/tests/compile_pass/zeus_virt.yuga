@@ -97,23 +97,47 @@ fn main() {
     zeus.engine_layout(240, 240)
     expect(zeus.engine_find_text("row 0") != 0, "scroll_to top")
 
-    // Overscroll: fling past the end, then physics rubber-bands back.
+    // No overscroll past content: a fling beyond the end stops exactly at
+    // the last row (never past it, so no blank strip is ever revealed).
+    // The windowed list recalibrates its content height when it settles at
+    // the end, so measure max after that layout.
     let maxs = zeus.node_scroll_max(list)
     expect(maxs > 0, "list overflows")
     zeus.scroll_to(Node { id: list }, maxs)
     zeus.engine_layout(240, 240)
+    let max_now = zeus.node_scroll_max(list)
+    expect(zeus.node_scroll_y(list) == max_now, "scroll ends at last content")
     zeus.engine_scroll(20, 20, 0, 400)
     zeus.engine_layout(240, 240)
     let over = zeus.node_scroll_y(list)
-    expect(over > maxs, "overshoot past max")
+    expect(over == max_now, "no overshoot past max")
     let mut k = 0
-    while k < 120 {
+    while k < 60 {
         zeus.engine_layout(240, 240)
         k = k + 1
     }
     let back = zeus.node_scroll_y(list)
-    expect(back >= 0, "overscroll y >= 0")
-    expect(back <= maxs, "overscroll clamped to max")
+    expect(back == max_now, "stays at last content")
+
+    // Same at the top: flinging up past the first row stops at 0.
+    zeus.scroll_to(Node { id: list }, 0)
+    zeus.engine_layout(240, 240)
+    zeus.engine_scroll(20, 20, 0, -4000)
+    zeus.engine_layout(240, 240)
+    expect(zeus.node_scroll_y(list) == 0, "no overshoot past top")
+
+    // Momentum still coasts inside the content range (one physics step per
+    // layout frame).
+    zeus.engine_scroll(20, 20, 0, 400)
+    expect(zeus.node_scroll_y(list) == 400, "fling lands")
+    k = 0
+    while k < 60 {
+        zeus.engine_layout(240, 240)
+        k = k + 1
+    }
+    let mid = zeus.node_scroll_y(list)
+    expect(mid > 400, "momentum coasts past the fling")
+    expect(mid <= max_now, "coast stays in range")
 
     fmt.println("virt ok", n0, n1, n3, back)
 }
