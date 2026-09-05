@@ -1,0 +1,53 @@
+// Phase 6 exit (TLS side): a real HTTPS GET over `net.tls_connect` —
+// SecureTransport on macOS, certificate verified against the hostname.
+//
+// "Skipped when offline": a failed connect (no network, or a host without
+// TLS support) prints a note and exits 0; once connected, any broken TLS /
+// bad response fails the test. The suite's other live tests
+// (`http_h1_live` etc.) need a network too.
+
+import "std:fmt"
+import "std:http"
+import "std:net"
+import "std:sys"
+
+fn must(ok: bool) {
+    if !ok {
+        sys.exit(1)
+    }
+}
+
+fn main() {
+    // Some networks' DPI boxes intermittently mangle the first TLS handshake
+    // to a host; a couple of retries keep the test asserting on those links.
+    let mut fd = -1
+    for k in 0..3 {
+        if fd < 0 {
+            fd = net.tls_connect("example.com", 443)
+        }
+    }
+    if fd < 0 {
+        fmt.println("https offline: skipped")
+        return
+    }
+    let req = "GET / HTTP/1.1\r\nHost: example.com\r\nUser-Agent: yuga-tls\r\nConnection: close\r\n\r\n"
+    let n = net.tcp_write(fd, req)
+    must(n >= 0)
+    let mut acc = ""
+    let mut more = 1
+    for k in 0..64 {
+        if more == 1 {
+            let chunk = net.tcp_read(fd, 4096)
+            if chunk.len == 0 {
+                more = 0
+            }
+            if chunk.len != 0 {
+                acc = http.concat_str(acc, chunk)
+            }
+        }
+    }
+    net.tcp_close(fd)
+    must(acc.len > 0)
+    must(http.contains(acc, "200 OK") == 1)
+    fmt.println("https ok (", acc.len, " bytes)")
+}

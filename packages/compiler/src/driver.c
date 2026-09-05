@@ -835,7 +835,8 @@ int main(int argc, char **argv) {
                  "-x c -std=gnu99 \"%s\" \"%s/zeus_plat.c\" \"%s/zeus_key.c\"%s "
                  "-x objective-c -fno-objc-arc \"%s/ios/ios.m\" "
                  "-framework UIKit -framework Foundation -framework CoreGraphics "
-                 "-framework CoreText -framework QuartzCore -o \"%s\"",
+                 "-framework CoreText -framework QuartzCore "
+                 "-framework Security -framework CoreFoundation -o \"%s\"",
                  sdk, arch, YUGA_RUNTIME_DIR, cpath, YUGA_RUNTIME_DIR, YUGA_RUNTIME_DIR,
                  http_ios, YUGA_ZEUS_DIR, exe);
         t0 = now_sec();
@@ -954,11 +955,12 @@ int main(int argc, char **argv) {
             }
             snprintf(cmd, sizeof cmd,
                      "cc %s %s -o \"%s\" -I\"%s\" -x c \"%s\" -x none \"%s\" \"%s\" \"%s\"%s "
-                     "-framework Cocoa -lm",
+                     "-framework Cocoa -framework Security -framework CoreFoundation -lm",
                      copt, ld, binpath, YUGA_RUNTIME_DIR, cpath, plat_o, key_o, mac_o, http_link);
         } else {
             snprintf(cmd, sizeof cmd,
-                     "cc %s -o \"%s\" -I\"%s\" -x c \"%s\" -x none \"%s\" \"%s\"%s -lm",
+                     "cc %s -o \"%s\" -I\"%s\" -x c \"%s\" -x none \"%s\" \"%s\"%s "
+                     "-framework Security -framework CoreFoundation -lm",
                      copt, binpath, YUGA_RUNTIME_DIR, cpath, plat_o, key_o, http_link);
         }
 #else
@@ -981,13 +983,27 @@ int main(int argc, char **argv) {
                  copt, ld, binpath, YUGA_RUNTIME_DIR, cpath, YUGA_RUNTIME_DIR);
 #endif
     } else if (uses_http) {
+#if defined(__APPLE__)
+        snprintf(cmd, sizeof cmd,
+                 "cc %s %s -o \"%s\" -I\"%s\" -x c \"%s\" \"%s/net.c\" "
+                 "-framework Security -framework CoreFoundation",
+                 copt, ld, binpath, YUGA_RUNTIME_DIR, cpath, YUGA_RUNTIME_DIR);
+#else
         snprintf(cmd, sizeof cmd,
                  "cc %s %s -o \"%s\" -I\"%s\" -x c \"%s\" \"%s/net.c\"",
                  copt, ld, binpath, YUGA_RUNTIME_DIR, cpath, YUGA_RUNTIME_DIR);
+#endif
     } else if (uses_net) {
+#if defined(__APPLE__)
+        snprintf(cmd, sizeof cmd,
+                 "cc %s %s -o \"%s\" -I\"%s\" -x c \"%s\" \"%s/net.c\" "
+                 "-framework Security -framework CoreFoundation",
+                 copt, ld, binpath, YUGA_RUNTIME_DIR, cpath, YUGA_RUNTIME_DIR);
+#else
         snprintf(cmd, sizeof cmd,
                  "cc %s %s -o \"%s\" -I\"%s\" -x c \"%s\" \"%s/net.c\"",
                  copt, ld, binpath, YUGA_RUNTIME_DIR, cpath, YUGA_RUNTIME_DIR);
+#endif
     } else {
         snprintf(cmd, sizeof cmd, "cc %s %s -x c \"%s\" -o \"%s\"", copt, ld, cpath, binpath);
     }

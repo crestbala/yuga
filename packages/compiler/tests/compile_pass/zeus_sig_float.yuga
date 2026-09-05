@@ -1,0 +1,58 @@
+// Phase 6 exit (float side): `Signal<float>` round-trips through the byte-
+// typed cell store, a float timestamp scalar holds clock milliseconds plus a
+// fraction, and a float-driven styled prop re-runs when its float signal is
+// set (the "float-driven animation prop" proof).
+
+import "std:async"
+import "std:fmt"
+import "std:sys"
+import "std:zeus"
+
+fn fail() {
+    sys.exit(1)
+}
+
+fn expect(got: int, want: int) {
+    if got < want {
+        fail()
+    }
+    if want < got {
+        fail()
+    }
+}
+
+fn main() {
+    // Float cell round-trip: set / get / read-modify-write, exact halves.
+    let f = zeus.signal(0.5)
+    expect((f.get() as int), 0)
+    f.set(1.25)
+    f.set(f.get() + 0.75)
+    expect((f.get() as int), 2)
+    if f.get() != 2.0 {
+        fail()
+    }
+
+    // Timestamp scalar: clock milliseconds stored as float seconds, with a
+    // fractional tick that survives the round trip (`as int` truncates).
+    let t0 = async.now_ms()
+    let ts = zeus.signal(t0 as float)
+    ts.set(ts.get() + 0.5)
+    expect((ts.get() as int), t0)
+    ts.set(ts.get() + 1000.0)
+    expect((ts.get() as int), t0 + 1000)
+
+    // Float-driven prop: the styled closure reads `anim` (float) and writes
+    // the pixel-rounded value into `seen`; every `anim.set` re-runs it.
+    let anim = zeus.signal(0.0)
+    let seen = zeus.signal(-1)
+    zeus.Box(background = fn() -> string {
+        seen.set((anim.get() * 4.0) as int)
+        "#010101"
+    })
+    expect(seen.get(), 0)
+    anim.set(3.25)
+    expect(seen.get(), 13)
+    anim.set(anim.get() + 0.5)
+    expect(seen.get(), 15)
+    fmt.println("float signal store + prop ok")
+}
