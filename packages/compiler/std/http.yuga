@@ -65,6 +65,10 @@ struct MwEntry {
     hid: int,
 }
 
+/// A client endpoint. `addr` is `host:port` for plain TCP (h1 gRPC-Web, h2c,
+/// SSE, ws) or `https://host[:port]` for TLS — `call`/`rt_call` then use
+/// `net.tls_connect`, which verifies the server certificate. The empty
+/// string is the wasm same-origin fetch target.
 struct Client {
     addr: string,
 }
@@ -73,6 +77,8 @@ struct Client {
 struct HostPort {
     host: string,
     port: int,
+    /// 1 when the address had an `https://` scheme (TLS transport).
+    tls: int,
 }
 
 /// Percent-decode / path-normalize result. Read `val` only when `ok == 1`.
@@ -634,42 +640,67 @@ fn parse_port(s: string) -> int {
     return n
 }
 
-/// Split `host:port`. Last `:` is the port. `port == 0` on failure.
+/// Split `[scheme://]host[:port]`. `tls == 1` when the address has an
+/// `https://` scheme — the caller must use a TLS transport. A scheme with no
+/// port defaults to 443 (`https`) or 80 (`http`); a bare `host:port` keeps
+/// its explicit port. `port == 0` means parse failed.
 fn parse_addr(addr: string) -> HostPort {
     if addr.len < 3 {
-        return HostPort { host: "", port: 0 }
+        return HostPort { host: "", port: 0, tls: 0 }
+    }
+    let mut a = addr
+    let mut tls = 0
+    let mut scheme = 0
+    if starts_at(addr, 0, "https://") == 1 {
+        tls = 1
+        scheme = 1
+        a = slice_str(addr, 8, addr.len)
+    } else {
+        if starts_at(addr, 0, "http://") == 1 {
+            scheme = 1
+            a = slice_str(addr, 7, addr.len)
+        }
+    }
+    if a.len == 0 {
+        return HostPort { host: "", port: 0, tls: tls }
     }
     let mut colon = 0
     let mut found = 0
-    for i in 0..addr.len {
-        if addr[i] == 58 {
+    for i in 0..a.len {
+        if a[i] == 58 {
             colon = i
             found = 1
         }
     }
     if found == 0 {
-        return HostPort { host: "", port: 0 }
+        if scheme == 1 {
+            if tls == 1 {
+                return HostPort { host: a, port: 443, tls: 1 }
+            }
+            return HostPort { host: a, port: 80, tls: 0 }
+        }
+        return HostPort { host: "", port: 0, tls: 0 }
     }
     if colon == 0 {
-        return HostPort { host: "", port: 0 }
+        return HostPort { host: "", port: 0, tls: 0 }
     }
-    if colon + 1 >= addr.len {
-        return HostPort { host: "", port: 0 }
+    if colon + 1 >= a.len {
+        return HostPort { host: "", port: 0, tls: 0 }
     }
     let mut hb = []int {}
     for i in 0..colon {
-        hb.push(addr[i])
+        hb.push(a[i])
     }
     let start = colon + 1
     let mut pb = []int {}
-    for i in start..addr.len {
-        pb.push(addr[i])
+    for i in start..a.len {
+        pb.push(a[i])
     }
     let port = parse_port(string_of(pb))
     if port <= 0 {
-        return HostPort { host: "", port: 0 }
+        return HostPort { host: "", port: 0, tls: 0 }
     }
-    return HostPort { host: string_of(hb), port: port }
+    return HostPort { host: string_of(hb), port: port, tls: tls }
 }
 
 fn concat_str(a: string, b: string) -> string {
@@ -2318,8 +2349,14 @@ fn rt_call(addr: string, name: string, body: string) -> string {
     }
     let framed = frame_str(body)
     let hp = parse_addr(addr)
-    let fd = net.tcp_connect(hp.host, hp.port)
+    let mut fd = -1
+    if hp.tls == 1 {
+        fd = net.tls_connect(hp.host, hp.port)
+    } else {
+        fd = net.tcp_connect(hp.host, hp.port)
+    }
     if fd < 0 {
+        // Native: unreachable. Wasm: browser TLS via the same-origin fetch.
         return unframe_str(net.fetch_rpc(path, framed))
     }
     let req = client_post(hp.host, hp.port, path, framed)
@@ -2443,6 +2480,10 @@ fn h2_call(addr: string, name: string, body: string) -> string {
     }
     let framed = frame_str(body)
     let hp = parse_addr(addr)
+    if hp.tls == 1 {
+        // h2 here is h2c (cleartext); https:// must go through `rt_call`.
+        return ""
+    }
     let fd = net.tcp_connect(hp.host, hp.port)
     if fd < 0 {
         return ""
@@ -2713,6 +2754,12 @@ fn call_async(c: Client, name: string, body: string, cb: fn(string)) {
     }
     let framed = frame_str(body)
     let hp = parse_addr(c.addr)
+    if hp.tls == 1 {
+        // Async transport is plain TCP today; https:// needs the blocking
+        // TLS client (`call`). Deliver "" like any transport failure.
+        cb("")
+        return
+    }
     if astep_on == 0 {
         astep_on = 1
         async.add_step(|| { io_pump() })
@@ -2832,6 +2879,10 @@ let mut sse_on: int = 0
 /// EOF/error. Callbacks run on the UI thread inside a frame's async tick.
 fn sse_open(c: Client, path: string, on_event: fn(string), on_done: fn()) {
     let hp = parse_addr(c.addr)
+    if hp.tls == 1 {
+        on_done()
+        return
+    }
     if hp.port == 0 {
         on_done()
         return
@@ -3048,6 +3099,10 @@ let mut ws_on: int = 0
 /// WebSocket via the JS bridge — `path` is same-origin (`"/ws"`).
 fn ws_open(c: Client, path: string, on_text: fn(string), on_done: fn()) {
     let hp = parse_addr(c.addr)
+    if hp.tls == 1 {
+        on_done()
+        return
+    }
     if hp.port == 0 {
         // wasm/browser style: the JS loader owns the WebSocket; wasm drains
         // its message queue per frame (stage 5). Native cannot reach "".

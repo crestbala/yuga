@@ -7,6 +7,13 @@
 /// Connect to `host`:`port`. Returns a fd, or `-1`.
 fn tcp_connect(host: string, port: int) -> int {}
 
+/// Connect to `host`:`port` over TLS and verify the server certificate
+/// against `host` (macOS SecureTransport). Returns a TLS fd that `tcp_write`
+/// / `tcp_read` / `tcp_close` handle like any socket, or `-1` when TLS is
+/// unavailable (wasm keeps browser TLS; other hosts have none) or the
+/// handshake / certificate check fails.
+fn tls_connect(host: string, port: int) -> int {}
+
 /// Non-blocking connect for the async transport: returns a non-blocking fd
 /// that is connected or connecting in the background, or `-1` on immediate
 /// failure. Poll it writable, then `tcp_so_error` says whether it connected.

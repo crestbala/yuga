@@ -17,9 +17,9 @@ definition of done.
 | Layer | Today | Gap for real apps |
 |---|---|---|
 | UI core | Retained tree, per-prop thunks, arena recycling, windowed `For`/`VirtualList`/`VirtualTable`, scroll momentum + overscroll, headless layout/paint tests, DRAW goldens | nested scroll chaining, IME/multiline, images |
-| Reactivity | `Signal<int>` scalars, windowed `For`/`VirtualList`, reactive props (`width`, `position`, `grow`, `show`, …) | floats/dates in signals |
-| Data plane | `#[proto]` codecs + unary gRPC-Web / h2c client **and** server, `Result<T>`, async `call_async` client, SSE + WebSocket streams (Phase 1b), bearer-token auth (`set_token` + `app.before`) | no bidirectional streaming, no TLS |
-| Networking | `std/net`: blocking POSIX sockets + Phase 1 async transport (timers, non-blocking connect/poll/send, `http.call_async`/`sse_open`/`ws_open` steppers); wasm: `fetch_rpc` + async fetch slots | TLS, streaming bodies on wasm |
+| Reactivity | `Signal<int>`/`Signal<float>` scalars (byte-typed cells), windowed `For`/`VirtualList`, reactive props (`width`, `position`, `grow`, `show`, …) | date/time helpers on float timestamps |
+| Data plane | `#[proto]` codecs + unary gRPC-Web / h2c client **and** server, `Result<T>`, async `call_async` client, SSE + WebSocket streams (Phase 1b), bearer-token auth (`set_token` + `app.before`) | no bidirectional streaming; no async TLS |
+| Networking | `std/net`: blocking POSIX sockets + TLS client (`net.tls_connect`, SecureTransport on macOS) + Phase 1 async transport (timers, non-blocking connect/poll/send, `http.call_async`/`sse_open`/`ws_open` steppers); wasm: `fetch_rpc` + async fetch slots | streaming bodies on wasm, async TLS |
 | Storage | `sys.read_file` / `write_file` (whole-file), env | KV/table store, structured persistence, fs tree, app-data paths |
 | Media | inline SVG + raster `Image` (PNG / JPEG / WebP / GIF, host decode) | gradients |
 | Text | one weight per host; kind 10 multiline + caret/selection; mac IME; wasm paste | rich text spans, emoji metrics |
@@ -76,11 +76,11 @@ demos. Phase column points into §6.
 | 2 | ~~Single-line text, no IME on canvas hosts~~ **Phase 3** | chat compose exists; wasm IME is paste+composition, not a hidden field | — | 3 |
 | 3 | ~~`For` rebuilds the whole list per push (recycling yes, O(n) still)~~ **Phase 5** | `VirtualList` / windowed `For` / `VirtualTable`; `push_item` / `insert_item` | — | 5 |
 | 4 | Nested scroll chaining (momentum + overscroll **Phase 5**) | nested feed/page scrollers | medium | 5b |
-| 5 | `Signal<int>` only (no float/date/bool scalar store) | smooth animation, timestamps, charts | small-med | 6b |
+| 5 | ~~`Signal<int>` only (no float/date/bool scalar store)~~ **Phase 6** | float signals + float timestamp scalars (the byte-typed cell store was already generic; exit test proves it) | — | 6 |
 | 6 | Zeus monolith, no dead-code elimination | web bundle size, componentization | medium | 7 |
 | 7 | a11y = labels only; no focus ring, thin keyboard model | enterprise + compliance | ongoing | 7b |
 | 8 | Fixed-pixel tuning; no density/font scaling | devices, accessibility | small | 7c |
-| 9 | No TLS | anything beyond localhost | med | 6 |
+| 9 | ~~No TLS~~ **Phase 6** | blocking `net.tls_connect` (SecureTransport, macOS) + `https://` `Client` addresses; wasm keeps browser TLS via `fetch` | — | 6 |
 | 10 | ~~No KV/persistence beyond whole-file read/write~~ **Phase 4** | `std:kv` file-backed; wasm is memory-only | — | 4 |
 | 11 | Gallery wasm first paint ~3 min (counter wasm is instant) | catalog in the browser | med | follow-up |
 
@@ -114,9 +114,11 @@ understands.
   (`net.c`), wasm async-fetch slots (JS XHR → per-frame drain). Every host
   frame calls `engine_layout`, which ticks the async world first (steppers,
   spawns, due timers) and lays out over whatever signals changed. Hosts
-  sleep while idle and wake at the next deadline (`engine_next_ms`). A C
-  task pool stays an option for truly blocking syscalls (DNS, TLS) when
-  those appear.
+  sleep while idle and wake at the next deadline (`engine_next_ms`). Phase 6
+  adds a **blocking** TLS client (`net.tls_connect`, SecureTransport) for
+  console/headless/`http.call`; the UI's per-frame async world (`call_async`)
+  still rejects `https://` addresses — a task pool or async TLS stays the
+  option for truly non-blocking encrypted RPC.
 - Yuga side: `spawn(fn)` + completion callbacks run everything; the
   `async fn` / `await` sugar (Phase 1c) re-enters the same pump — sequential
   code reads like JS, still on the one thread.
@@ -202,9 +204,19 @@ thread.
   Demo: `examples/zeus/counter` (wasm / iOS / macOS / Android share `screen.yuga`).
 
 ### Phase 6 — TLS + float/date signals
-- [ ] TLS on `net` (SecureTransport/OpenSSL; wasm keeps browser TLS).
-- [ ] `Signal<float>` / timestamp scalar store (sigs backend extends beyond `[]int`).
-- **Exit:** `https` client test (skipped when offline), float-driven animation prop test.
+- [x] TLS on `net` (SecureTransport on macOS; wasm keeps browser TLS):
+  blocking `net.tls_connect` (DNS + TCP + cert-verified handshake) whose
+  handle drives `tcp_read/write/close`, so `http.call(http.client("https://…"))`
+  is a plain-text-free `rt_call`.
+- [x] `Signal<float>` / timestamp scalar store — the byte-typed sig cell
+  store already covers any Copy type (int fast-path only), so floats and
+  float timestamps need no backend change; the exit test proves it.
+- **Exit:** `https` client test (skipped when offline), float-driven animation
+  prop test. **Green** (`http_https_live.yuga`: TLS GET against
+  `example.com`, retries DPI-mangled first handshakes, skips when offline;
+  `zeus_sig_float.yuga`: float round-trips, a float timestamp scalar over
+  `async.now_ms`, and a float-driven styled prop; `http_client.yuga` pins
+  `https://` address parsing).
 
 ### Phase 7 — Design system & a11y growth discipline
 - [ ] Zeus namespace pass or per-widget opt-in (DCE) before the monolith doubles.

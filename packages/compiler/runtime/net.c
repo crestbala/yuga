@@ -4,6 +4,12 @@
  * transport (`tcp_nb_connect` / `tcp_poll` / `tcp_send` / `tcp_so_error`),
  * and — wasm only — async fetch slots (`fetch_issue` / `fetch_ready` /
  * `fetch_take`) whose XHR completes in JS and lands per frame.
+ *
+ * macOS also gets a blocking TLS client (`yuga_net_tls_connect`,
+ * SecureTransport): the returned handle drives `tcp_write` / `tcp_read` /
+ * `tcp_close` exactly like a plain socket, so `std/http.yuga` runs an HTTPS
+ * request over the same read path as HTTP. Wasm keeps browser TLS (nothing
+ * to add); other hosts return -1.
  */
 #include "net_rt.h"
 #include <stdint.h>
@@ -180,6 +186,13 @@ int64_t yuga_net_tcp_connect(yuga_str host, int64_t port) {
     return -1;
 }
 
+/* Browser TLS: the wasm fetch/ws bridges never speak TLS themselves. */
+int64_t yuga_net_tls_connect(yuga_str host, int64_t port) {
+    (void)host;
+    (void)port;
+    return -1;
+}
+
 int64_t yuga_net_tcp_nb_connect(yuga_str host, int64_t port) {
     (void)host;
     (void)port;
@@ -265,6 +278,36 @@ yuga_str yuga_net_fetch_rpc(yuga_str path, yuga_str body) {
 #include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <errno.h>
+
+#if defined(__APPLE__)
+#include <netdb.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include <Security/SecureTransport.h>
+
+/* Blocking TLS client (SecureTransport). Each conn is a slot in `g_tls`; its
+   handle is TLS_BASE + slot, far above any raw fd, so `tcp_write` / `tcp_read`
+   / `tcp_close` can dispatch on it and the Yuga HTTP client treats a TLS conn
+   exactly like a plain socket. */
+#define TLS_SLOTS 8
+#define TLS_BASE 0x40000000
+
+typedef struct {
+    int used;
+    int fd;
+    SSLContextRef ctx;
+} TlsConn;
+
+static TlsConn g_tls[TLS_SLOTS];
+static int tls_slot_of(int64_t fd);
+#endif
+
+#if defined(__APPLE__) && defined(__clang__)
+/* SecureTransport is deprecated in favor of Network.framework, but it is the
+   only synchronous TLS API on macOS and matches this blocking-socket design. */
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 int64_t yuga_net_tcp_connect(yuga_str host, int64_t port) {
     char name[256];
@@ -304,6 +347,24 @@ int64_t yuga_net_tcp_write(int64_t fd, yuga_str data) {
     size_t len;
     size_t off;
     if (fd < 0) return -1;
+#if defined(__APPLE__)
+    {
+        int slot = tls_slot_of(fd);
+        if (slot >= 0) {
+            len = data.len > 0 ? (size_t)data.len : 0;
+            if (len == 0) return 0;
+            if (!data.ptr) return -1;
+            off = 0;
+            while (off < len) {
+                size_t n = 0;
+                OSStatus st = SSLWrite(g_tls[slot].ctx, data.ptr + off, len - off, &n);
+                if (st != 0 || n == 0) return -1;
+                off += n;
+            }
+            return (int64_t)off;
+        }
+    }
+#endif
     len = data.len > 0 ? (size_t)data.len : 0;
     if (len == 0) return 0;
     if (!data.ptr) return -1;
@@ -323,22 +384,57 @@ int64_t yuga_net_tcp_write(int64_t fd, yuga_str data) {
 
 yuga_str yuga_net_tcp_read(int64_t fd, int64_t max) {
     char *p;
-    ssize_t n;
     if (fd < 0 || max <= 0) return (yuga_str){ .ptr = "", .len = 0 };
     if (max > 65536) max = 65536;
+#if defined(__APPLE__)
+    {
+        int slot = tls_slot_of(fd);
+        if (slot >= 0) {
+            size_t got = 0;
+            OSStatus st;
+            p = (char *)malloc((size_t)max + 1);
+            if (!p) return (yuga_str){ .ptr = "", .len = 0 };
+            st = SSLRead(g_tls[slot].ctx, p, (size_t)max, &got);
+            (void)st; /* any error with no bytes is EOF, like a raw read of 0 */
+            if (got > 0) {
+                p[got] = 0;
+                return (yuga_str){ .ptr = p, .len = (int64_t)got };
+            }
+            free(p);
+            return (yuga_str){ .ptr = "", .len = 0 };
+        }
+    }
+#endif
     p = (char *)malloc((size_t)max + 1);
     if (!p) return (yuga_str){ .ptr = "", .len = 0 };
-    n = read((int)fd, p, (size_t)max);
-    if (n <= 0) {
-        free(p);
-        return (yuga_str){ .ptr = "", .len = 0 };
+    {
+        ssize_t n = read((int)fd, p, (size_t)max);
+        if (n <= 0) {
+            free(p);
+            return (yuga_str){ .ptr = "", .len = 0 };
+        }
+        p[n] = 0;
+        return (yuga_str){ .ptr = p, .len = n };
     }
-    p[n] = 0;
-    return (yuga_str){ .ptr = p, .len = n };
 }
 
 void yuga_net_tcp_close(int64_t fd) {
-    if (fd >= 0) close((int)fd);
+    if (fd < 0) return;
+#if defined(__APPLE__)
+    {
+        int slot = tls_slot_of(fd);
+        if (slot >= 0) {
+            SSLContextRef ctx = g_tls[slot].ctx;
+            int rfd = g_tls[slot].fd;
+            (void)SSLClose(ctx); /* best-effort close_notify */
+            g_tls[slot].used = 0;
+            CFRelease(ctx);
+            if (rfd >= 0) close(rfd);
+            return;
+        }
+    }
+#endif
+    close((int)fd);
 }
 
 int64_t yuga_net_tcp_listen(int64_t port) {
@@ -407,6 +503,178 @@ yuga_str yuga_net_tcp_peek(int64_t fd, int64_t max) {
     p[n] = 0;
     return (yuga_str){ .ptr = p, .len = n };
 }
+
+#if defined(__APPLE__)
+
+/* --- Blocking TLS client (SecureTransport) --- */
+
+/* IO callbacks: SecureTransport drives the raw socket itself. The fd rides
+   in the connection ref. EAGAIN maps to errSSLWouldBlock so a handshake on a
+   non-blocking socket could be polled, but sockets here are blocking. */
+static OSStatus tls_io_read(SSLConnectionRef conn, void *buf, size_t *len) {
+    int fd = (int)(intptr_t)conn;
+    ssize_t n;
+    if (!buf || !len || *len == 0) return errSSLIllegalParam;
+    for (;;) {
+        n = recv(fd, buf, *len, 0);
+        if (n > 0) {
+            *len = (size_t)n;
+            return noErr;
+        }
+        if (n == 0) {
+            /* Clean TCP EOF: report it as a graceful TLS close. */
+            *len = 0;
+            return errSSLClosedGraceful;
+        }
+        if (errno == EINTR) continue;
+        *len = 0;
+        if (errno == EAGAIN || errno == EWOULDBLOCK) return errSSLWouldBlock;
+        if (errno == ECONNRESET || errno == EPIPE) return errSSLClosedAbort;
+        return errSSLInternal;
+    }
+}
+
+static OSStatus tls_io_write(SSLConnectionRef conn, const void *buf, size_t *len) {
+    int fd = (int)(intptr_t)conn;
+    ssize_t n;
+    if (!buf || !len || *len == 0) return errSSLIllegalParam;
+    for (;;) {
+#if defined(MSG_NOSIGNAL)
+        n = send(fd, buf, *len, MSG_NOSIGNAL);
+#else
+        n = send(fd, buf, *len, 0);
+#endif
+        if (n >= 0) {
+            *len = (size_t)n;
+            return noErr;
+        }
+        if (errno == EINTR) continue;
+        *len = 0;
+        if (errno == EAGAIN || errno == EWOULDBLOCK) return errSSLWouldBlock;
+        if (errno == ECONNRESET || errno == EPIPE) return errSSLClosedAbort;
+        return errSSLInternal;
+    }
+}
+
+static int tls_slot_of(int64_t fd) {
+    int64_t s = fd - TLS_BASE;
+    if (fd < TLS_BASE || s < 0 || s >= TLS_SLOTS) return -1;
+    return g_tls[s].used ? (int)s : -1;
+}
+
+/* Resolve `name` (DNS or an address literal) and open one blocking TCP
+   connection. Tries every address getaddrinfo returns. */
+static int tls_connect_tcp(const char *name, uint16_t port) {
+    struct addrinfo hints, *res = NULL, *ai;
+    char sp[8];
+    int fd = -1;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    snprintf(sp, sizeof sp, "%u", (unsigned)port);
+    if (getaddrinfo(name, sp, &hints, &res) != 0) return -1;
+    for (ai = res; ai && fd < 0; ai = ai->ai_next) {
+        int f = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (f < 0) continue;
+        {
+            int yes = 1;
+#ifdef SO_NOSIGPIPE
+            (void)setsockopt(f, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof yes);
+#else
+            (void)yes;
+#endif
+            /* Bound a silent peer (never speaks TLS) instead of blocking the
+               caller forever. Well-behaved servers answer far sooner. */
+            {
+                struct timeval tv;
+                tv.tv_sec = 10;
+                tv.tv_usec = 0;
+                (void)setsockopt(f, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+                (void)setsockopt(f, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
+            }
+        }
+        if (connect(f, ai->ai_addr, ai->ai_addrlen) == 0)
+            fd = f;
+        else
+            close(f);
+    }
+    freeaddrinfo(res);
+    return fd;
+}
+
+int64_t yuga_net_tls_connect(yuga_str host, int64_t port) {
+    char name[256];
+    int fd = -1, i;
+    SSLContextRef ctx = NULL;
+    OSStatus st = noErr;
+    if (port <= 0 || port > 65535 || host.len <= 0 || host.len >= 256 || !host.ptr)
+        return -1;
+    memcpy(name, host.ptr, (size_t)host.len);
+    name[host.len] = '\0';
+    for (i = 0; i < TLS_SLOTS; i++)
+        if (!g_tls[i].used) break;
+    if (i >= TLS_SLOTS) return -1;
+    fd = tls_connect_tcp(name, (uint16_t)port);
+    if (fd < 0) return -1;
+    ctx = SSLCreateContext(NULL, kSSLClientSide, kSSLStreamType);
+    if (!ctx) {
+        close(fd);
+        return -1;
+    }
+    SSLSetIOFuncs(ctx, tls_io_read, tls_io_write);
+    SSLSetConnection(ctx, (SSLConnectionRef)(intptr_t)fd);
+    /* SNI, and the server identity check verifies this name against the
+       certificate. SecureTransport validates chain + name by default. */
+    SSLSetPeerDomainName(ctx, name, strlen(name));
+    SSLSetProtocolVersionMin(ctx, kTLSProtocol12);
+    g_tls[i].used = 1;
+    g_tls[i].fd = fd;
+    g_tls[i].ctx = ctx;
+    {
+        int idle = 0;
+        for (;;) {
+            st = SSLHandshake(ctx);
+            if (st != errSSLWouldBlock) break;
+            {
+                struct pollfd p;
+                int rc;
+                p.fd = fd;
+                p.events = POLLIN | POLLOUT;
+                p.revents = 0;
+                rc = poll(&p, 1, 50);
+                if (rc <= 0) {
+                    /* The peer went idle after a would-block: give up before
+                       the read timeout retries pile up. */
+                    idle++;
+                    if (idle >= 3) {
+                        st = errSSLInternal;
+                        break;
+                    }
+                } else {
+                    idle = 0;
+                }
+            }
+        }
+    }
+    if (st != noErr) {
+        g_tls[i].used = 0;
+        CFRelease(ctx);
+        close(fd);
+        return -1;
+    }
+    return TLS_BASE + (int64_t)i;
+}
+
+#else
+
+/* No SecureTransport/OpenSSL on this host: TLS is unavailable. */
+int64_t yuga_net_tls_connect(yuga_str host, int64_t port) {
+    (void)host;
+    (void)port;
+    return -1;
+}
+
+#endif
 
 /* --- Async transport (UI never blocks): non-blocking connect + poll. --- */
 
@@ -556,5 +824,9 @@ yuga_str yuga_net_fetch_rpc(yuga_str path, yuga_str body) {
     (void)body;
     return (yuga_str){ .ptr = "", .len = 0 };
 }
+
+#if defined(__APPLE__) && defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 #endif
