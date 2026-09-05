@@ -32,7 +32,11 @@ start the emulator.
 
 Optional: copy the `export` lines from `.sdk-env` into `~/.zshrc`.
 
-## 2. Start the emulator
+## 2. Start the emulator (optional — `run.sh` auto-boots it)
+
+`run.sh` detects when no device is connected and boots the shared `yuga` AVD
+itself (SwiftShader, same flags as `emu.sh`). Only run this manually if you
+want the emulator in its own terminal or need custom flags.
 
 Quit any emulator window that is already open (the host-GPU path logs
 `Failed to make display surface context current: 12301` and stays blank).

@@ -1,6 +1,6 @@
 # Yuga
 
-Yuga is a memory-safe systems language: Odin-like syntax, Rust-like ownership.
+Yuga is a memory-safe system language: Odin-like syntax, Rust-like ownership.
 The compiler (`yugac`) is C11. It typechecks a program, lowers it to IR, emits
 C99, and invokes `cc`. C is the platform binding target, not the language's
 semantics.
@@ -20,12 +20,12 @@ make
 ```
 
 Language: [docs/yuga.md](docs/yuga.md). C vs Yuga: [docs/boundary.md](docs/boundary.md).
-Zeus backends and spec: [packages/zeus/docs/spec.md](packages/zeus/docs/spec.md).
+Zeus backends and specifications: [packages/zeus/docs/spec.md](packages/zeus/docs/spec.md).
 Browsable docs: `./run.sh www` — Zeus UI at http://127.0.0.1:5175, `Docs.Page` on `:8082`.
 
 ## Requirements
 
-New to the repo? macOS: `./install.sh` (core) or `./install.sh android` (adds the
+New to the repository? macOS: `./install.sh` (core) or `./install.sh android` (adds the
 Android stack) installs everything below that Homebrew can. See [Setup](#setup).
 
 - A C11 compiler (`cc`) and `make` (Apple Command Line Tools)
@@ -229,13 +229,14 @@ Android, from the repo root, on macOS with Homebrew (either installs the
 SDK stack; the counter one is canonical and `./install.sh android` wraps it):
 
 ```
-./install.sh android                                  # once; several GB, SDK licenses
-./examples/zeus/counter/android/emu.sh               # leave this terminal open
-./run.sh counter android                             # second terminal
-./run.sh gallery android                             # or the gallery on the emulator
+./install.sh android                # once; several GB, SDK licenses
+./run.sh counter android            # boots the emulator if none is connected
+./run.sh gallery android            # or the gallery on the emulator
 ```
 
-Step-by-step: [examples/zeus/counter/android/guide.md](examples/zeus/counter/android/guide.md)
+`run.sh` auto-boots the shared `yuga` AVD when no device is connected (stop
+it later with `adb emu kill`); `emu.sh` runs it in its own terminal if you
+prefer. Step-by-step: [examples/zeus/counter/android/guide.md](examples/zeus/counter/android/guide.md)
 and [examples/zeus/gallery/android/guide.md](examples/zeus/gallery/android/guide.md).
 All zeus `android/run.sh` scripts share one `yuga` AVD.
 

@@ -34,14 +34,24 @@ symlink or copy its `.sdk-env`:
 ln -s ../../counter/android/.sdk-env examples/zeus/gallery/android/.sdk-env
 ```
 
-## 2. Boot the emulator (first time)
+## 2. Boot the emulator (optional — `run.sh` auto-boots it)
+
+`run.sh` detects when no device is connected and boots the shared `yuga` AVD
+itself (SwiftShader, same flags as below). Only run this manually if you want
+the emulator in its own terminal or to adjust flags:
+## 2. Start the emulator (optional — `run.sh` auto-boots it)
+
+`run.sh` detects when no device is connected and boots the shared `yuga` AVD
+itself. Only run this manually if you want the emulator in its own terminal
+or need custom flags:
 
 ```
-./examples/zeus/gallery/android/emu.sh
+./examples/zeus/counter/android/emu.sh
 ```
 
 `emu.sh` launches the `yuga` AVD with SwiftShader (the counter example shares
-the same AVD). You can also boot it from Android Studio. Keep it running.
+the same AVD). You can also boot it from Android Studio. Keep it running if
+you started it by hand.
 
 ## 3. Run the gallery
 

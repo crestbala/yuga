@@ -47,5 +47,33 @@ if [ ! -x "$REPO/bin/yugac" ]; then
   make -C "$REPO" -j4
 fi
 
+# No device or emulator connected? Boot the shared 'yuga' AVD so a fresh
+# user gets a clear flow instead of gradle's 'No connected devices!'.
+if ! adb get-state 2>/dev/null | grep -q device; then
+  EMU=$ANDROID_HOME/emulator/emulator
+  if [ ! -x "$EMU" ]; then
+    echo "android: no device connected and no emulator installed. Install the" >&2
+    echo "  SDK stack once ($HERE/install.sh), then boot the emulator:" >&2
+    echo "  $HERE/emu.sh" >&2
+    exit 1
+  fi
+  echo "android: no device connected — booting the 'yuga' emulator"
+  "$EMU" -avd yuga -gpu swiftshader_indirect -feature -Vulkan \
+    -no-snapshot-load -no-boot-anim >/dev/null 2>&1 &
+  n=0
+  while [ "$n" -lt 240 ]; do
+    if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then
+      break
+    fi
+    n=$((n + 1))
+    sleep 1
+  done
+  if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != 1 ]; then
+    echo "android: emulator did not finish booting in 240 s — check $HERE/emu.sh" >&2
+    exit 1
+  fi
+  echo "android: emulator ready (left running; stop it later with: adb emu kill)"
+fi
+
 echo "android: emulator (pure UI, no backend)"
 exec "$REPO/bin/yugac" --target=android --run "$HERE/app.yuga"
