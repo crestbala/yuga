@@ -88,8 +88,10 @@ run_gallery_stack() {
   case $variant in
     web|frontend|"") exec "$ZEUSDIR/gallery/frontend/run.sh" ;;
     macos|native)    exec "$ZEUSDIR/gallery/macos/run.sh" ;;
+    ios)             exec "$ZEUSDIR/gallery/ios/run.sh" ;;
+    android)         exec "$ZEUSDIR/gallery/android/run.sh" ;;
     backend)         exec "$ZEUSDIR/gallery/backend/run.sh" ;;
-    *) die "unknown gallery variant '$variant' (web frontend macos backend)" ;;
+    *) die "unknown gallery variant '$variant' (web frontend macos ios android backend)" ;;
   esac
 }
 
