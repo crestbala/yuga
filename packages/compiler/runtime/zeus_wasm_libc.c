@@ -21,59 +21,94 @@ static FILE file_err = {2};
 FILE *stdout = &file_out;
 FILE *stderr = &file_err;
 
-#define HEAP_SIZE (16 * 1024 * 1024)
+#define HEAP_SIZE (32 * 1024 * 1024)
 #define HDR 8u
+#define FTR 8u
 #define FREE_BIT ((size_t)1)
 
 _Alignas(8) static unsigned char heap[HEAP_SIZE];
 static size_t heap_off = HDR;
+/* Free blocks live on a doubly linked list (payload[0] = next, payload[1] =
+   prev). Every block also carries a footer duplicating its header bits, so
+   free() can coalesce with the previous block without walking the heap.
+   malloc only ever walks FREE blocks — never the allocated heap — so total
+   cost stays near-linear instead of quadratic in the number of live
+   allocations (the old bump scan made a gallery-size build take ~40 s). */
+static size_t free_head; /* offset of first free block; 0 = none */
 
 static size_t align8(size_t n) { return (n + 7u) & ~7u; }
 static size_t payload_sz(size_t bits) { return bits & ~FREE_BIT; }
 static int is_free(size_t bits) { return (int)(bits & FREE_BIT); }
 
 static size_t *hdr_at(size_t off) { return (size_t *)(heap + off); }
-
+static size_t *ftr_at(size_t off) { return (size_t *)(heap + off + HDR + payload_sz(*hdr_at(off))); }
 static void *payload(size_t *h) { return (void *)((unsigned char *)h + HDR); }
 static size_t *hdr_of(void *p) { return (size_t *)((unsigned char *)p - HDR); }
 
+static size_t fl_next(size_t o) { return ((size_t *)payload(hdr_at(o)))[0]; }
+static size_t fl_prev(size_t o) { return ((size_t *)payload(hdr_at(o)))[1]; }
+static void fl_set_next(size_t o, size_t v) { ((size_t *)payload(hdr_at(o)))[0] = v; }
+static void fl_set_prev(size_t o, size_t v) { ((size_t *)payload(hdr_at(o)))[1] = v; }
+
+static void fl_unlink(size_t o) {
+    size_t p = fl_prev(o), nx = fl_next(o);
+    if (p) fl_set_next(p, nx);
+    else free_head = nx;
+    if (nx) fl_set_prev(nx, p);
+}
+
+static void fl_insert_head(size_t o) {
+    fl_set_next(o, free_head);
+    fl_set_prev(o, 0);
+    if (free_head) fl_set_prev(free_head, o);
+    free_head = o;
+}
+
+/* Mark a free block (header + footer) with size `pay` and list it. */
+static void free_make(size_t off, size_t pay) {
+    *hdr_at(off) = pay | FREE_BIT;
+    *ftr_at(off) = pay | FREE_BIT;
+    fl_insert_head(off);
+}
+
 void *malloc(size_t n) {
     size_t off, bits, pay, next, leftover;
-    size_t *h, *split;
+    size_t *h;
     if (!n) n = 1;
     n = align8(n);
+    if (n < 16) n = 16; /* free blocks store two list links in their payload */
 
-    off = HDR;
-    while (off < heap_off) {
+    off = free_head;
+    while (off) {
+        if (off < HDR || off >= heap_off) { /* corrupt list: drop it */
+            free_head = 0;
+            break;
+        }
         h = hdr_at(off);
         bits = *h;
         pay = payload_sz(bits);
-        next = off + HDR + pay;
-        if (is_free(bits)) {
-            while (next < heap_off && is_free(*hdr_at(next))) {
-                pay += HDR + payload_sz(*hdr_at(next));
-                next = off + HDR + pay;
+        if (pay >= n) {
+            fl_unlink(off);
+            leftover = pay - n;
+            if (leftover >= HDR + 16 + FTR) { /* a new free block fits */
+                *h = n;
+                *ftr_at(off) = n;
+                next = off + HDR + n + FTR;
+                free_make(next, leftover - HDR - FTR);
+            } else {
+                *h = pay;
+                *ftr_at(off) = pay;
             }
-            *h = pay | FREE_BIT;
-            if (pay >= n) {
-                leftover = pay - n;
-                if (leftover >= HDR + 8) {
-                    *h = n;
-                    split = hdr_at(off + HDR + n);
-                    *split = (leftover - HDR) | FREE_BIT;
-                } else {
-                    *h = pay;
-                }
-                return payload(h);
-            }
+            return payload(h);
         }
-        off = next;
+        off = fl_next(off);
     }
 
-    if (heap_off + HDR + n > HEAP_SIZE) return NULL;
+    if (heap_off + HDR + n + FTR > HEAP_SIZE) return NULL;
     h = hdr_at(heap_off);
     *h = n;
-    heap_off += HDR + n;
+    *(size_t *)(heap + heap_off + HDR + n) = n;
+    heap_off += HDR + n + FTR;
     return payload(h);
 }
 
@@ -98,10 +133,32 @@ void *calloc(size_t n, size_t sz) {
 }
 
 void free(void *p) {
-    size_t *h;
+    size_t *h, *f;
+    size_t off, bits, pay, prev_hdr;
     if (!p) return;
     h = hdr_of(p);
-    *h = payload_sz(*h) | FREE_BIT;
+    off = (size_t)((unsigned char *)h - heap);
+    bits = *h;
+    pay = payload_sz(bits);
+    /* Coalesce with the following block if it is free. */
+    if (off + HDR + pay + FTR < heap_off) {
+        size_t *nx = hdr_at(off + HDR + pay + FTR);
+        if (is_free(*nx)) {
+            fl_unlink(off + HDR + pay + FTR);
+            pay += HDR + payload_sz(*nx) + FTR;
+        }
+    }
+    /* Coalesce with the previous block via its footer. */
+    if (off >= HDR + FTR) {
+        f = (size_t *)(heap + off - FTR);
+        if (is_free(*f)) {
+            prev_hdr = off - FTR - HDR - payload_sz(*f);
+            fl_unlink(prev_hdr);
+            pay += HDR + payload_sz(*f) + FTR;
+            off = prev_hdr;
+        }
+    }
+    free_make(off, pay);
 }
 
 void abort(void) {
