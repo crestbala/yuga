@@ -89,8 +89,14 @@
      than the glyphs, so labels sit high in buttons, chips, and avatars. */
   const fontFace = "system-ui, sans-serif";
   const fontMetrics = new Map();
+  /* Measured text widths per (px, string): layout re-measures every label
+     on every frame, and measureText is the priciest JS import. */
+  const textWidths = new Map();
+  let lastFontPx = 0;
   function setFont(px) {
+    if (px === lastFontPx) return;
     ctx.font = px + "px " + fontFace;
+    lastFontPx = px;
   }
   function lineBox(px) {
     let m = fontMetrics.get(px);
@@ -368,9 +374,22 @@
         const size = px > 0 ? px : 13;
         const box = lineBox(size);
         setFont(size);
-        const m = ctx.measureText(s);
+        let m = textWidths.get(size);
+        let w = m ? m.get(s) : undefined;
+        if (w === undefined) {
+          w = ctx.measureText(s).width;
+          if (!m) {
+            m = new Map();
+            textWidths.set(size, m);
+          }
+          if (m.size >= 4096) {
+            /* Bound memory for live-edited text: drop the oldest entry. */
+            m.delete(m.keys().next().value);
+          }
+          m.set(s, w);
+        }
         const view = new DataView(mem.buffer);
-        view.setInt32(wPtr, Math.ceil(m.width), true);
+        view.setInt32(wPtr, Math.ceil(w), true);
         view.setInt32(hPtr, box.height, true);
       },
       save: () => ctx.save(),

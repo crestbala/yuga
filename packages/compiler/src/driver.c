@@ -738,7 +738,7 @@ int main(int argc, char **argv) {
             if (uses_zeus) {
                 snprintf(cmdw, sizeof cmdw,
                          "\"%s\" --target=wasm32 -nostdlib -ffreestanding "
-                         "-fno-stack-protector -O1 -I\"%s/wasm_inc\" -I\"%s\" "
+                         "-fno-stack-protector -O2 -I\"%s/wasm_inc\" -I\"%s\" "
                          "-Wl,--no-entry -Wl,--export-dynamic "
                          "-x c \"%s\" -x none "
                          "\"%s/zeus_wasm_libc.c\" \"%s/web/wasm.c\" "
@@ -748,7 +748,7 @@ int main(int argc, char **argv) {
             } else {
                 snprintf(cmdw, sizeof cmdw,
                          "\"%s\" --target=wasm32 -nostdlib -ffreestanding "
-                         "-fno-stack-protector -O1 -I\"%s/wasm_inc\" -I\"%s\" "
+                         "-fno-stack-protector -O2 -I\"%s/wasm_inc\" -I\"%s\" "
                          "-Wl,--no-entry -Wl,--export-dynamic -Wl,--export=main "
                          "-x c \"%s\" -x none \"%s/zeus_wasm_libc.c\"%s -o \"%s\"",
                          cc, YUGA_RUNTIME_DIR, YUGA_RUNTIME_DIR, cpath, YUGA_RUNTIME_DIR,

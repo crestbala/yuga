@@ -192,49 +192,20 @@ fn Controls() {
     }
 }
 
-// 1×1 PNG data URIs (stretched). Hosts also decode JPEG / WebP / GIF.
-let IMG_ADA = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mNYuHAVAAPTAe2W6vg1AAAAAElFTkSuQmCC"
-let IMG_BEA = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mMICooGAAH5AQB0T+hDAAAAAElFTkSuQmCC"
-let IMG_SHOE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mOwbvoGAAKvAbSJsn7VAAAAAElFTkSuQmCC"
-let IMG_BAG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mP4Oo8bAAQqAZ9SpbPIAAAAAElFTkSuQmCC"
-let IMG_MUG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mMQ2NkIAAInAUt79MTdAAAAAElFTkSuQmCC"
-
 fn People() {
     zeus.SectionTitle("People", "Avatars and stats")
     zeus.Row(SPACE.Md) {
         zeus.Card() {
-            zeus.User("AP", "Ada Park", "Operator", IMG_ADA)
-            zeus.User("BL", "Bea Liu", "Editor", IMG_BEA)
+            zeus.User("AP", "Ada Park", "Operator")
+            zeus.User("BL", "Bea Liu", "Editor")
             zeus.Row(SPACE.Xs) {
-                zeus.Avatar("AP", 32, IMG_ADA)
-                zeus.Avatar("BL", 40, IMG_BEA)
+                zeus.Avatar("AP", 32)
+                zeus.Avatar("BL", 40)
                 zeus.Avatar("CD", 48)
             }
         }
         zeus.Stat("Uptime", "99.9%", zeus.TINT.Ok)
         zeus.Stat("Errors", "2", zeus.TINT.Danger)
-    }
-}
-
-fn Catalog() {
-    zeus.SectionHeader("Media", "Product shots",
-        "Raster images (PNG, JPEG, WebP, GIF). fit is stretch, contain, or cover; radius clips.")
-    zeus.Row(SPACE.Md) {
-        zeus.Card() {
-            zeus.Image(IMG_SHOE, width = 160, height = 100, radius = 8)
-            zeus.Title("Runner")
-            zeus.Body("$128")
-        }
-        zeus.Card() {
-            zeus.Image(IMG_BAG, width = 160, height = 100, radius = 8)
-            zeus.Title("Tote")
-            zeus.Body("$64")
-        }
-        zeus.Card() {
-            zeus.Image(IMG_MUG, width = 160, height = 100, radius = 8)
-            zeus.Title("Mug")
-            zeus.Body("$18")
-        }
     }
 }
 
@@ -312,7 +283,6 @@ fn Components() {
     Choice()
     Controls()
     People()
-    Catalog()
     Upload()
     Data()
 }
