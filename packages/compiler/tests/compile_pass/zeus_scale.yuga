@@ -1,0 +1,82 @@
+// Scale-token probe: components read `tk` (the UI scale percent), never raw
+// constants. Identity at 100 is proven by the DRAW goldens; this test proves
+// one knob rescales chrome and that 100 restores the base size in a
+// per-frame `view` (zoom reacts live there). Phase 7 exit test.
+import "std:fmt"
+import "std:sys"
+import "std:zeus"
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn h_of(role: string) -> int {
+    return zeus.node_h(zeus.engine_find_role(role))
+}
+
+fn w_of(role: string) -> int {
+    return zeus.node_w(zeus.engine_find_role(role))
+}
+
+fn main() {
+    let on = zeus.signal(1)
+    let name = zeus.signal("")
+    let sel = zeus.signal(0)
+    zeus.window("scale", 800, 600)
+    zeus.view(fn() -> Node {
+        zeus.Box(padding = 24, align_direction = DIRECTION.Column, spacing = 12) {
+            zeus.TextInput(name, "Name")
+            zeus.Checkbox("Agree", on)
+            zeus.Switch(on)
+            zeus.Tabs(sel, []string{"One", "Two"})
+            zeus.Button("Save", look = zeus.LOOK.Solid, size = zeus.SIZE.Md,
+                        on_click = fn() {})
+        }
+    })
+    zeus.engine_layout(800, 600)
+
+    expect(zeus.engine_find_role("button") > 0, "button role")
+    expect(zeus.engine_find_role("switch") > 0, "switch role")
+    expect(zeus.engine_find_role("textbox") > 0, "textbox role")
+    expect(zeus.engine_find_role("checkbox") > 0, "checkbox role")
+
+    // Scale 1.0 baseline: h-9 button 36, switch 36x20, checkbox row >= its
+    // 16px box (the label can make the row taller).
+    expect(h_of("button") == 36, "button 36 at 100%")
+    expect(w_of("switch") == 36 && h_of("switch") == 20, "switch 36x20 at 100%")
+    expect(h_of("checkbox") >= 16, "checkbox 16 at 100%")
+    let t100 = h_of("textbox")
+    let c100 = h_of("checkbox")
+
+    // 150%: 36 -> 54, 20 -> 30; the checkbox row and type also grow.
+    zeus.set_scale(150)
+    zeus.engine_layout(800, 600)
+    expect(h_of("button") == 54, "button 54 at 150%")
+    expect(w_of("switch") == 54 && h_of("switch") == 30, "switch 54x30 at 150%")
+    expect(h_of("checkbox") >= 24, "checkbox 24 at 150%")
+    expect(h_of("checkbox") > c100, "checkbox row grows")
+    expect(h_of("textbox") > t100, "textbox grows with type")
+
+    // 100% again restores the base sizes exactly.
+    zeus.set_scale(100)
+    zeus.engine_layout(800, 600)
+    expect(h_of("button") == 36, "button 36 restored")
+    expect(h_of("checkbox") == c100, "checkbox restored")
+    expect(h_of("textbox") == t100, "textbox restored")
+
+    // Clamped: 500 -> 200 (36 -> 72), 10 -> 50 (36 -> 18).
+    zeus.set_scale(500)
+    zeus.engine_layout(800, 600)
+    expect(h_of("button") == 72, "scale clamps at 200%")
+    zeus.set_scale(10)
+    zeus.engine_layout(800, 600)
+    expect(h_of("button") == 18, "scale clamps at 50%")
+
+    zeus.set_scale(100)
+    zeus.engine_layout(800, 600)
+    expect(h_of("button") == 36, "button 36 after clamp restore")
+}

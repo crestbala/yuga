@@ -1,0 +1,51 @@
+// DRAW-list golden: gallery chrome at UI scale 1.0 (the Phase 7 exit
+// criterion). Components read the `tk` scale token; `set_scale(100)` is the
+// identity point this fixture pins — the whole screen must render exactly as
+// the untokenized constants did (byte-exact on deterministic metrics).
+// Keep stdout as the golden; no extra prints.
+
+import "std:zeus"
+
+fn main() {
+    let on = zeus.signal(1)
+    let tab = zeus.signal(0)
+    let pick = zeus.signal(0)
+    let cur = zeus.signal(2)
+    let name = zeus.signal("Ada")
+    let note = zeus.signal("")
+    zeus.set_scale(100)
+    zeus.snapshot(640, 820, fn() -> Node {
+        zeus.Page() {
+            zeus.Navbar("Zeus")
+            zeus.Row(SPACE.Sm) {
+                zeus.Button("Primary", look = zeus.LOOK.Solid, size = zeus.SIZE.Md,
+                            on_click = fn() {})
+                zeus.Button("Outline", look = zeus.LOOK.Outline, size = zeus.SIZE.Lg,
+                            on_click = fn() {})
+                zeus.Button("Ghost", look = zeus.LOOK.Ghost, size = zeus.SIZE.Sm,
+                            on_click = fn() {})
+            }
+            zeus.Row(SPACE.Sm) {
+                zeus.Checkbox("Agree", on)
+                zeus.Switch(on)
+                zeus.Chip("busy", zeus.TINT.Warn)
+                zeus.Badge("ok", zeus.TINT.Ok)
+                zeus.Kbd("S")
+            }
+            zeus.Tabs(tab, []string{"One", "Two", "Three"})
+            zeus.Row(SPACE.Sm) {
+                zeus.Segmented(pick, []string{"A", "B", "C"})
+            }
+            zeus.Row(SPACE.Sm) {
+                zeus.RadioGroup(pick, []string{"First", "Second"})
+                zeus.Column(SPACE.Exs) {
+                    zeus.Field("Name", name, "Ada")
+                    zeus.Field("Email", note, "ada@zeus.dev")
+                }
+            }
+            zeus.TextArea(note, "Message")
+            zeus.Pagination(cur, 5)
+            zeus.Alert("Heads up", "Tokens stay identical at scale 1.0.")
+        }
+    })
+}

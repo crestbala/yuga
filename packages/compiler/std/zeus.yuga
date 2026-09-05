@@ -12,10 +12,15 @@
 //! typography and radius constants, and themed chrome — `Card` / `Chip` /
 //! `Badge` / `Dialog` / forms (`Field`, `TextInput`, `TextArea`) / tabs,
 //! select, radio, toggle / `Pagination` / charts / `DatePicker` / `Page`.
+//! One UI-scale knob (`set_scale` percent, read through `tk`) scales type and
+//! control chrome; it is the identity at 100, so goldens hold at 1.0.
 //! `Button` paints the themed chrome when you pass `look = LOOK.*` and
 //! `size = SIZE.*`; without them it is a plain clickable label whose
 //! background / color / width / height / `enabled` / `on_click` come from
-//! the props.
+//! the props. Keyboard: every click target is a tab stop; Tab walks the
+//! focus ring in document order (Shift-Tab back), Enter/Space activate, and
+//! the focused control paints a 2px ring (keyboard focus only — pointer
+//! clicks clear it).
 //!
 //! Example:
 //! ```
@@ -1972,6 +1977,9 @@ struct ImageProps {
 fn __box_events(node: Node, p: BoxProps) -> Node {
     if p.on_click__set {
         arena.nodes[node.id].click_fn = __intern(p.on_click)
+        // A click target is a keyboard target: tab reaches it and
+        // Enter/Space press it (input.press_focused).
+        arena.nodes[node.id].focusable = 1
     }
     if p.on_mouse_down__set {
         arena.nodes[node.id].down_fn = __intern(p.on_mouse_down)
@@ -2127,6 +2135,7 @@ fn Button(label: fn() -> string, p: ButtonProps) -> Node {
     if p.on_click__set {
         arena.nodes[n.id].click_fn = __intern(p.on_click)
         arena.nodes[n.id].a11y_role = "button"
+        arena.nodes[n.id].focusable = 1
     }
     if platform.plat_invoke_bool_fn(__intern_bool(p.hover_off)) != 0 {
         hover_off(n)
@@ -2978,6 +2987,8 @@ fn roles() {
     theme(33, hex(LIGHT.line), hex(DARK.line))
     theme(34, hex(LIGHT.card), hex(DARK.card))
     theme(35, hex(LIGHT.line_strong), hex(DARK.line_strong))
+    // 36 = keyboard focus ring (foreground in both appearances).
+    theme(36, hex(LIGHT.text), hex(DARK.text))
 }
 
 /// Button variants, named after the fill they carry. `Solid` is the shadcn
@@ -3048,18 +3059,41 @@ const BAR: int = 52
 const DOT: int = 8
 const HAIRLINE: int = 1
 
+// --- UI scale (density + type, one knob) ---
+/// Scale in percent; 100 is the design system's 1.0 (identities: `tk(x)`
+/// returns x). Clamped to 50..200. Read at build time by components through
+/// `tk`, so set it before building a retained tree; a `zeus.view` app
+/// re-reads it every frame (zoom reacts live there).
+let mut ui_scale: int = 100
+
+fn set_scale(pct: int) {
+    let mut v = pct
+    if v < 50 {
+        v = 50
+    }
+    if v > 200 {
+        v = 200
+    }
+    ui_scale = v
+}
+
+/// Identity at scale 1.0. `x * 100 / 100 == x` for every non-negative int.
+fn tk(v: int) -> int {
+    return v * ui_scale / 100
+}
+
 // --- button geometry (Tailwind classes h-8/h-9/h-10, px-3/px-4/px-8) ---
 
 fn btn_px(size: int) -> int {
-    if size == SIZE.Sm { 12 } else if size == SIZE.Lg { 32 } else { 16 }
+    if size == SIZE.Sm { tk(12) } else if size == SIZE.Lg { tk(32) } else { tk(16) }
 }
 
 fn btn_h(size: int) -> int {
-    if size == SIZE.Sm { 32 } else if size == SIZE.Lg { 40 } else { 36 }
+    if size == SIZE.Sm { tk(32) } else if size == SIZE.Lg { tk(40) } else { tk(36) }
 }
 
 fn btn_font(size: int) -> int {
-    if size == SIZE.Sm { 12 } else { FONT_BODY }
+    if size == SIZE.Sm { tk(12) } else { tk(FONT_BODY) }
 }
 
 fn btn_radius(size: int) -> int {
@@ -3205,43 +3239,43 @@ fn Divider() {
 }
 
 fn Overline(text: string) {
-    Text(text, color = dim(), font = FONT_OVERLINE)
+    Text(text, color = dim(), font = tk(FONT_OVERLINE))
 }
 
 fn Display(text: string) {
-    Text(text, color = ink(), font = FONT_DISPLAY)
+    Text(text, color = ink(), font = tk(FONT_DISPLAY))
 }
 
 fn Heading(text: string) {
-    Text(text, color = ink(), font = FONT_HEADING)
+    Text(text, color = ink(), font = tk(FONT_HEADING))
 }
 
 fn Title(text: string) {
-    Text(text, color = ink(), font = FONT_TITLE)
+    Text(text, color = ink(), font = tk(FONT_TITLE))
 }
 
 fn Body(text: string) {
-    Text(text, color = mute(), font = FONT_BODY)
+    Text(text, color = mute(), font = tk(FONT_BODY))
 }
 
 fn Note(text: string) {
-    Text(text, color = dim(), font = FONT_CAPTION)
+    Text(text, color = dim(), font = tk(FONT_CAPTION))
 }
 
 /// Overline + heading + supporting copy as one block.
 fn SectionHeader(overline: string, title: string, body: string) {
     Column(SPACE.Exxxs) {
-        Text(overline, color = dim(), font = FONT_OVERLINE)
-        Text(title, color = ink(), font = FONT_HEADING)
-        Text(body, color = mute(), font = FONT_BODY, wrap = 1)
+        Text(overline, color = dim(), font = tk(FONT_OVERLINE))
+        Text(title, color = ink(), font = tk(FONT_HEADING))
+        Text(body, color = mute(), font = tk(FONT_BODY), wrap = 1)
     }
 }
 
 /// `SectionHeader` without the supporting copy.
 fn SectionTitle(overline: string, title: string) {
     Column(SPACE.Exxxs) {
-        Text(overline, color = dim(), font = FONT_OVERLINE)
-        Text(title, color = ink(), font = FONT_HEADING)
+        Text(overline, color = dim(), font = tk(FONT_OVERLINE))
+        Text(title, color = ink(), font = tk(FONT_HEADING))
     }
 }
 
@@ -3276,11 +3310,11 @@ fn IconButton(markup: string, look: int, size: int, label: string,
 /// Status pill: tinted dot and label on a muted border pill.
 fn Chip(label: string, kind: int) {
     Box(align_direction = DIRECTION.Row, spacing = SPACE.Exxs,
-             align_items = ALIGN.Center, padding_x = 10, padding_y = 5,
+             align_items = ALIGN.Center, padding_x = tk(10), padding_y = tk(5),
              background = raised(), radius = RAD_FULL, border = HAIRLINE,
-             border_color = rule(), height = 26) {
-        Pip(tint_of(kind), DOT - 2)
-        Text(label, color = tint_of(kind), font = FONT_CAPTION)
+             border_color = rule(), height = tk(26)) {
+        Pip(tint_of(kind), tk(DOT - 2))
+        Text(label, color = tint_of(kind), font = tk(FONT_CAPTION))
     }
 }
 
@@ -3332,21 +3366,21 @@ fn badge_edge(kind: int) -> string {
 /// Kinds map to shadcn variants: Ink default, Mute secondary, Dim outline,
 /// Danger destructive; Ok is a filled success badge.
 fn Badge(label: string, kind: int) {
-    Box(align_direction = DIRECTION.Row, padding_x = 10, padding_y = 2,
+    Box(align_direction = DIRECTION.Row, padding_x = tk(10), padding_y = tk(2),
              radius = RAD_MD, background = badge_bg(kind), border = badge_bw(kind),
              border_color = badge_edge(kind), align_items = ALIGN.Center,
              justify = ALIGN.Center) {
-        Text(label, color = badge_fg(kind), font = FONT_CAPTION)
+        Text(label, color = badge_fg(kind), font = tk(FONT_CAPTION))
     }
 }
 
 /// Key cap: 1px border on muted, mono-ish small text (shadcn kbd h-5).
 fn Kbd(key: string) {
-    Box(align_direction = DIRECTION.Row, padding_x = 6, radius = 4,
-             height = 20, background = raised(), border = HAIRLINE,
+    Box(align_direction = DIRECTION.Row, padding_x = tk(6), radius = 4,
+             height = tk(20), background = raised(), border = HAIRLINE,
              border_color = rule(), align_items = ALIGN.Center,
              justify = ALIGN.Center) {
-        Text(key, color = mute(), font = 10)
+        Text(key, color = mute(), font = tk(10))
     }
 }
 
@@ -3356,13 +3390,15 @@ fn Switch(on: Signal<int>) {
     roles()
     let n = raw_toggle()
     bind(n, on)
-    w(n, 36)
-    h(n, 20)
-    radius(n, 10)
+    w(n, tk(36))
+    h(n, tk(20))
+    radius(n, tk(10))
     bg(n, role(33))
     fg(n, role(32))
     border_color(n, role(34))
     on_click(n, fn() => on.set(1 - on.get()))
+    arena.nodes[n.id].a11y_role = "switch"
+    arena.nodes[n.id].focusable = 1
     // Boxes opt into hover with `hover_off = false`; native thumbs stay flat.
     hover_off(n)
     cursor(n, "pointer")
@@ -3381,6 +3417,7 @@ fn Slider(value: Signal<int>) {
     fg(n, role(32))
     border_color(n, role(34))
     keys(n, value, 0, 100)
+    arena.nodes[n.id].a11y_role = "slider"
     // Native thumbs stay flat; only Buttons wash on hover.
     hover_off(n)
     cursor(n, "pointer")
@@ -3429,19 +3466,19 @@ fn __alert(title: string, body: string, kind: int) {
              align_items = ALIGN.Start, background = plate(),
              border = HAIRLINE,
              border_color = if kind == 1 { danger_edge() } else if kind == 2 { warn_edge() } else { rule() },
-             padding_x = 16, padding_y = 12, radius = RAD_LG) {
+             padding_x = tk(16), padding_y = tk(12), radius = RAD_LG) {
         if kind == 1 {
-            Icon(IC_ALERT_CIRCLE, 16, danger)
+            Icon(IC_ALERT_CIRCLE, tk(16), danger)
         } else if kind == 2 {
-            Icon(IC_ALERT_CIRCLE, 16, warn)
+            Icon(IC_ALERT_CIRCLE, tk(16), warn)
         } else {
-            Icon(IC_INFO, 16, ink)
+            Icon(IC_INFO, tk(16), ink)
         }
         Column(4) {
             Text(title, color = if kind == 1 { danger() } else if kind == 2 { warn() } else { ink() },
-                      font = FONT_BODY)
+                      font = tk(FONT_BODY))
             Text(body, color = if kind == 1 { danger() } else { mute() },
-                      font = FONT_CONTROL, wrap = 1)
+                      font = tk(FONT_CONTROL), wrap = 1)
         }
     }
 }
@@ -3459,7 +3496,7 @@ fn Surface() -> Node {
 
 /// shadcn `Label`: `text-sm font-medium`.
 fn Label(text: string) {
-    Text(text, color = ink(), font = FONT_BODY)
+    Text(text, color = ink(), font = tk(FONT_BODY))
 }
 
 /// Text input frame (themed; raw editing widget is `Input`): h-9, rounded-md, 1px input border, transparent fill.
@@ -3469,12 +3506,12 @@ fn TextInput(value: Signal<string>, placeholder: string) {
         border = HAIRLINE,
         border_color = rule(),
         radius = RAD_MD,
-        padding_x = 12,
-        padding_y = 8,
+        padding_x = tk(12),
+        padding_y = tk(8),
         cursor = "text"
     ) {
         Input(bind = value, placeholder = placeholder,
-                   background = "", color = ink(), font = FONT_BODY,
+                   background = "", color = ink(), font = tk(FONT_BODY),
                    padding = 0, a11y_label = placeholder)
     }
 }
@@ -3487,13 +3524,13 @@ fn TextArea(value: Signal<string>, placeholder: string, on_edit: fn() = __noop) 
         border = HAIRLINE,
         border_color = rule(),
         radius = RAD_MD,
-        padding_x = 12,
-        padding_y = 8,
-        min_height = 96,
+        padding_x = tk(12),
+        padding_y = tk(8),
+        min_height = tk(96),
         cursor = "text"
     ) {
         Input(bind = value, placeholder = placeholder,
-                   background = "", color = ink(), font = FONT_BODY,
+                   background = "", color = ink(), font = tk(FONT_BODY),
                    padding = 0, multiline = 1, grow = 1, a11y_label = placeholder,
                    on_key_up = on_edit)
     }
@@ -3513,17 +3550,19 @@ fn Checkbox(label: string, on: Signal<int>) {
     Box(align_direction = DIRECTION.Row, spacing = SPACE.Exs,
              align_items = ALIGN.Center,
              on_click = fn() => on.set(1 - on.get()),
+             a11y_role = "checkbox",
+             a11y_label = label,
              cursor = "pointer") {
-        Box(width = 16, height = 16, radius = RAD_SM,
+        Box(width = tk(16), height = tk(16), radius = RAD_SM,
                  background = if on.get() == 1 { accent() } else { plate() },
                  border = HAIRLINE,
                  border_color = accent(),
                  align_items = ALIGN.Center, justify = ALIGN.Center) {
-            let mark = Svg(IC_CHECK, width = 16, height = 16)
+            let mark = Svg(IC_CHECK, width = tk(16), height = tk(16))
             prop_str(mark, 16, on_ink)
             show(mark, on)
         }
-        Text(label, color = ink(), font = FONT_BODY)
+        Text(label, color = ink(), font = tk(FONT_BODY))
     }
 }
 
@@ -3535,7 +3574,7 @@ fn Avatar(initials: string, size: int, src: string = "") {
     Box(align_direction = DIRECTION.Row, width = size, height = size,
              radius = size / 2, background = raised(), align_items = ALIGN.Center,
              justify = ALIGN.Center) {
-        Text(initials, color = ink(), font = (size + 8) / 4)
+        Text(initials, color = ink(), font = tk((size + 8) / 4))
         if src.len > 0 {
             Image(src, width = size, height = size, radius = size / 2,
                        position = pos_absolute(), left = 0, top = 0)
@@ -3548,8 +3587,8 @@ fn User(initials: string, name: string, role: string, src: string = "") {
     Row(SPACE.Xs) {
         Avatar(initials, 40, src)
         Column(2) {
-            Text(name, color = ink(), font = FONT_BODY)
-            Text(role, color = mute(), font = FONT_CAPTION)
+            Text(name, color = ink(), font = tk(FONT_BODY))
+            Text(role, color = mute(), font = tk(FONT_CAPTION))
         }
     }
 }
@@ -3557,16 +3596,16 @@ fn User(initials: string, name: string, role: string, src: string = "") {
 /// Stat card: small muted label over a big tinted value.
 fn Stat(label: string, value: string, kind: int) {
     let c = Card() {
-        Text(label, color = mute(), font = FONT_CONTROL)
-        Text(value, color = tint_of(kind), font = 26)
+        Text(label, color = mute(), font = tk(FONT_CONTROL))
+        Text(value, color = tint_of(kind), font = tk(26))
     }
     grow(c, 1)
 }
 
 fn StatCount(label: string, sig: Signal<int>, kind: int) {
     let c = Card() {
-        Text(label, color = mute(), font = FONT_CONTROL)
-        Text("{{sig.get()}}", color = tint_of(kind), font = 26)
+        Text(label, color = mute(), font = tk(FONT_CONTROL))
+        Text("{{sig.get()}}", color = tint_of(kind), font = tk(26))
     }
     grow(c, 1)
 }
@@ -3574,11 +3613,11 @@ fn StatCount(label: string, sig: Signal<int>, kind: int) {
 /// Breadcrumb: items separated by chevron icons; last item is foreground.
 fn Breadcrumbs(a: string, b: string, c: string) {
     Row(6) {
-        Text(a, color = mute(), font = FONT_BODY)
-        Icon(IC_CHEV_RIGHT, 14, mute)
-        Text(b, color = mute(), font = FONT_BODY)
-        Icon(IC_CHEV_RIGHT, 14, mute)
-        Text(c, color = ink(), font = FONT_BODY)
+        Text(a, color = mute(), font = tk(FONT_BODY))
+        Icon(IC_CHEV_RIGHT, tk(14), mute)
+        Text(b, color = mute(), font = tk(FONT_BODY))
+        Icon(IC_CHEV_RIGHT, tk(14), mute)
+        Text(c, color = ink(), font = tk(FONT_BODY))
     }
 }
 
@@ -3589,16 +3628,16 @@ fn Tab(label: string, selected: Signal<int>, index: int) {
         align_items = ALIGN.Center,
         spacing = SPACE.Exxs,
         background = if selected.get() == index { plate() } else { raised() },
-        padding_x = 12,
-        padding_y = 5,
+        padding_x = tk(12),
+        padding_y = tk(5),
         radius = RAD_MD,
         on_click = fn() => selected.set(index),
-        a11y_role = "button",
+        a11y_role = "tab",
         a11y_label = label,
         cursor = "pointer"
     ) {
         Text(label, color = if selected.get() == index { ink() } else { mute() },
-                  font = FONT_BODY)
+                  font = tk(FONT_BODY))
     }
 }
 
@@ -3629,14 +3668,16 @@ fn Choice(label: string, value: Signal<int>, index: int) {
         align_items = ALIGN.Center,
         spacing = SPACE.Exxs,
         background = if value.get() == index { plate() } else { raised() },
-        padding_x = 12,
-        padding_y = 5,
+        padding_x = tk(12),
+        padding_y = tk(5),
         radius = RAD_MD,
         on_click = fn() => value.set(index),
+        a11y_role = "radio",
+        a11y_label = label,
         cursor = "pointer"
     ) {
         Text(label, color = if value.get() == index { ink() } else { mute() },
-                  font = FONT_BODY)
+                  font = tk(FONT_BODY))
     }
 }
 
@@ -3669,8 +3710,8 @@ fn SelectRow(value: Signal<int>, open: Signal<int>, index: int, label: string) {
         align_direction = DIRECTION.Row,
         align_items = ALIGN.Center,
         spacing = 4,
-        padding_x = 8,
-        padding_y = 6,
+        padding_x = tk(8),
+        padding_y = tk(6),
         radius = RAD_SM,
         on_click = fn() {
             value.set(index)
@@ -3680,9 +3721,9 @@ fn SelectRow(value: Signal<int>, open: Signal<int>, index: int, label: string) {
         a11y_label = label,
         cursor = "pointer"
     ) {
-        Text(label, color = ink(), font = FONT_BODY)
+        Text(label, color = ink(), font = tk(FONT_BODY))
         Grow()
-        let mark = Icon(IC_CHECK, 16, ink)
+        let mark = Icon(IC_CHECK, tk(16), ink)
         show_eq(mark, value, index)
     }
 }
@@ -3697,29 +3738,29 @@ fn Select(value: Signal<int>, labels: []string) {
         align_direction = DIRECTION.Row,
         align_items = ALIGN.Center,
         spacing = 4,
-        width = SELECT_W,
-        padding_x = 12,
-        padding_y = 8,
+        width = tk(SELECT_W),
+        padding_x = tk(12),
+        padding_y = tk(8),
         background = plate(),
         border = HAIRLINE,
         border_color = rule(),
         radius = RAD_MD,
         on_click = fn() => open.set(1 - open.get()),
-        a11y_role = "button",
+        a11y_role = "combobox",
         cursor = "pointer"
     ) {
         // Every label is built once and all but the selected one is hidden —
         // no dynamic indexing is needed.
         Each(labels, fn(i, lab) {
-            let t = Text(lab, color = ink(), font = FONT_BODY)
+            let t = Text(lab, color = ink(), font = tk(FONT_BODY))
             show_eq(t, value, i)
         })
         Grow()
-        Icon(IC_CHEV_DOWN, 16, dim)
+        Icon(IC_CHEV_DOWN, tk(16), dim)
     }
     let menu = Box(
         align_direction = DIRECTION.Column,
-        width = SELECT_W,
+        width = tk(SELECT_W),
         padding = 4,
         spacing = 2,
         background = plate(),
@@ -3727,7 +3768,7 @@ fn Select(value: Signal<int>, labels: []string) {
         border_color = rule(),
         radius = RAD_MD,
         position = pos_absolute(),
-        top = SELECT_DROP,
+        top = tk(SELECT_DROP),
         left = 0,
         z_index = 10
     )
@@ -3750,15 +3791,17 @@ fn Radio(label: string, value: Signal<int>, index: int) {
     Box(align_direction = DIRECTION.Row, spacing = SPACE.Exs,
              align_items = ALIGN.Center,
              on_click = fn() => value.set(index),
+             a11y_role = "radio",
+             a11y_label = label,
              cursor = "pointer") {
-        Box(width = 16, height = 16, radius = 8,
+        Box(width = tk(16), height = tk(16), radius = 8,
                  background = plate(), border = HAIRLINE,
                  border_color = accent(),
                  align_items = ALIGN.Center, justify = ALIGN.Center) {
-            Box(width = 14, height = 14, radius = 7,
+            Box(width = tk(14), height = tk(14), radius = 7,
                      background = if value.get() == index { accent() } else { plate() })
         }
-        Text(label, color = ink(), font = FONT_BODY)
+        Text(label, color = ink(), font = tk(FONT_BODY))
     }
 }
 
@@ -3779,8 +3822,8 @@ fn Toggle(label: string, on: Signal<int>) {
         align_items = ALIGN.Center,
         justify = ALIGN.Center,
         spacing = SPACE.Exxs,
-        height = 36,
-        padding_x = 12,
+        height = tk(36),
+        padding_x = tk(12),
         radius = RAD_MD,
         background = if on.get() == 1 { raised() } else { plate() },
         on_click = fn() => on.set(1 - on.get()),
@@ -3789,7 +3832,7 @@ fn Toggle(label: string, on: Signal<int>) {
         cursor = "pointer"
     ) {
         Text(label, color = if on.get() == 1 { ink() } else { mute() },
-                  font = FONT_BODY)
+                  font = tk(FONT_BODY))
     }
 }
 
@@ -3802,8 +3845,8 @@ fn ToggleGroup(value: Signal<int>, labels: []string) {
                 align_direction = DIRECTION.Row,
                 align_items = ALIGN.Center,
                 justify = ALIGN.Center,
-                height = 36,
-                padding_x = 12,
+                height = tk(36),
+                padding_x = tk(12),
                 radius = RAD_MD,
                 background = if value.get() == i { raised() } else { plate() },
                 border = HAIRLINE,
@@ -3813,7 +3856,7 @@ fn ToggleGroup(value: Signal<int>, labels: []string) {
                 a11y_label = lab,
                 cursor = "pointer"
             ) {
-                Text(lab, color = ink(), font = FONT_BODY)
+                Text(lab, color = ink(), font = tk(FONT_BODY))
             }
         })
     }
@@ -3851,8 +3894,8 @@ fn __dialog(open: Signal<int>, close_x: int) -> Node {
         __ui_push(panel.id)
         let close = Box(
             align_direction = DIRECTION.Row,
-            width = 28,
-            height = 28,
+            width = tk(28),
+            height = tk(28),
             radius = RAD_MD,
             align_items = ALIGN.Center,
             justify = ALIGN.Center,
@@ -3865,7 +3908,7 @@ fn __dialog(open: Signal<int>, close_x: int) -> Node {
             a11y_label = "Close",
             cursor = "pointer"
         ) {
-            Icon(IC_X, 16, mute)
+            Icon(IC_X, tk(16), mute)
         }
         __ui_pop()
     }
@@ -3887,12 +3930,12 @@ fn AlertDialog(open: Signal<int>) -> Node {
 fn Navbar(brand: string) {
     Column(0) {
         Box(align_direction = DIRECTION.Row, spacing = SPACE.Md,
-                 align_items = ALIGN.Center, height = BAR,
+                 align_items = ALIGN.Center, height = tk(BAR),
                  a11y_role = "navigation") {
             Pip(ink(), 10)
-            Text(brand, color = ink(), font = FONT_TITLE)
+            Text(brand, color = ink(), font = tk(FONT_TITLE))
             Grow()
-            Text("Dark", color = mute(), font = FONT_CONTROL)
+            Text("Dark", color = mute(), font = tk(FONT_CONTROL))
             Switch(appearance())
         }
         Separator()
@@ -3906,8 +3949,8 @@ fn NavTab(label: string, page: Signal<int>, index: int) {
         align_direction = DIRECTION.Row,
         align_items = ALIGN.Center,
         spacing = SPACE.Exxs,
-        padding_x = 12,
-        height = 36,
+        padding_x = tk(12),
+        height = tk(36),
         radius = RAD_MD,
         background = if page.get() == index { raised() } else { paper() },
         on_click = fn() => page.set(index),
@@ -3916,7 +3959,7 @@ fn NavTab(label: string, page: Signal<int>, index: int) {
         cursor = "pointer"
     ) {
         Text(label, color = if page.get() == index { ink() } else { mute() },
-                  font = FONT_BODY)
+                  font = tk(FONT_BODY))
     }
 }
 
@@ -3926,9 +3969,9 @@ fn NavTab(label: string, page: Signal<int>, index: int) {
 fn TableHead(a: string, b: string, c: string) {
     Column(SPACE.Exs) {
         Row(SPACE.Sm) {
-            basis0(Text(a, color = mute(), font = FONT_BODY, grow = 1))
-            basis0(Text(b, color = mute(), font = FONT_BODY, grow = 1))
-            basis0(Text(c, color = mute(), font = FONT_BODY, grow = 1))
+            basis0(Text(a, color = mute(), font = tk(FONT_BODY), grow = 1))
+            basis0(Text(b, color = mute(), font = tk(FONT_BODY), grow = 1))
+            basis0(Text(c, color = mute(), font = tk(FONT_BODY), grow = 1))
         }
         Separator()
     }
@@ -3938,9 +3981,9 @@ fn TableHead(a: string, b: string, c: string) {
 fn TableRow(a: string, b: string, c: string) {
     Column(SPACE.Exs) {
         Row(SPACE.Sm) {
-            basis0(Text(a, color = ink(), font = FONT_BODY, grow = 1))
-            basis0(Text(b, color = ink(), font = FONT_BODY, grow = 1))
-            basis0(Text(c, color = ink(), font = FONT_BODY, grow = 1))
+            basis0(Text(a, color = ink(), font = tk(FONT_BODY), grow = 1))
+            basis0(Text(b, color = ink(), font = tk(FONT_BODY), grow = 1))
+            basis0(Text(c, color = ink(), font = tk(FONT_BODY), grow = 1))
         }
         Separator()
     }
@@ -3956,10 +3999,10 @@ fn TableCols(cols: []TableCol) {
             Each(cols, fn(i, c) {
                 if c.width > 0 {
                     Box(width = c.width) {
-                        Text(c.title, color = mute(), font = FONT_BODY)
+                        Text(c.title, color = mute(), font = tk(FONT_BODY))
                     }
                 } else {
-                    basis0(Text(c.title, color = mute(), font = FONT_BODY, grow = 1))
+                    basis0(Text(c.title, color = mute(), font = tk(FONT_BODY), grow = 1))
                 }
             })
         }
@@ -3972,8 +4015,8 @@ fn TableCols(cols: []TableCol) {
 /// outline button. Reads happen inside prop thunks so the row repaints.
 fn PageButton(page: Signal<int>, n: int) {
     Box(align_direction = DIRECTION.Row,
-        width = 36,
-        height = 36,
+        width = tk(36),
+        height = tk(36),
         radius = RAD_MD,
         align_items = ALIGN.Center,
         justify = ALIGN.Center,
@@ -3987,7 +4030,7 @@ fn PageButton(page: Signal<int>, n: int) {
     ) {
         Text("{{n}}",
                   color = if page.get() == n { ink() } else { mute() },
-                  font = FONT_BODY)
+                  font = tk(FONT_BODY))
     }
 }
 
@@ -3996,8 +4039,8 @@ fn Pagination(cur: Signal<int>, pages: int) {
     Row(4) {
         let prev = Box(
             align_direction = DIRECTION.Row,
-            width = 36,
-            height = 36,
+            width = tk(36),
+            height = tk(36),
             radius = RAD_MD,
             align_items = ALIGN.Center,
             justify = ALIGN.Center,
@@ -4010,7 +4053,7 @@ fn Pagination(cur: Signal<int>, pages: int) {
             a11y_label = "Previous page",
             cursor = "pointer"
         ) {
-            Icon(IC_CHEV_LEFT, 16, mute)
+            Icon(IC_CHEV_LEFT, tk(16), mute)
         }
         let mut i = 1
         while i <= pages {
@@ -4019,8 +4062,8 @@ fn Pagination(cur: Signal<int>, pages: int) {
         }
         let next = Box(
             align_direction = DIRECTION.Row,
-            width = 36,
-            height = 36,
+            width = tk(36),
+            height = tk(36),
             radius = RAD_MD,
             align_items = ALIGN.Center,
             justify = ALIGN.Center,
@@ -4033,7 +4076,7 @@ fn Pagination(cur: Signal<int>, pages: int) {
             a11y_label = "Next page",
             cursor = "pointer"
         ) {
-            Icon(IC_CHEV_RIGHT, 16, mute)
+            Icon(IC_CHEV_RIGHT, tk(16), mute)
         }
     }
 }
@@ -4245,7 +4288,7 @@ fn __c_axes(w: int, h: int, maxv: int) {
                            position = pos_absolute(),
                            left = 0,
                            top = CHART_TOP + k * plot_h / 4 - 6) {
-            Text("{{tv}}", color = mute(), font = FONT_CAPTION)
+            Text("{{tv}}", color = mute(), font = tk(FONT_CAPTION))
         }
     }
     // Baseline axis.
@@ -4306,12 +4349,12 @@ fn __c_tooltip(labels: []string, names: []string, vals: []int, s: int, n: int,
             }
         }
         return ""
-    }, color = ink(), font = FONT_CAPTION)
+    }, color = ink(), font = tk(FONT_CAPTION))
     for j in 0..s {
         let jj = j
         Row(SPACE.Exs) {
             Box(width = 8, height = 8, radius = 2, background = chart_color(jj))
-            Text(names[jj], color = mute(), font = FONT_CAPTION)
+            Text(names[jj], color = mute(), font = tk(FONT_CAPTION))
             Grow()
             Text(fn() -> string {
                 let a = act.get() - 1
@@ -4321,7 +4364,7 @@ fn __c_tooltip(labels: []string, names: []string, vals: []int, s: int, n: int,
                     }
                 }
                 return ""
-            }, color = ink(), font = FONT_CAPTION)
+            }, color = ink(), font = tk(FONT_CAPTION))
         }
     }
     __ui_pop()
@@ -4350,7 +4393,7 @@ fn __c_zone(i: int, hov: Signal<int>, act: Signal<int>, h: int, col_w: int) {
 /// Rotated labels are parallel diagonal strips, so they never collide with
 /// each other however narrow the plot gets; CHART_XLAB reserves their room.
 fn __c_xlab(label: string, i: int, col_w: int, plot_h: int) {
-    let lab = Text(label, color = mute(), font = FONT_CAPTION,
+    let lab = Text(label, color = mute(), font = tk(FONT_CAPTION),
                         position = pos_absolute(),
                         left = __c_col_x(CHART_GUTTER, col_w, i) + 3,
                         top = CHART_TOP + plot_h + 3)
@@ -4364,7 +4407,7 @@ fn __c_legend(names: []string) {
         Each(names, fn(j, name) {
             Row(SPACE.Exxs) {
                 Box(width = 8, height = 8, radius = 2, background = chart_color(j))
-                Text(name, color = mute(), font = FONT_CAPTION)
+                Text(name, color = mute(), font = tk(FONT_CAPTION))
             }
         })
     }
@@ -4710,7 +4753,7 @@ fn CalStep(markup: string, label: string, press: fn()) {
 fn CalWeekday(s: string) {
     Box(align_direction = DIRECTION.Row, width = CAL_CELL, height = 24,
              align_items = ALIGN.Center, justify = ALIGN.Center) {
-        Text(s, color = dim(), font = FONT_CAPTION)
+        Text(s, color = dim(), font = tk(FONT_CAPTION))
     }
 }
 
@@ -4811,7 +4854,7 @@ fn CalCell(y: Signal<int>, m: Signal<int>, d: Signal<int>, open: Signal<int>, id
             }
             return ink()
         },
-        font = FONT_BODY)
+        font = tk(FONT_BODY))
     }
 }
 
@@ -4844,25 +4887,25 @@ fn DatePicker(y: Signal<int>, m: Signal<int>, d: Signal<int>) {
         Box(
             align_direction = DIRECTION.Row,
             spacing = 4,
-            width = 200,
+            width = tk(200),
             align_items = ALIGN.Center,
             background = plate(),
             border = HAIRLINE,
             border_color = rule(),
             radius = RAD_MD,
-            padding_x = 12,
-            padding_y = 8,
+            padding_x = tk(12),
+            padding_y = tk(8),
             on_click = fn() => open.set(1 - open.get()),
             a11y_role = "button",
             a11y_label = "Pick a date",
             cursor = "pointer"
         ) {
-            Icon(IC_CALENDAR, 16, mute)
-            Text("{{y.get()}}", color = ink(), font = FONT_BODY)
-            Text("-", color = mute(), font = FONT_BODY)
-            Text("{{m.get()}}", color = ink(), font = FONT_BODY)
-            Text("-", color = mute(), font = FONT_BODY)
-            Text("{{d.get()}}", color = ink(), font = FONT_BODY)
+            Icon(IC_CALENDAR, tk(16), mute)
+            Text("{{y.get()}}", color = ink(), font = tk(FONT_BODY))
+            Text("-", color = mute(), font = tk(FONT_BODY))
+            Text("{{m.get()}}", color = ink(), font = tk(FONT_BODY))
+            Text("-", color = mute(), font = tk(FONT_BODY))
+            Text("{{d.get()}}", color = ink(), font = tk(FONT_BODY))
         }
     }
     __ui_push(anchor.id)
@@ -4903,7 +4946,7 @@ fn DatePicker(y: Signal<int>, m: Signal<int>, d: Signal<int>) {
                  grow = 1) {
             Text(fn() -> string {
                 return cal_month_name(m.get())
-            }, color = ink(), font = FONT_BODY)
+            }, color = ink(), font = tk(FONT_BODY))
         }
         CalStep(IC_CHEV_RIGHT, "Next month", fn() {
             if m.get() >= 12 {
@@ -4915,7 +4958,7 @@ fn DatePicker(y: Signal<int>, m: Signal<int>, d: Signal<int>) {
         Grow()
         CalStep(IC_CHEV_LEFT, "Previous year", fn() => y.set(y.get() - 1))
         // Bound text paints the live year — same trick the gauge widgets use.
-        bind(Text("", color = ink(), font = FONT_BODY), y)
+        bind(Text("", color = ink(), font = tk(FONT_BODY)), y)
         CalStep(IC_CHEV_RIGHT, "Next year", fn() => y.set(y.get() + 1))
     }
     CalWeekRow()

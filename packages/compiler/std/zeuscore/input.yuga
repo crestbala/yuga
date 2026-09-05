@@ -196,6 +196,9 @@ fn click(px: int, py: int) -> int {
     arena.ptr_y = py
     arena.drag_id = 0
     arena.drag_bar = 0
+    // Pointer interaction dismisses the keyboard focus ring; tab/shift-tab
+    // brings it back (desktop convention).
+    arena.kb_focus = 0
     if arena.root_id <= 0 {
         return 0
     }
@@ -502,6 +505,42 @@ fn mouseup() {
 
 /// Deliver a key to the focused node's `on_key_down` / `on_key_press`
 /// handlers. Returns 1 if a handler ran, so the host repaints.
+/** Keyboard activation of the focused control (Enter / Space): the same
+ *  click dispatch a pointer press runs, minus hit-testing and pointer-only
+ *  handlers. Returns 1 when the control consumed the key. Text fields never
+ *  reach here (their own editing handles the keys). */
+fn press_focused() -> int {
+    let id = arena.focus_id
+    if id <= 0 {
+        return 0
+    }
+    if id >= arena.nodes.len {
+        return 0
+    }
+    if arena.want_show(id) == 0 {
+        return 0
+    }
+    if arena.nodes[id].kind == 10 {
+        return 0
+    }
+    let mut ran = 0
+    let c1 = Click { sid: arena.nodes[id].click_sig, mode: arena.nodes[id].click_mode, setv: arena.nodes[id].click_set }
+    if c1.sid > 0 {
+        apply_click(c1)
+        ran = 1
+    }
+    let c2 = Click { sid: arena.nodes[id].click2_sig, mode: arena.nodes[id].click2_mode, setv: arena.nodes[id].click2_set }
+    if c2.sid > 0 {
+        apply_click(c2)
+        ran = 1
+    }
+    if arena.nodes[id].click_fn > 0 {
+        platform.plat_invoke_fn(arena.nodes[id].click_fn)
+        ran = 1
+    }
+    return ran
+}
+
 fn key_handlers(k: int, mods: int, up: int) -> int {
     let id = arena.focus_id
     if id <= 0 {
@@ -688,6 +727,7 @@ fn key(k: int) -> int {
         let mut changed = 0
         if arena.focus_id != 0 {
             arena.focus_id = 0
+            arena.kb_focus = 0
             changed = 1
         }
         let n = arena.nodes.len
@@ -703,6 +743,42 @@ fn key(k: int) -> int {
             }
         }
         return changed
+    }
+    // Tab: a mapped chord wins; otherwise single-line fields and non-input
+    // controls move focus (shift = back). Multiline fields insert a tab and
+    // fall through to the editing path below.
+    if k == 9 {
+        if handled != 0 {
+            return 1
+        }
+        let mut insert = 0
+        if arena.focus_captures_text() != 0 {
+            let fid = arena.focus_id
+            if fid > 0 {
+                if fid < arena.nodes.len {
+                    if arena.nodes[fid].kind == 10 {
+                        if arena.nodes[fid].wrap != 0 {
+                            insert = 1
+                        }
+                    }
+                }
+            }
+        }
+        if insert == 0 {
+            return arena.focus_step(arena.ev_mods % 2)
+        }
+    } else {
+        // Enter / Space activate the focused control when no keymap chord
+        // consumed the key. Text fields handle their own keys below.
+        if handled == 0 {
+            if k == 13 || k == 32 {
+                if arena.focus_captures_text() == 0 {
+                    if press_focused() != 0 {
+                        return 1
+                    }
+                }
+            }
+        }
     }
     if arena.focus_captures_text() == 0 {
         return handled
