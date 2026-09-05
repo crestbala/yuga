@@ -839,9 +839,14 @@ static void emit_expr(FILE *o, AstNode *n) {
                     fprintf(o, "({ ");
                     pushed = hoist_call_clos_envs(o, n);
                 }
-                fprintf(o, "%s(", n->as.call.resolved_cname
-                                    ? n->as.call.resolved_cname
-                                    : cname_for_call(n->as.call.callee));
+                {
+                    const char *cn = NULL;
+                    if (subst_n)
+                        cn = typecheck_callee_cname(n, subst_names, subst_args, subst_n);
+                    if (!cn) cn = n->as.call.resolved_cname;
+                    if (!cn) cn = cname_for_call(n->as.call.callee);
+                    fprintf(o, "%s(", cn ? cn : "unknown");
+                }
                 for (size_t i = 0; i < n->as.call.arg_count; i++) {
                     if (i) fprintf(o, ", ");
                     emit_expr(o, n->as.call.args[i]);
@@ -2128,7 +2133,7 @@ static void collect_clos(AstNode *n) {
             for (size_t i = 0; i < n->as.program.decl_count; i++) collect_clos(n->as.program.decls[i]);
             break;
         case AST_FN_DECL:
-            collect_clos(n->as.fn.body);
+            if (!n->as.fn.tparam_count) collect_clos(n->as.fn.body);
             break;
         case AST_BLOCK:
             for (size_t i = 0; i < n->as.block.stmt_count; i++) collect_clos(n->as.block.stmts[i]);
@@ -2226,6 +2231,51 @@ static void emit_clos_env(FILE *o, AstNode *fn) {
         fprintf(o, ";\n");
     }
     fprintf(o, "};\n");
+}
+
+/** Closures lowered from a generic instance: `yuga_clos_<id>_<mono>`. */
+static int is_mono_clos(const IrFn *fn) {
+    if (!fn || !fn->cname) return 0;
+    if (strncmp(fn->cname, "yuga_clos_", 10) != 0) return 0;
+    const char *p = fn->cname + 10;
+    while (*p >= '0' && *p <= '9') p++;
+    return *p == '_';
+}
+
+static int clos_id_in_nodes(int id) {
+    for (int i = 0; i < nclos_nodes; i++)
+        if (clos_nodes[i] && clos_nodes[i]->as.fn.clos_id == id) return 1;
+    return 0;
+}
+
+static void emit_mono_clos_env(FILE *o, const IrFn *fn, int *seen, int *nseen, int nseen_cap) {
+    if (!fn->ncaps) return;
+    if (clos_id_in_nodes(fn->clos_id)) return;
+    for (int i = 0; i < *nseen; i++)
+        if (seen[i] == fn->clos_id) return;
+    if (*nseen < nseen_cap) seen[(*nseen)++] = fn->clos_id;
+    fprintf(o, "struct yuga_env_%d {\n", fn->clos_id);
+    for (int k = 0; k < fn->ncaps; k++) {
+        fprintf(o, "    ");
+        emit_var_decl_type(o, fn->cap_types ? fn->cap_types[k] : ty_int(),
+                           fn->caps ? fn->caps[k] : "c");
+        fprintf(o, ";\n");
+    }
+    fprintf(o, "};\n");
+}
+
+static void emit_mono_clos_sig(FILE *o, const IrFn *fn, int proto) {
+    Type *ret = (fn->sig && fn->sig->kind == TY_PROC && fn->sig->ret) ? fn->sig->ret : ty_void();
+    emit_ctype(o, ret);
+    fprintf(o, " %s(void *_env", fn->cname);
+    for (int i = 0; i < fn->nlocals; i++) {
+        if (!fn->locals[i].is_param) continue;
+        if (fn->locals[i].name && strcmp(fn->locals[i].name, "_env") == 0) continue;
+        fprintf(o, ", ");
+        emit_var_decl_type(o, fn->locals[i].ty, fn->locals[i].name);
+    }
+    fprintf(o, ")");
+    if (proto) fprintf(o, ";\n");
 }
 
 /** C function that implements a closure (env pointer + params). */
@@ -2364,6 +2414,18 @@ void codegen_emit_c(FILE *out, YugaModule *mods, int nmods, const char *rt_path)
     }
     for (int i = 0; i < nclos_nodes; i++) emit_clos_env(out, clos_nodes[i]);
     for (int i = 0; i < nclos_nodes; i++) emit_clos_sig(out, clos_nodes[i], 1);
+    if (emit_ir_mod) {
+        int nfn = emit_ir_mod->nfns;
+        int *seen = nfn ? (int *)calloc((size_t)nfn, sizeof(int)) : NULL;
+        int nseen = 0;
+        for (int i = 0; i < nfn; i++) {
+            IrFn *cf = &emit_ir_mod->fns[i];
+            if (!is_mono_clos(cf)) continue;
+            emit_mono_clos_env(out, cf, seen, &nseen, nfn);
+            emit_mono_clos_sig(out, cf, 1);
+        }
+        free(seen);
+    }
     for (int i = 0; i < typecheck_mono_count(); i++) {
         AstNode *fn = typecheck_mono_fn(i);
         if (!fn) continue;
@@ -2387,6 +2449,14 @@ void codegen_emit_c(FILE *out, YugaModule *mods, int nmods, const char *rt_path)
 
     cur_is_main_mod = 1;
     for (int i = 0; i < nclos_nodes; i++) emit_closure_fn(out, clos_nodes[i]);
+    if (emit_ir_mod) {
+        for (int i = 0; i < emit_ir_mod->nfns; i++) {
+            IrFn *cf = &emit_ir_mod->fns[i];
+            if (!is_mono_clos(cf) || !cf->lowered) continue;
+            emit_mono_clos_sig(out, cf, 0);
+            emit_ir_fn_body(out, cf, 0);
+        }
+    }
 
     for (int i = 0; i < typecheck_mono_count(); i++) {
         AstNode *fn = typecheck_mono_fn(i);

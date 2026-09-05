@@ -1225,13 +1225,15 @@ fn NavTab(label: string, page: Signal<int>, index: int) {
     }
 }
 
-/// Header row: muted label cells above a hairline (th h-10 px-2).
+/// Header row: muted label cells above a hairline (th h-10 px-2). Cells use
+/// zero basis + grow so the three columns split the row evenly and line up
+/// with `TableRow` bodies regardless of text width.
 fn TableHead(a: string, b: string, c: string) {
     Column(SPACE.Exs) {
         Row(SPACE.Sm) {
-            zeus.Text(a, color = mute(), font = FONT_BODY, grow = 1)
-            zeus.Text(b, color = mute(), font = FONT_BODY, grow = 1)
-            zeus.Text(c, color = mute(), font = FONT_BODY, grow = 1)
+            zeus.basis0(zeus.Text(a, color = mute(), font = FONT_BODY, grow = 1))
+            zeus.basis0(zeus.Text(b, color = mute(), font = FONT_BODY, grow = 1))
+            zeus.basis0(zeus.Text(c, color = mute(), font = FONT_BODY, grow = 1))
         }
         Separator()
     }
@@ -1241,11 +1243,42 @@ fn TableHead(a: string, b: string, c: string) {
 fn TableRow(a: string, b: string, c: string) {
     Column(SPACE.Exs) {
         Row(SPACE.Sm) {
-            zeus.Text(a, color = ink(), font = FONT_BODY, grow = 1)
-            zeus.Text(b, color = ink(), font = FONT_BODY, grow = 1)
-            zeus.Text(c, color = ink(), font = FONT_BODY, grow = 1)
+            zeus.basis0(zeus.Text(a, color = ink(), font = FONT_BODY, grow = 1))
+            zeus.basis0(zeus.Text(b, color = ink(), font = FONT_BODY, grow = 1))
+            zeus.basis0(zeus.Text(c, color = ink(), font = FONT_BODY, grow = 1))
         }
         Separator()
+    }
+}
+
+/// Header from `[]TableCol` (`title` + `width`; 0 = equal share of the row).
+fn TableCols(cols: []TableCol) {
+    Column(SPACE.Exs) {
+        // Same gutter as the body rows (`padding_x = SPACE.Exs`), so header
+        // and cells share the same column boundaries.
+        zeus.Box(align_direction = DIRECTION.Row, align_items = ALIGN.Center,
+                 spacing = SPACE.Sm, padding_x = SPACE.Exs) {
+            zeus.Each(cols, fn(i, c) {
+                if c.width > 0 {
+                    zeus.Box(width = c.width) {
+                        zeus.Text(c.title, color = mute(), font = FONT_BODY)
+                    }
+                } else {
+                    zeus.basis0(zeus.Text(c.title, color = mute(), font = FONT_BODY, grow = 1))
+                }
+            })
+        }
+        Separator()
+    }
+}
+
+/// Windowed table: `rows` is `zeus.signal([]T {})` of row structs, `cols` is
+/// `[]zeus.TableCol`. Only visible body rows are mounted. `build(i, row)`
+/// paints one body row at a fixed `row_h`.
+fn VirtualTable<T>(rows: Signal<[]T>, cols: []TableCol, row_h: int, build: fn(int, T)) -> Node {
+    return zeus.Box(align_direction = DIRECTION.Column, grow = 1) {
+        TableCols(cols)
+        zeus.VirtualList(rows, row_h, build)
     }
 }
 

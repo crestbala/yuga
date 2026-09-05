@@ -475,7 +475,19 @@
         (e) => {
           e.preventDefault();
           const r = canvas.getBoundingClientRect();
-          exp.zeus_scroll(e.clientX - r.left, e.clientY - r.top, e.deltaX, e.deltaY);
+          const x = e.clientX - r.left;
+          const y = e.clientY - r.top;
+          /* Trackpads: pixel deltas per frame, momentum applies. Mouse
+             wheels: line/page clicks — scale to points, step without coast. */
+          if (e.deltaMode === 1) {
+            const fn = exp.zeus_scroll_step || exp.zeus_scroll;
+            fn(x, y, e.deltaX * 16, e.deltaY * 16);
+          } else if (e.deltaMode === 2) {
+            const fn = exp.zeus_scroll_step || exp.zeus_scroll;
+            fn(x, y, e.deltaX * window.innerWidth, e.deltaY * window.innerHeight);
+          } else {
+            exp.zeus_scroll(x, y, e.deltaX, e.deltaY);
+          }
         },
         { passive: false }
       );

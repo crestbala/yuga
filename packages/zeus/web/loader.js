@@ -681,8 +681,20 @@
           "wheel",
           (e) => {
             e.preventDefault();
+            /* Trackpads report pixel deltas per frame (deltaMode 0) and carry
+               the momentum feel; mouse wheels report lines/pages (deltaMode
+               1/2) as discrete clicks. Scale the latter to points and step
+               without momentum, so a notch stops where it lands. */
             const p = layoutPoint(e.clientX, e.clientY);
-            exp.zeus_scroll(p.x, p.y, e.deltaX, e.deltaY);
+            if (e.deltaMode === 1) {
+              const fn = exp.zeus_scroll_step || exp.zeus_scroll;
+              fn(p.x, p.y, e.deltaX * 16, e.deltaY * 16);
+            } else if (e.deltaMode === 2) {
+              const fn = exp.zeus_scroll_step || exp.zeus_scroll;
+              fn(p.x, p.y, e.deltaX * layoutW, e.deltaY * layoutH);
+            } else {
+              exp.zeus_scroll(p.x, p.y, e.deltaX, e.deltaY);
+            }
             schedule(0);
           },
           { passive: false, signal }

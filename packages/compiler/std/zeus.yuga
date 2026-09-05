@@ -1,8 +1,11 @@
 //! `zeus` — UI toolkit. Native Cocoa and WASM/Canvas2D run the same source.
 //!
 //! Widgets are `Box` / `Text` / `Button` / `Input` / `Grid` / `Overlay` /
-//! `Scroll` / `Svg` / `If` / `Each` / `For` / `App`. Hierarchy is a trailing
-//! block. Lists: `zeus.signal([]string {})` + `For` + `push_item`.
+//! `Scroll` / `Svg` / `If` / `Each` / `For` / `VirtualList` / `VirtualTable` /
+//! `App`. Hierarchy is a trailing block. Lists: `zeus.signal([]T {})` +
+//! `For` / `VirtualList` + `push_item` / `insert_item`. Windowed lists
+//! (`VirtualList`, `For(..., row_h)`, `VirtualTable`) render visible rows
+//! only; table rows and columns are structs.
 //!
 //! Example:
 //! ```
@@ -470,6 +473,16 @@ fn h(node: Node, px: int) -> Node {
     arena.nodes[node.id].eh = px
     return node
 }
+
+/// Zero basis: the node's measured content no longer sets its row slot width;
+/// `grow` then divides the whole free line evenly. This is the table recipe —
+/// header labels and row cells all use `basis0(...).grow(1)`, so every column
+/// boundary comes from the row width alone, not from text lengths. Cells that
+/// must keep a fixed pixel width use `.w(px)` instead.
+fn basis0(node: Node) -> Node {
+    arena.nodes[node.id].w_pct = 0
+    return node
+}
 /// `.w(px).h(px)` in one call. Named `size_px`, not `size`: kit widgets expose
 /// `.size()` for the sm/md/lg token, and two chain methods sharing a name and
 /// a `(Node, int)` shape resolve by import order — which is how `.size(ui.sm())`
@@ -913,12 +926,31 @@ fn refresh_lists() {
     }
 }
 
+fn virt_stale() -> int {
+    let n = arena.nodes.len
+    for i in 1..n {
+        if arena.nodes[i].row_h > 0 {
+            if arena.nodes[i].list_fn > 0 {
+                let w = virt_window(i, arena.nodes[i].list_n, arena.nodes[i].row_h)
+                if w.first != arena.nodes[i].list_lo {
+                    return 1
+                }
+                if w.last != arena.nodes[i].list_hi {
+                    return 1
+                }
+            }
+        }
+    }
+    return 0
+}
+
 fn engine_layout(width: int, height: int) {
     // One frame of the async world first: steppers advance in-flight socket
     // state machines, then spawns and due timers fire. Callbacks set signals;
     // the rebuild and layout below paint their effect this very frame. Hosts
     // call this per frame (mac drawRect, web rAF, headless pump).
     async.tick()
+    arena.physics_step()
     if has_view != 0 {
         arena.snapshot_focus()
         arena.snapshot_scroll()
@@ -936,6 +968,12 @@ fn engine_layout(width: int, height: int) {
         refresh_lists()
     }
     layout.layout(width, height)
+    // Windowed lists size their window from the scroller's laid-out height.
+    // The first pass may have h = 0; rebuild the window and lay out once more.
+    if virt_stale() != 0 {
+        refresh_lists()
+        layout.layout(width, height)
+    }
 }
 
 fn engine_fill_focus() {
@@ -1017,8 +1055,12 @@ fn engine_paint() {
 fn engine_step() -> int {
     let d = scene.step()
     // While an async op is in flight or a spawn waits, hosts must keep
-    // drawing frames: only a frame's tick advances them.
+    // drawing frames: only a frame's tick advances them. Coasting scroll
+    // is the same: keep frames until velocity and overscroll settle.
     if async.busy() != 0 {
+        return 1
+    }
+    if arena.phys_live() != 0 {
         return 1
     }
     return d
@@ -1026,8 +1068,12 @@ fn engine_step() -> int {
 
 /// Milliseconds until the next async timer is due (0 = none; -1 = a spawn
 /// waits). Native hosts that stop drawing when idle use this to schedule the
-/// next frame exactly at the deadline.
+/// next frame exactly at the deadline. Coasts at ~60 fps while a scroller
+/// is in motion.
 fn engine_next_ms() -> int {
+    if arena.phys_live() != 0 {
+        return 16
+    }
     return async.next_due()
 }
 
@@ -1116,6 +1162,13 @@ fn engine_scroll(px: int, py: int, dx: int, dy: int) -> int {
     return input.scroll(px, py, dx, dy)
 }
 
+/// Discrete scroll step (mouse wheel notch / web line wheel): applies the
+/// delta with no momentum. Tests and hosts use this for input that must stop
+/// exactly where it lands.
+fn engine_scroll_step(px: int, py: int, dx: int, dy: int) -> int {
+    return input.scroll_step(px, py, dx, dy)
+}
+
 fn engine_drag(px: int, py: int) -> int {
     return input.drag(px, py)
 }
@@ -1164,6 +1217,21 @@ fn node_w(id: int) -> int {
 
 fn node_h(id: int) -> int {
     return arena.nodes[id].h
+}
+
+/// Current vertical scroll offset of node `id` (tests, `scroll_to`).
+fn node_scroll_y(id: int) -> int {
+    return arena.nodes[id].scroll_y
+}
+
+/// Current horizontal scroll offset of node `id`.
+fn node_scroll_x(id: int) -> int {
+    return arena.nodes[id].scroll_x
+}
+
+/// Max vertical scroll of node `id` (`content - viewport`, 0 if no overflow).
+fn node_scroll_max(id: int) -> int {
+    return arena.scroll_max(id)
 }
 
 /// Live slot counts (diagnostics for tests). `nodes` includes dead slots
@@ -1816,6 +1884,24 @@ struct OverlayProps {
     on_click__set: bool = false,
 }
 
+/// Options for `Scroll`. `bind` is a two-way `scroll_y` signal: writing it
+/// calls `scroll_to`, and wheel / pan / physics write the live offset back.
+struct ScrollProps {
+    width: fn() -> int = -1,
+    height: fn() -> int = -1,
+    grow: fn() -> int = -1,
+    bind: Signal<int> = Signal { id: 0 },
+    bind__set: bool = false,
+}
+
+/// One column of a `VirtualTable`. `width` 0 means the column takes an equal
+/// share of the row (pair cells with `basis0(...).grow(1)`); a positive value
+/// is a pixel width. `title` is the header cell.
+struct TableCol {
+    title: string,
+    width: int,
+}
+
 /// Geometry for `Svg` layers: explicit size plus absolute placement
 /// (`position` / `left` / `top` / `right` / `bottom` / `z_index`, as
 /// `BoxProps`). Without `width`/`height` an svg is measured like a label.
@@ -2168,11 +2254,58 @@ fn Each<T>(items: []T, build: fn(int, T)) {
     }
 }
 
-/// Append `v` to a live list signal and notify. Use with `For`.
+/// Append `v` to a live list signal and notify. Use with `For` / `VirtualList`.
+/// A windowed list only rebuilds the visible window, not every row.
 fn push_item<T>(sig: Signal<[]T>, v: T) {
     let mut xs = sig.get()
     push(xs, v)
     sig.set(xs)
+}
+
+/// Insert `v` at index `i` (clamped to `0..len`). Use with `For` / `VirtualList`.
+fn insert_item<T>(sig: Signal<[]T>, i: int, v: T) {
+    let xs = sig.get()
+    let n = xs.len
+    let mut at = i
+    if at < 0 {
+        at = 0
+    }
+    if at > n {
+        at = n
+    }
+    let mut out = []T {}
+    let mut j = 0
+    while j < at {
+        push(out, xs[j])
+        j = j + 1
+    }
+    push(out, v)
+    while j < n {
+        push(out, xs[j])
+        j = j + 1
+    }
+    sig.set(out)
+}
+
+/// Remove the item at index `i`. No-op if `i` is out of range.
+fn remove_item<T>(sig: Signal<[]T>, i: int) {
+    let xs = sig.get()
+    let n = xs.len
+    if i < 0 {
+        return
+    }
+    if i >= n {
+        return
+    }
+    let mut out = []T {}
+    let mut j = 0
+    while j < n {
+        if j != i {
+            push(out, xs[j])
+        }
+        j = j + 1
+    }
+    sig.set(out)
 }
 
 /// Remove the last item from a live list signal. No-op if empty.
@@ -2184,44 +2317,255 @@ fn pop_item<T>(sig: Signal<[]T>) {
     }
 }
 
-fn for_refresh(nid: int, items: Signal<[]string>, build: fn(int, string)) {
+const VIRT_OVERSCAN: int = 4
+
+struct VirtWin {
+    first: int,
+    last: int,
+}
+
+fn find_scroller(id: int) -> int {
+    if id <= 0 {
+        return 0
+    }
+    if id >= arena.nodes.len {
+        return 0
+    }
+    if arena.nodes[id].kind == 11 {
+        return id
+    }
+    let mut p = arena.nodes[id].parent
+    while p > 0 {
+        if arena.nodes[p].kind == 11 {
+            return p
+        }
+        p = arena.nodes[p].parent
+    }
+    return 0
+}
+
+/// Visible index window for a windowed list. `row_h` is the fixed row height
+/// used to turn `scroll_y` into indices; overscan keeps a few extra rows
+/// mounted so a small flick does not rebuild.
+fn virt_window(nid: int, n: int, row_h: int) -> VirtWin {
+    let mut first = 0
+    let mut last = n
+    if row_h <= 0 {
+        return VirtWin { first: first, last: last }
+    }
+    let sid = find_scroller(nid)
+    let mut view_h = 240
+    let mut local = 0
+    if sid > 0 {
+        if arena.nodes[sid].h > 0 {
+            view_h = arena.nodes[sid].h
+        }
+        if nid == sid {
+            local = arena.nodes[sid].scroll_y
+        } else {
+            local = arena.nodes[sid].scroll_y - (arena.nodes[nid].y - arena.nodes[sid].y)
+        }
+    } else if arena.nodes[nid].h > 0 {
+        view_h = arena.nodes[nid].h
+    }
+    if local < 0 {
+        local = 0
+    }
+    first = local / row_h - VIRT_OVERSCAN
+    last = (local + view_h) / row_h + VIRT_OVERSCAN + 1
+    if first < 0 {
+        first = 0
+    }
+    if last > n {
+        last = n
+    }
+    if last < first {
+        last = first
+    }
+    return VirtWin { first: first, last: last }
+}
+
+fn virt_refresh<T>(nid: int, items: Signal<[]T>, build: fn(int, T), row_h: int) {
+    let xs = items.get()
+    let m = xs.len
     let gen = platform.plat_sig_gen(items.id)
+    let mut first = 0
+    let mut last = m
+    if row_h > 0 {
+        let w = virt_window(nid, m, row_h)
+        first = w.first
+        last = w.last
+    }
     if gen == arena.nodes[nid].list_gen {
-        if arena.nodes[nid].kids.len > 0 {
-            return
+        if first == arena.nodes[nid].list_lo {
+            if last == arena.nodes[nid].list_hi {
+                if arena.nodes[nid].kids.len > 0 {
+                    return
+                }
+                if m == 0 {
+                    arena.nodes[nid].list_n = 0
+                    return
+                }
+            }
         }
     }
     arena.nodes[nid].list_gen = gen
+    arena.nodes[nid].list_lo = first
+    arena.nodes[nid].list_hi = last
+    arena.nodes[nid].list_n = m
+    arena.nodes[nid].row_h = row_h
     // Everything the builder allocated last time is owned by this host:
     // signals and interned handlers are freed (and their ids recycled) on
-    // the next rebuild, so streaming data does not grow the arena.
+    // the next rebuild, so streaming data does not grow the arena. A
+    // windowed list only (re)builds the visible rows — append / insert
+    // outside the window is a spacer resize, not O(n) widgets.
     let prev = arena.scope_begin(nid)
     arena.release_sigs(nid)
     arena.release_fns(nid)
     arena.drop_children(nid)
     __ui_push(nid)
-    let xs = items.get()
-    let m = xs.len
-    for i in 0..m {
+    if row_h > 0 {
+        if first > 0 {
+            let top = raw_spacer()
+            h(top, first * row_h)
+            ui_emit(top)
+        }
+    }
+    let mut i = first
+    while i < last {
         build(i, xs[i])
+        i = i + 1
+    }
+    if row_h > 0 {
+        if last < m {
+            let bot = raw_spacer()
+            h(bot, (m - last) * row_h)
+            ui_emit(bot)
+        }
     }
     __ui_pop()
     arena.scope_end(prev)
 }
 
-/// Growing list of strings. `items` is `zeus.signal([]string {})`.
-/// Push with `push_item`. Rebuilds on the next layout after a push.
-fn For(items: Signal<[]string>, build: fn(int, string)) -> Node {
+/// Growing list. `items` is `zeus.signal([]T {})` (`T` Copy). Push with
+/// `push_item` / `insert_item`. Rebuilds on the next layout after a mutation.
+/// Pass `row_h` > 0 to window: only the rows that intersect the ancestor
+/// scroller (± overscan) are mounted; spacers stand in for the rest.
+fn For<T>(items: Signal<[]T>, build: fn(int, T), row_h: int = 0) -> Node {
     arena.ensure()
     let n = raw_box()
     shrink(n, 0)
     flex_col(n)
+    arena.nodes[n.id].row_h = row_h
     let nid = n.id
-    for_refresh(nid, items, build)
+    virt_refresh(nid, items, build, row_h)
     arena.nodes[nid].list_fn = __intern(|| {
-        for_refresh(nid, items, build)
+        virt_refresh(nid, items, build, row_h)
     })
     return ui_emit(n)
+}
+
+/// Vertical scroller that window-renders `items`. `row_h` is the fixed row
+/// height in points (spacers use it so `scroll_max` matches the full list).
+/// `build(i, item)` is the row. 10k rows stay a few dozen nodes.
+fn VirtualList<T>(items: Signal<[]T>, row_h: int, build: fn(int, T)) -> Node {
+    arena.ensure()
+    let n = raw_scroll()
+    grow(n, 1)
+    // Shrink so a parent with a fixed height can clamp the viewport; the
+    // measured `ih` is the full list (spacers) and must not blow the page.
+    shrink(n, 1)
+    arena.nodes[n.id].a11y_role = "list"
+    arena.nodes[n.id].row_h = row_h
+    let nid = n.id
+    virt_refresh(nid, items, build, row_h)
+    arena.nodes[nid].list_fn = __intern(|| {
+        virt_refresh(nid, items, build, row_h)
+    })
+    return ui_emit(n)
+}
+
+fn virt_header(cols: []TableCol) {
+    let row = raw_box()
+    flex_row(row)
+    shrink(row, 0)
+    h(row, 36)
+    arena.nodes[row.id].align = 1
+    ui_emit(row)
+    __ui_push(row.id)
+    let n = cols.len
+    for i in 0..n {
+        let lab = raw_label(cols[i].title)
+        if cols[i].width > 0 {
+            shrink(lab, 0)
+            w(lab, cols[i].width)
+        } else {
+            // Equal share of the row: zero basis + grow, so the header and
+            // every body row cut the same column boundaries regardless of
+            // their text. Rows must use the same recipe (see `basis0`).
+            basis0(lab)
+            grow(lab, 1)
+        }
+        ui_emit(lab)
+    }
+    __ui_pop()
+}
+
+/// Windowed table. `rows` is `zeus.signal([]T {})` where `T` is a row struct;
+/// `cols` is `[]TableCol` (title + width) for the header. The body is a
+/// `VirtualList` of `build(i, row)` — only visible rows are mounted. Build
+/// every cell with `basis0(...).grow(1)` (or a fixed `.w(px)` matching the
+/// column) so body columns line up under the header.
+fn VirtualTable<T>(rows: Signal<[]T>, cols: []TableCol, row_h: int, build: fn(int, T)) -> Node {
+    arena.ensure()
+    let wrap = raw_box()
+    flex_col(wrap)
+    grow(wrap, 1)
+    shrink(wrap, 1)
+    arena.nodes[wrap.id].a11y_role = "table"
+    __ui_push(wrap.id)
+    virt_header(cols)
+    VirtualList(rows, row_h, build)
+    __ui_pop()
+    return ui_emit(wrap)
+}
+
+/// Jump `n` (a `Scroll` / `VirtualList`) to vertical offset `y`. Clears
+/// residual velocity so physics does not coast past the target. Clamped.
+fn scroll_to(n: Node, y: int) -> Node {
+    arena.nodes[n.id].vel_y = 0
+    arena.nodes[n.id].scroll_y = y
+    arena.clamp_scroll(n.id)
+    if arena.nodes[n.id].bind_sig > 0 {
+        arena.store_sig(arena.nodes[n.id].bind_sig, arena.nodes[n.id].scroll_y)
+    }
+    return n
+}
+
+/// Jump `n` to horizontal offset `x`.
+fn scroll_to_x(n: Node, x: int) -> Node {
+    arena.nodes[n.id].vel_x = 0
+    arena.nodes[n.id].scroll_x = x
+    arena.clamp_scroll(n.id)
+    return n
+}
+
+/// Jump a windowed list so item `i` is at the top of the viewport.
+fn scroll_to_index(n: Node, i: int) -> Node {
+    let mut rh = arena.nodes[n.id].row_h
+    if rh < 1 {
+        rh = 1
+    }
+    let mut at = i
+    if at < 0 {
+        at = 0
+    }
+    return scroll_to(n, at * rh)
+}
+
+/// Live `scroll_y` of `n`.
+fn scroll_y(n: Node) -> int {
+    return arena.nodes[n.id].scroll_y
 }
 
 /// Width a node measured by the last layout pass (0 until the first one).
@@ -2260,9 +2604,27 @@ fn refit(host: Node, build: fn()) -> Node {
 }
 
 /// Vertical scroller. Children keep intrinsic height; a bar appears on overflow.
-fn Scroll() -> Node {
+/// `bind` is an optional two-way `scroll_y` signal (`scroll_to` writes it).
+fn Scroll(p: ScrollProps) -> Node {
     arena.ensure()
-    return ui_emit(raw_scroll())
+    let n = raw_scroll()
+    prop_int(n, 1, p.width)
+    prop_int(n, 2, p.height)
+    prop_int(n, 9, p.grow)
+    if p.bind__set {
+        arena.nodes[n.id].bind_sig = p.bind.id
+        let nid = n.id
+        let sid = p.bind.id
+        styled(n, || {
+            let y = sg(sid).get()
+            if arena.nodes[nid].scroll_y != y {
+                arena.nodes[nid].vel_y = 0
+                arena.nodes[nid].scroll_y = y
+                arena.clamp_scroll(nid)
+            }
+        })
+    }
+    return ui_emit(n)
 }
 
 /// Inline SVG. `currentColor` follows the node's foreground. Geometry props:

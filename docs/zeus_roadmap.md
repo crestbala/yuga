@@ -16,8 +16,8 @@ their exit criteria as the definition of done.
 
 | Layer | Today | Gap for real apps |
 |---|---|---|
-| UI core | Retained tree, per-prop thunks, arena recycling, headless layout/paint tests, DRAW goldens | list virtualization, scroll physics, IME/multiline, images |
-| Reactivity | `Signal<int>` scalars, `For` list rebuilds, reactive props (`width`, `position`, `grow`, `show`, …) | floats/dates in signals; appends rebuild whole lists |
+| UI core | Retained tree, per-prop thunks, arena recycling, windowed `For`/`VirtualList`/`VirtualTable`, scroll momentum + overscroll, headless layout/paint tests, DRAW goldens | nested scroll chaining, IME/multiline, images |
+| Reactivity | `Signal<int>` scalars, windowed `For`/`VirtualList`, reactive props (`width`, `position`, `grow`, `show`, …) | floats/dates in signals |
 | Data plane | `#[proto]` codecs + unary gRPC-Web / h2c client **and** server, `Result<T>`, async `call_async` client, SSE + WebSocket streams (Phase 1b), bearer-token auth (`set_token` + `app.before`) | no bidirectional streaming, no TLS |
 | Networking | `std/net`: blocking POSIX sockets + Phase 1 async transport (timers, non-blocking connect/poll/send, `http.call_async`/`sse_open`/`ws_open` steppers); wasm: `fetch_rpc` + async fetch slots | TLS, streaming bodies on wasm |
 | Storage | `sys.read_file` / `write_file` (whole-file), env | KV/table store, structured persistence, fs tree, app-data paths |
@@ -31,6 +31,7 @@ their exit criteria as the definition of done.
 Landmarks that are done and tested — the roadmap starts past them:
 
 - Arena recycling: `For`/`refit` rebuilds free nodes, signals, handlers, effects (`zeus_for_recycle.yuga`).
+- Windowed lists: `VirtualList` / `For(..., row_h)` / `VirtualTable` of row structs + `TableCol`; `insert_item`; scroll momentum, overscroll, `scroll_to` (`zeus_virt.yuga`).
 - Lazy DatePicker: one 7×6 signal-driven grid, no rebuild on month/year change.
 - Row shrink-before-wrap; `grow = 1` is elastic by default (CSS `flex: 1`), `shrink` prop overrides.
 - Single following chart tooltip + cursor + band driven by one `act` signal.
@@ -73,8 +74,8 @@ demos. Phase column points into §6.
 |---|---|---|---|---|
 | 1 | ~~No raster image primitive (draw op + host decode)~~ **Phase 2** | `zeus.Image`; hosts decode PNG/JPEG/WebP/GIF | — | 2 |
 | 2 | ~~Single-line text, no IME on canvas hosts~~ **Phase 3** | chat compose exists; wasm IME is paste+composition, not a hidden field | — | 3 |
-| 3 | `For` rebuilds the whole list per push (recycling yes, O(n) still) | message logs, activity feeds, 10k-row tables | medium (windowed rows) | 5 |
-| 4 | No scroll physics / overscroll / nested scrollers | feed feel, long pages | medium | 5b |
+| 3 | ~~`For` rebuilds the whole list per push (recycling yes, O(n) still)~~ **Phase 5** | `VirtualList` / windowed `For` / `VirtualTable`; `push_item` / `insert_item` | — | 5 |
+| 4 | Nested scroll chaining (momentum + overscroll **Phase 5**) | nested feed/page scrollers | medium | 5b |
 | 5 | `Signal<int>` only (no float/date/bool scalar store) | smooth animation, timestamps, charts | small-med | 6b |
 | 6 | Kit monolith, no dead-code elimination | web bundle size, componentization | medium | 7 |
 | 7 | a11y = labels only; no focus ring, thin keyboard model | enterprise + compliance | ongoing | 7b |
@@ -191,11 +192,14 @@ thread.
   (reopen), plus gallery draft/autosave demo. **Green** (`kv_roundtrip.yuga`; gallery Forms draft).
 
 ### Phase 5 — Virtualized lists + Virtualized table + scroll
-- [ ] Windowed `For` (render visible rows ± margin; recycle beyond the window).
-- [ ] Append/insert row ops that do not rebuild the whole list.
-- [ ] Scroll physics: momentum, overscroll clamp, `scroll_to` (signal-driven).
+- [x] Windowed `For` (render visible rows ± margin; recycle beyond the window).
+- [x] Append/insert row ops that do not rebuild the whole list.
+- [x] Scroll physics: momentum, overscroll clamp, `scroll_to` (signal-driven).
 - **Exit:** headless test: 10k-row feed stays under a node/effect budget while
-  scrolling (`arena_nodes()` bounded), items paint on demand.
+  scrolling (`arena_nodes()` bounded), items paint on demand. **Green**
+  (`zeus_virt.yuga`: 10k `VirtualList` + 10k `VirtualTable` of row structs /
+  `TableCol` columns; append/insert; `scroll_to`; overscroll rubber-band).
+  Demo: `examples/zeus/counter` (wasm / iOS / macOS / Android share `screen.yuga`).
 
 ### Phase 6 — TLS + float/date signals
 - [ ] TLS on `net` (SecureTransport/OpenSSL; wasm keeps browser TLS).

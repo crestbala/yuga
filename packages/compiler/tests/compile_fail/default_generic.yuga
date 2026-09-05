@@ -1,8 +1,0 @@
-// Defaults cannot name type parameters.
-fn f<T>(x: T = 5) -> T {
-    return x
-}
-
-fn main() {
-    f()
-}

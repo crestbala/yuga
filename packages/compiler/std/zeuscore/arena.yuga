@@ -116,6 +116,17 @@ struct UiNode {
     safe: int,
     list_fn: int,
     list_gen: int,
+    /// Windowed `For` / `VirtualList`: first rendered index, exclusive last,
+    /// live item count, and the fixed row height used for spacers. `row_h`
+    /// 0 means "not windowed" (build every child).
+    list_lo: int,
+    list_hi: int,
+    list_n: int,
+    row_h: int,
+    /// Scroll physics. Wheel / pan writes a velocity; `physics_step` coasts
+    /// and rubber-bands overscroll back into 0..max.
+    vel_x: int,
+    vel_y: int,
     a11y_label: string,
     a11y_role: string,
     /// CSS cursor shown while the pointer is over this node ("" = default).
@@ -200,6 +211,7 @@ fn blank_node() -> UiNode {
         hover_fade: 0, hover_amt: 0, tween: -1, enter_fade: 0, show_amt: 0,
         down_fn: 0, up_fn: 0, kdown_fn: 0, kup_fn: 0, kpress_fn: 0, edit_sig: 0, bind_fn: 0,
         safe: 0, list_fn: 0, list_gen: 0,
+        list_lo: 0, list_hi: 0, list_n: 0, row_h: 0, vel_x: 0, vel_y: 0,
         a11y_label: "", a11y_role: "", cursor: "", text_rot: 0,
     }
 }
@@ -330,8 +342,11 @@ fn reset_tree() {
     focus_id = 0
     paint_sy = 0
     paint_sx = 0
-    drag_id = 0
-    drag_bar = 0
+    // drag_id / drag_bar survive the rebuild on purpose: an active scrollbar
+    // or slider drag must keep working across per-frame tree resets (nodes
+    // are recreated with recycled ids in the same order, so the grabbed node
+    // keeps its id while the tree shape is stable). `input.drag` cancels the
+    // drag when the node was recycled into a different kind.
     scope_node = 0
     rec_sid = []int {}
     rec_owner = []int {}
@@ -938,6 +953,218 @@ fn scrolls_x(id: int) -> int {
     return 0
 }
 
+/// How far a scroller may travel past 0 / max while rubber-banding.
+fn overscroll_px() -> int {
+    return 96
+}
+
+fn phys_axis_live(pos: int, vel: int, maxs: int) -> int {
+    if vel != 0 {
+        return 1
+    }
+    if pos < 0 {
+        return 1
+    }
+    if pos > maxs {
+        return 1
+    }
+    return 0
+}
+
+/// 1 if any scroller is coasting or overscrolled — hosts should keep frames.
+fn phys_live() -> int {
+    let n = nodes.len
+    for i in 1..n {
+        if nodes[i].kind == 11 {
+            if phys_axis_live(nodes[i].scroll_x, nodes[i].vel_x, scroll_max_x(i)) != 0 {
+                return 1
+            }
+            if phys_axis_live(nodes[i].scroll_y, nodes[i].vel_y, scroll_max(i)) != 0 {
+                return 1
+            }
+        }
+    }
+    return 0
+}
+
+struct Axis {
+    pos: int,
+    vel: int,
+    dirty: int,
+}
+
+fn physics_axis(pos: int, vel: int, maxs: int) -> Axis {
+    let mut y = pos + vel
+    let mut v = vel * 92 / 100
+    let mut dirty = 0
+    if y < 0 {
+        v = v + (0 - y) * 18 / 100
+        v = v * 85 / 100
+        if y > -2 {
+            if v * v < 4 {
+                y = 0
+                v = 0
+            }
+        }
+        dirty = 1
+    } else if y > maxs {
+        v = v + (maxs - y) * 18 / 100
+        v = v * 85 / 100
+        if y < maxs + 2 {
+            if v * v < 4 {
+                y = maxs
+                v = 0
+            }
+        }
+        dirty = 1
+    } else if v * v < 4 {
+        v = 0
+    } else {
+        dirty = 1
+    }
+    return Axis { pos: y, vel: v, dirty: dirty }
+}
+
+/// One frame of momentum + rubber-band. Returns 1 if anything moved.
+/// Thumb drag (`drag_bar`) owns the position until mouseup.
+fn physics_step() -> int {
+    if drag_id > 0 {
+        if drag_bar != 0 {
+            return 0
+        }
+    }
+    let n = nodes.len
+    let mut dirty = 0
+    for i in 1..n {
+        if nodes[i].kind == 11 {
+            let ay = physics_axis(nodes[i].scroll_y, nodes[i].vel_y, scroll_max(i))
+            let ax = physics_axis(nodes[i].scroll_x, nodes[i].vel_x, scroll_max_x(i))
+            nodes[i].scroll_y = ay.pos
+            nodes[i].vel_y = ay.vel
+            nodes[i].scroll_x = ax.pos
+            nodes[i].vel_x = ax.vel
+            if ay.dirty != 0 {
+                dirty = 1
+                bar_on(i)
+                if nodes[i].bind_sig > 0 {
+                    store_sig(nodes[i].bind_sig, ay.pos)
+                }
+            }
+            if ax.dirty != 0 {
+                dirty = 1
+                bar_on(i)
+            }
+        }
+    }
+    return dirty
+}
+
+/// Apply a pan delta with overscroll resistance. `momentum` 1 arms the
+/// coast (touch pans, precise trackpads); 0 is a discrete wheel click, which
+/// must stop exactly where it lands and hard-clamps at the edges (nothing
+/// rubber-bands it back). Returns 1 if `scroll_y` changed.
+fn apply_delta_y(id: int, dy: int, momentum: int) -> int {
+    if id <= 0 {
+        return 0
+    }
+    if id >= nodes.len {
+        return 0
+    }
+    let my = scroll_max(id)
+    if momentum == 0 {
+        let mut ny = nodes[id].scroll_y + dy
+        if ny < 0 {
+            ny = 0
+        }
+        if ny > my {
+            ny = my
+        }
+        nodes[id].vel_y = 0
+        if ny == nodes[id].scroll_y {
+            return 0
+        }
+        nodes[id].scroll_y = ny
+        if nodes[id].bind_sig > 0 {
+            store_sig(nodes[id].bind_sig, ny)
+        }
+        return 1
+    }
+    let slack = overscroll_px()
+    let mut ny = nodes[id].scroll_y + dy
+    if ny < 0 {
+        if nodes[id].scroll_y <= 0 {
+            ny = nodes[id].scroll_y + dy / 3
+        }
+        if ny < -slack {
+            ny = -slack
+        }
+    } else if ny > my {
+        if nodes[id].scroll_y >= my {
+            ny = nodes[id].scroll_y + dy / 3
+        }
+        if ny > my + slack {
+            ny = my + slack
+        }
+    }
+    nodes[id].vel_y = dy
+    if ny == nodes[id].scroll_y {
+        return 0
+    }
+    nodes[id].scroll_y = ny
+    if nodes[id].bind_sig > 0 {
+        store_sig(nodes[id].bind_sig, ny)
+    }
+    return 1
+}
+
+fn apply_delta_x(id: int, dx: int, momentum: int) -> int {
+    if id <= 0 {
+        return 0
+    }
+    if id >= nodes.len {
+        return 0
+    }
+    let mx = scroll_max_x(id)
+    if momentum == 0 {
+        let mut nx = nodes[id].scroll_x + dx
+        if nx < 0 {
+            nx = 0
+        }
+        if nx > mx {
+            nx = mx
+        }
+        nodes[id].vel_x = 0
+        if nx == nodes[id].scroll_x {
+            return 0
+        }
+        nodes[id].scroll_x = nx
+        return 1
+    }
+    let slack = overscroll_px()
+    let mut nx = nodes[id].scroll_x + dx
+    if nx < 0 {
+        if nodes[id].scroll_x <= 0 {
+            nx = nodes[id].scroll_x + dx / 3
+        }
+        if nx < -slack {
+            nx = -slack
+        }
+    } else if nx > mx {
+        if nodes[id].scroll_x >= mx {
+            nx = nodes[id].scroll_x + dx / 3
+        }
+        if nx > mx + slack {
+            nx = mx + slack
+        }
+    }
+    nodes[id].vel_x = dx
+    if nx == nodes[id].scroll_x {
+        return 0
+    }
+    nodes[id].scroll_x = nx
+    return 1
+}
+
 fn clamp_scroll(id: int) {
     if id <= 0 {
         return
@@ -947,17 +1174,35 @@ fn clamp_scroll(id: int) {
     }
     let mx = scroll_max_x(id)
     let my = scroll_max(id)
-    if nodes[id].scroll_x < 0 {
-        nodes[id].scroll_x = 0
+    let mut live = 0
+    if phys_axis_live(nodes[id].scroll_x, nodes[id].vel_x, mx) != 0 {
+        live = 1
     }
-    if nodes[id].scroll_x > mx {
-        nodes[id].scroll_x = mx
+    if phys_axis_live(nodes[id].scroll_y, nodes[id].vel_y, my) != 0 {
+        live = 1
     }
-    if nodes[id].scroll_y < 0 {
-        nodes[id].scroll_y = 0
+    let mut xmin = 0
+    let mut xmax = mx
+    let mut ymin = 0
+    let mut ymax = my
+    if live != 0 {
+        let slack = overscroll_px()
+        xmin = -slack
+        xmax = mx + slack
+        ymin = -slack
+        ymax = my + slack
     }
-    if nodes[id].scroll_y > my {
-        nodes[id].scroll_y = my
+    if nodes[id].scroll_x < xmin {
+        nodes[id].scroll_x = xmin
+    }
+    if nodes[id].scroll_x > xmax {
+        nodes[id].scroll_x = xmax
+    }
+    if nodes[id].scroll_y < ymin {
+        nodes[id].scroll_y = ymin
+    }
+    if nodes[id].scroll_y > ymax {
+        nodes[id].scroll_y = ymax
     }
 }
 

@@ -46,7 +46,7 @@ Pipeline, in order:
 |---|---|---|
 | Load | `src/compile.c` | Resolve `import "std:bar"` → `std/bar.yuga`, relative `"path.yuga"` from the importer. Cycles are errors. |
 | Lex / parse | `src/lexer.c`, `src/parser.c` | Tokens → AST. |
-| Typecheck | `src/sema/typecheck.c` | Names, types, auto-borrow, generics (monomorphized), `mod.fn` / `mod.global`, method rewrite `n.w(32)` → `zeus.w(n, 32)`. |
+| Typecheck | `src/sema/typecheck.c` | Names, types, auto-borrow, generics (monomorphized, including nested calls and defaults), `mod.fn` / `mod.global`, method rewrite `n.w(32)` → `zeus.w(n, 32)`. |
 | Borrowck | `src/sema/borrowck.c` | Exclusive vs shared, moves, place paths (`p.a` vs `p.b`). |
 | Boundscheck | `src/sema/boundscheck.c` | Proven in-range indexes skip the runtime trap. |
 | IR | `src/ir.c` | CFG, drops, closures as heap env + fn pointer (`yuga_fn`: fn, env, env_size). |
