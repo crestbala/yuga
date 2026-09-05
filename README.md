@@ -19,21 +19,40 @@ make
 ./hello
 ```
 
-Language rules: [docs/spec.md](docs/spec.md). Architecture and how-to:
-[docs/yuga.md](docs/yuga.md). C vs Yuga: [docs/boundary.md](docs/boundary.md).
+Language: [docs/yuga.md](docs/yuga.md). C vs Yuga: [docs/boundary.md](docs/boundary.md).
+Zeus backends and spec: [packages/zeus/docs/spec.md](packages/zeus/docs/spec.md).
 Browsable docs: `./run.sh www` — Zeus UI at http://127.0.0.1:5175, `Docs.Page` on `:8082`.
 
 ## Requirements
 
-- A C11 compiler (`cc`) and `make`
+New to the repo? macOS: `./install.sh` (core) or `./install.sh android` (adds the
+Android stack) installs everything below that Homebrew can. See [Setup](#setup).
+
+- A C11 compiler (`cc`) and `make` (Apple Command Line Tools)
 - macOS for native desktop GUI (Cocoa) and Maya present
 - [Xcode](https://developer.apple.com/xcode/) for the iOS Simulator target
 - A `wasm32` clang (Homebrew LLVM, not Apple `/usr/bin/clang`) for web builds;
-  set `YUGA_WASM_CC` if it is not on `PATH`
-- Android SDK, NDK, Gradle 8.2+, and `adb` for `--target=android`
+  `./install.sh` puts it where `yugac` looks by default. Set `YUGA_WASM_CC`
+  only if your LLVM lives somewhere else
+- Node.js for the Vite dev servers behind the wasm examples (`gallery web`, `www`)
+- Android SDK, NDK, Gradle 8.2+, a JDK, and `adb` for `--target=android`
+  (installer: `./install.sh android` or `examples/zeus/counter/android/install.sh`)
 
 The compiler itself is C11 + libc. CLI programs link with the host `cc`. GUI
 and 3D hosts are listed under [Platforms](#platforms).
+
+## Setup
+
+One-time, on macOS with Homebrew (the script can install Homebrew too):
+
+```
+./install.sh          # core: Command Line Tools check, LLVM (wasm32), Node
+./install.sh android  # + Android SDK/NDK/Gradle + emulator AVD (several GB)
+```
+
+Both are idempotent. The Android step also links the shared `.sdk-env` into
+every zeus example that has an `android/` host. Full Xcode (App Store) is a
+manual install if you want `./run.sh … ios`.
 
 ## Build
 
@@ -105,7 +124,14 @@ charts, `DatePicker`) ships inside [`std:zeus`](packages/compiler/std/zeus.yuga)
 The catalog is [`examples/zeus/gallery`](examples/zeus/gallery). Zeus paints
 its own theme on every host; Cocoa / UIKit / Android widgets are not used.
 Map: [packages/zeus/README.md](packages/zeus/README.md). Architecture:
-[docs/zeus.md](docs/zeus.md), [packages/zeus/docs/spec.md](packages/zeus/docs/spec.md).
+[packages/zeus/docs/spec.md](packages/zeus/docs/spec.md).
+
+The component catalog running in the browser (same source as the Cocoa,
+iOS, and Android hosts):
+
+<video src="docs/media/gallery-demo.mp4" poster="docs/media/gallery-demo.jpg" controls preload="metadata" width="100%"></video>
+
+_Open the recording in a new tab: [docs/media/gallery-demo.mp4](docs/media/gallery-demo.mp4)._
 
 ## Platforms
 
@@ -181,8 +207,13 @@ Golden programs under `packages/compiler/tests/golden/` (hello, fib, fizzbuzz,
 ./run.sh gallery              # Vite wasm UI at http://127.0.0.1:5174
 ./run.sh gallery web          # same
 ./run.sh gallery macos        # Cocoa
+./run.sh gallery ios          # Simulator (Xcode)
+./run.sh gallery android      # emulator (see below)
 ./run.sh dashboard ios
 ```
+
+The gallery is pure UI (no backend). Its per-host launchers, Android setup,
+and SDK notes live in `examples/zeus/gallery/{macos,ios,android,frontend}`.
 
 Full-stack counter (backend on `:8080`, then a client):
 
@@ -194,29 +225,34 @@ Full-stack counter (backend on `:8080`, then a client):
 ./run.sh counter backend      # API only
 ```
 
-Android, from the repo root, on macOS with Homebrew:
+Android, from the repo root, on macOS with Homebrew (either installs the
+SDK stack; the counter one is canonical and `./install.sh android` wraps it):
 
 ```
-./examples/zeus/counter/android/install.sh   # once; several GB, SDK licenses
-./examples/zeus/counter/android/emu.sh       # leave this terminal open
-./examples/zeus/counter/android/run.sh       # second terminal
+./install.sh android                                  # once; several GB, SDK licenses
+./examples/zeus/counter/android/emu.sh               # leave this terminal open
+./run.sh counter android                             # second terminal
+./run.sh gallery android                             # or the gallery on the emulator
 ```
 
-Step-by-step: [examples/zeus/counter/android/guide.md](examples/zeus/counter/android/guide.md).
+Step-by-step: [examples/zeus/counter/android/guide.md](examples/zeus/counter/android/guide.md)
+and [examples/zeus/gallery/android/guide.md](examples/zeus/gallery/android/guide.md).
+All zeus `android/run.sh` scripts share one `yuga` AVD.
 
 ## Repository
 
 ```
 packages/compiler/     yugac, yuga-lsp, std/, runtime/, tests
-packages/zeus/         Zeus UI hosts: desktop/ Cocoa, ios/, android/, web/
+packages/zeus/         Zeus UI hosts: desktop/ Cocoa, ios/, android/, web/ (Canvas2D)
+packages/zeus/docs/    spec.md = zeus backends and paint model
 packages/tree-sitter-yuga/
-packages/editors/      Zed extension
+packages/editors/      Zed extension, VSCode extension
+install.sh             one-time macOS setup (core tools; android stack)
 examples/language/     standalone .yuga programs
 examples/zeus/         gallery (component catalog), dashboard, full-stack counter
 www/                   Zeus + gRPC docs (Vite serves wasm, no Svelte)
-docs/                  language, Zeus, C boundary
-                       zeus_std.md = std/zeus.yuga API + custom components
-                       downside_of_zeus_refactor.md = two APIs, next: drop chain
+docs/                  yuga.md (language + architecture), boundary.md (C seam),
+                       zeus_roadmap.md (phase history)
 bin/yugac              compiler
 bin/yuga-lsp           diagnostics, hover, go-to-def, completion, semantic tokens
 ```
