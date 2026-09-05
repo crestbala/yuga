@@ -4100,8 +4100,9 @@ const CHART_H: int = 200
 const CHART_GUTTER: int = 34
 /// Air above the plot, room for the floating tooltip.
 const CHART_TOP: int = 8
-/// Bottom strip for the x labels (45° labels need diagonal room).
-const CHART_XLAB: int = 34
+/// Bottom strip for the x labels (45° labels need diagonal room plus the
+/// air gap between the baseline and the label corners).
+const CHART_XLAB: int = 38
 
 /// Series palette (approx. of the shadcn default chart colors), from the
 /// `chart*` theme tokens so restyling edits the palette, not the charts.
@@ -4398,10 +4399,12 @@ fn __c_zone(i: int, hov: Signal<int>, act: Signal<int>, h: int, col_w: int) {
 /// Rotated labels are parallel diagonal strips, so they never collide with
 /// each other however narrow the plot gets; CHART_XLAB reserves their room.
 fn __c_xlab(label: string, i: int, col_w: int, plot_h: int) {
+    // 8px of air below the baseline axis: the rotated strip starts below the
+    // line, not on it (the pivot corner is the strip's top edge).
     let lab = Text(label, color = mute(), font = tk(FONT_CAPTION),
                         position = pos_absolute(),
                         left = __c_col_x(CHART_GUTTER, col_w, i) + 3,
-                        top = CHART_TOP + plot_h + 3)
+                        top = CHART_TOP + plot_h + 8)
     text_rot(lab, 45)
 }
 
