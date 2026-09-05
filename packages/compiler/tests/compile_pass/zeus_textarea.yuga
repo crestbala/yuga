@@ -1,8 +1,7 @@
-// Phase 3: multiline Input / kit.TextArea — type, newline, caret, bind.
+// Phase 3: multiline Input / zeus.TextArea — type, newline, caret, bind.
 import "std:fmt"
 import "std:sys"
 import "std:zeus"
-import "std:kit"
 
 fn fail(what: string) {
     fmt.println("FAIL", what)
@@ -20,7 +19,7 @@ fn main() {
     let draft = zeus.signal("")
     zeus.snapshot(400, 240, fn() -> Node {
         zeus.Box(padding = 16) {
-            kit.TextArea(draft, "Message")
+            zeus.TextArea(draft, "Message")
         }
     })
     let id = zeus.engine_find_role("textbox")

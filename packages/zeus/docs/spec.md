@@ -129,9 +129,8 @@ Output is `examples/zeus/counter/macos/build/app`.
 ## Layout
 
 ```
-std/zeus.yuga              public API
+std/zeus.yuga              public API + design system
 std/zeuscore/              layout, paint, hit-test (shared)
-packages/zeus/lib/                  kit widgets (shared)
 examples/zeus/                 same apps on every host
 packages/zeus/desktop/mac.m         Cocoa present
 packages/zeus/ios/ios.m             iOS Simulator present (paint only)
@@ -145,6 +144,6 @@ examples/zeus/counter/frontend   wasm UI (`http.client("").call`)
 examples/zeus/counter/macos      Cocoa UI (`http.client(api.native_addr())`)
 examples/zeus/counter/ios        Simulator UI (`http.client(api.native_addr())`)
 examples/zeus/counter/android    emulator UI (`http.client(api.android_addr())`)
-examples/zeus/counter/screen.yuga  shared page (signals + kit widgets)
+examples/zeus/counter/screen.yuga  shared page (signals + components)
 examples/zeus/counter/backend    shared `api.yuga` + native `server.yuga`
 ```

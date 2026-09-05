@@ -1,35 +1,34 @@
-// DRAW-list golden: deterministic headless paint of common kit chrome —
+// DRAW-list golden: deterministic headless paint of common zeus chrome —
 // buttons, the semantic alert tiers, role-backed native thumbs, badges, and
 // the skeleton token. Any change that moves a pixel or a palette value shows
 // up here first. Keep this file free of prints: stdout is the golden.
 
-import "std:kit"
 import "std:zeus"
 
 fn main() {
     zeus.snapshot(560, 360, fn() -> Node {
         let load = zeus.signal(30)
         let on = zeus.signal(1)
-        kit.Page() {
-            kit.Row(SPACE.Sm) {
-                kit.Button("Primary", kit.LOOK.Solid, kit.SIZE.Md)
-                kit.Button("Soft", kit.LOOK.Soft, kit.SIZE.Md)
-                kit.Button("Outline", kit.LOOK.Outline, kit.SIZE.Md)
-                kit.Button("Danger", kit.LOOK.Danger, kit.SIZE.Md)
+        zeus.Page() {
+            zeus.Row(SPACE.Sm) {
+                zeus.Button("Primary", look = zeus.LOOK.Solid, size = zeus.SIZE.Md)
+                zeus.Button("Soft", look = zeus.LOOK.Soft, size = zeus.SIZE.Md)
+                zeus.Button("Outline", look = zeus.LOOK.Outline, size = zeus.SIZE.Md)
+                zeus.Button("Danger", look = zeus.LOOK.Danger, size = zeus.SIZE.Md)
             }
-            kit.Row(SPACE.Sm) {
-                kit.Badge("ok", kit.TINT.Ok)
-                kit.Badge("warn", kit.TINT.Warn)
-                kit.Badge("bad", kit.TINT.Danger)
-                kit.Chip("busy", kit.TINT.Warn)
+            zeus.Row(SPACE.Sm) {
+                zeus.Badge("ok", zeus.TINT.Ok)
+                zeus.Badge("warn", zeus.TINT.Warn)
+                zeus.Badge("bad", zeus.TINT.Danger)
+                zeus.Chip("busy", zeus.TINT.Warn)
             }
-            kit.AlertWarning("Low disk", "The volume is almost full.")
-            kit.Row(SPACE.Sm) {
-                kit.Switch(on)
-                kit.Progress(load)
+            zeus.AlertWarning("Low disk", "The volume is almost full.")
+            zeus.Row(SPACE.Sm) {
+                zeus.Switch(on)
+                zeus.Progress(load)
             }
-            kit.Row(SPACE.Sm) {
-                kit.Skeleton(96, 24, 8)
+            zeus.Row(SPACE.Sm) {
+                zeus.Skeleton(96, 24, 8)
             }
         }
     })

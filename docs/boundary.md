@@ -34,7 +34,7 @@ The other direction: C calls compiled Yuga as `yuga_zeus_engine_paint`,
 |---|---|---|
 | Language (`yuga_rt`) | Allocator, panic/trap, overflow, wrapping bit ops, `string_from_bytes`, `yuga_fn` `{fn, env, env_size}`, `env_set` / `exit` | — |
 | net (`packages/compiler/std/net`) | TCP connect/read/write/close, listen/accept/peek, wasm `fetch_rpc` | — |
-| Zeus | Host event loop + replay of the draw list; `plat_intern_fn` memcpy's a `yuga_fn` env so click/styled handlers outlive the interned value | Tree, layout, signals, kit, `platform.yuga` signatures |
+| Zeus | Host event loop + replay of the draw list; `plat_intern_fn` memcpy's a `yuga_fn` env so click/styled handlers outlive the interned value | Tree, layout, signals, design system, `platform.yuga` signatures |
 | Maya | Host event loop + present (Cocoa blit / 2D discs) | Scene, orbits, camera, CPU tracer, 2D map layout, `sin`/`cos` |
 | http | — | unary gRPC: `#[proto]`, dispatch, path/frame, HTTP/1.1 parse, h2c, `listen`, client `rt_call` / `h2_call`, loopback `h1_read_unary` / `h2_read_unary`, HEADLESS selftest |
 

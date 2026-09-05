@@ -1,8 +1,7 @@
-// Zeus dashboard. Chrome from `std:kit`; ticks, load, and alerts are signals.
-// The look follows the shadcn/ui default theme: zinc palette, white page,
-// primary-fill buttons, hairline cards.
+// Zeus dashboard. Themed chrome from `std:zeus`; ticks, load, and alerts
+// are signals. The look follows the shadcn/ui default theme: zinc palette,
+// white page, primary-fill buttons, hairline cards.
 import "std:zeus"
-import "std:kit"
 
 let mut req_labs: []string = []string {}
 let mut req_series: []string = []string {}
@@ -19,76 +18,76 @@ fn clamp(v: int) -> int {
 }
 
 fn Header(title: string, ticks: Signal<int>, open: Signal<int>) {
-    kit.Row(SPACE.Md) {
-        zeus.Box(width = 8, height = 24, radius = 4, background = kit.ink())
-        zeus.Text(title, color = kit.ink(), font = kit.FONT_TITLE)
-        kit.Grow()
-        zeus.Text("Dark", color = kit.mute(), font = kit.FONT_BODY)
-        kit.Switch(zeus.appearance())
-        zeus.Text("ticks", color = kit.dim(), font = kit.FONT_BODY)
-        zeus.Text("{{ticks.get()}}", color = kit.ink(), font = kit.FONT_BODY)
-        kit.Button("Tick", kit.LOOK.Solid, kit.SIZE.Md, fn() => ticks.set(ticks.get() + 1))
-        kit.Button("Dialog", kit.LOOK.Solid, kit.SIZE.Md, fn() => open.set(1))
+    zeus.Row(SPACE.Md) {
+        zeus.Box(width = 8, height = 24, radius = 4, background = zeus.ink())
+        zeus.Text(title, color = zeus.ink(), font = zeus.FONT_TITLE)
+        zeus.Grow()
+        zeus.Text("Dark", color = zeus.mute(), font = zeus.FONT_BODY)
+        zeus.Switch(zeus.appearance())
+        zeus.Text("ticks", color = zeus.dim(), font = zeus.FONT_BODY)
+        zeus.Text("{{ticks.get()}}", color = zeus.ink(), font = zeus.FONT_BODY)
+        zeus.Button("Tick", look = zeus.LOOK.Solid, size = zeus.SIZE.Md, on_click =  fn() => ticks.set(ticks.get() + 1))
+        zeus.Button("Dialog", look = zeus.LOOK.Solid, size = zeus.SIZE.Md, on_click =  fn() => open.set(1))
     }
 }
 
 fn Activity(title: string, meta: string) {
     zeus.Box(align_direction = DIRECTION.Row, spacing = SPACE.Sm,
              align_items = ALIGN.Center, padding_x = 2, padding_y = 2) {
-        zeus.Text(title, color = kit.ink(), font = kit.FONT_BODY, grow = 1)
-        zeus.Text(meta, color = kit.mute(), font = kit.FONT_CAPTION)
+        zeus.Text(title, color = zeus.ink(), font = zeus.FONT_BODY, grow = 1)
+        zeus.Text(meta, color = zeus.mute(), font = zeus.FONT_CAPTION)
     }
 }
 
 fn Stats(ticks: Signal<int>) {
     zeus.Grid(config = GridConfig(columns = 2, gap = SPACE.Md)) {
-        kit.Stat("Users", "1,204", kit.TINT.Ink)
-        kit.Stat("Jobs", "12", kit.TINT.Mute)
-        kit.Stat("Uptime", "99.9%", kit.TINT.Ok)
-        kit.StatCount("Ticks", ticks, kit.TINT.Danger)
+        zeus.Stat("Users", "1,204", zeus.TINT.Ink)
+        zeus.Stat("Jobs", "12", zeus.TINT.Mute)
+        zeus.Stat("Uptime", "99.9%", zeus.TINT.Ok)
+        zeus.StatCount("Ticks", ticks, zeus.TINT.Danger)
     }
 }
 
 fn Load(load: Signal<int>) {
-    kit.Row(SPACE.Md) {
-        zeus.Text("Load", color = kit.dim(), font = kit.FONT_BODY)
-        kit.Progress(load)
-        zeus.Text("{{load.get()}}%", color = kit.mute(), font = kit.FONT_BODY)
-        kit.Button("+10", kit.LOOK.Soft, kit.SIZE.Md, fn() => load.set(clamp(load.get() + 10)))
-        kit.Button("-10", kit.LOOK.Soft, kit.SIZE.Md, fn() => load.set(clamp(load.get() - 10)))
+    zeus.Row(SPACE.Md) {
+        zeus.Text("Load", color = zeus.dim(), font = zeus.FONT_BODY)
+        zeus.Progress(load)
+        zeus.Text("{{load.get()}}%", color = zeus.mute(), font = zeus.FONT_BODY)
+        zeus.Button("+10", look = zeus.LOOK.Soft, size = zeus.SIZE.Md, on_click =  fn() => load.set(clamp(load.get() + 10)))
+        zeus.Button("-10", look = zeus.LOOK.Soft, size = zeus.SIZE.Md, on_click =  fn() => load.set(clamp(load.get() - 10)))
     }
 }
 
 fn Alerts(notify: Signal<int>) {
-    kit.Card() {
-        kit.Row(SPACE.Md) {
-            kit.Switch(notify)
-            zeus.Text("Alerts", color = kit.ink(), font = kit.FONT_BODY)
-            kit.Grow()
-            kit.Checkbox("Notify", notify)
+    zeus.Card() {
+        zeus.Row(SPACE.Md) {
+            zeus.Switch(notify)
+            zeus.Text("Alerts", color = zeus.ink(), font = zeus.FONT_BODY)
+            zeus.Grow()
+            zeus.Checkbox("Notify", notify)
         }
     }
 }
 
 fn Feed() {
-    kit.Card() {
-        kit.Title("Activity")
+    zeus.Card() {
+        zeus.Title("Activity")
         Activity("Deploy web", "2m ago")
-        kit.Divider()
+        zeus.Divider()
         Activity("Job #12 done", "14m ago")
-        kit.Divider()
+        zeus.Divider()
         Activity("User signup", "1h ago")
-        kit.Divider()
+        zeus.Divider()
         Activity("Cache warm", "3h ago")
-        kit.Divider()
+        zeus.Divider()
         Activity("Index rebuild", "5h ago")
-        kit.Divider()
+        zeus.Divider()
         Activity("Backup ok", "8h ago")
-        kit.Divider()
+        zeus.Divider()
         Activity("Alert silenced", "12h ago")
-        kit.Divider()
+        zeus.Divider()
         Activity("Cert renewed", "1d ago")
-        kit.Divider()
+        zeus.Divider()
         Activity("Region failover", "2d ago")
     }
 }
@@ -145,16 +144,16 @@ fn Traffic() {
         push(req_vals, 40)
         push(req_vals, 22)
     }
-    kit.Card() {
-        kit.Row(SPACE.Sm) {
-            kit.Column(SPACE.Exxs) {
-                zeus.Text("Requests", color = kit.ink(), font = kit.FONT_TITLE)
-                zeus.Text("Per hour, last 24 hours", color = kit.mute(), font = kit.FONT_CAPTION)
+    zeus.Card() {
+        zeus.Row(SPACE.Sm) {
+            zeus.Column(SPACE.Exxs) {
+                zeus.Text("Requests", color = zeus.ink(), font = zeus.FONT_TITLE)
+                zeus.Text("Per hour, last 24 hours", color = zeus.mute(), font = zeus.FONT_CAPTION)
             }
-            kit.Grow()
-            kit.Badge("live", kit.TINT.Ok)
+            zeus.Grow()
+            zeus.Badge("live", zeus.TINT.Ok)
         }
-        kit.AreaChart(req_labs, req_series, req_vals, 810, 196)
+        zeus.AreaChart(req_labs, req_series, req_vals, 810, 196)
     }
 }
 
@@ -164,30 +163,30 @@ fn Dashboard() {
     let notify = zeus.signal(1)
     let open = zeus.signal(0)
 
-    kit.Page() {
+    zeus.Page() {
         Header("Zeus Dashboard", ticks, open)
-        kit.Breadcrumbs("Zeus", "App", "Dashboard")
-        kit.Body("Rows and cards fill the window. Labels stay left; actions sit on the right.")
-        kit.Alert("Heads up", "Signals update on click. Scroll if the page overflows.")
-        kit.Row(SPACE.Md) {
-            kit.User("AP", "Ada Park", "Operator")
-            kit.Grow()
-            kit.Chip("Live", kit.TINT.Ok)
-            kit.Chip("v1", kit.TINT.Mute)
+        zeus.Breadcrumbs("Zeus", "App", "Dashboard")
+        zeus.Body("Rows and cards fill the window. Labels stay left; actions sit on the right.")
+        zeus.Alert("Heads up", "Signals update on click. Scroll if the page overflows.")
+        zeus.Row(SPACE.Md) {
+            zeus.User("AP", "Ada Park", "Operator")
+            zeus.Grow()
+            zeus.Chip("Live", zeus.TINT.Ok)
+            zeus.Chip("v1", zeus.TINT.Mute)
         }
         Stats(ticks)
         Load(load)
         Traffic()
         Alerts(notify)
         Feed()
-        kit.Note("Hover the area chart to read exact request counts. Tick, Load, and Alerts are signals.")
-        kit.Dialog(open) {
-            kit.Title("Discard changes?")
-            kit.Body("This cannot be undone. The working tree keeps whatever you have not saved.")
-            kit.Row(SPACE.Sm) {
-                kit.Grow()
-                kit.Button("Cancel", kit.LOOK.Ghost, kit.SIZE.Md, fn() => open.set(0))
-                kit.Button("Discard", kit.LOOK.Danger, kit.SIZE.Md, fn() => open.set(0))
+        zeus.Note("Hover the area chart to read exact request counts. Tick, Load, and Alerts are signals.")
+        zeus.Dialog(open) {
+            zeus.Title("Discard changes?")
+            zeus.Body("This cannot be undone. The working tree keeps whatever you have not saved.")
+            zeus.Row(SPACE.Sm) {
+                zeus.Grow()
+                zeus.Button("Cancel", look = zeus.LOOK.Ghost, size = zeus.SIZE.Md, on_click =  fn() => open.set(0))
+                zeus.Button("Discard", look = zeus.LOOK.Danger, size = zeus.SIZE.Md, on_click =  fn() => open.set(0))
             }
         }
     }

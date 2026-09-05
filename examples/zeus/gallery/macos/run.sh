@@ -1,5 +1,5 @@
 #!/bin/sh
-# macOS Cocoa UI for the kit gallery.
+# macOS Cocoa UI for the zeus gallery.
 set -e
 HERE=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 d=$HERE

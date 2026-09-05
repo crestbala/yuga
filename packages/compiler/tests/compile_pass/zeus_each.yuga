@@ -8,7 +8,7 @@ struct Row {
 fn main() {
     let mut rows = []Row {}
     push(rows, Row { a: "bezel.toml", b: "Config" })
-    push(rows, Row { a: "kit.yuga", b: "Source" })
+    push(rows, Row { a: "app.yuga", b: "Source" })
     let open = zeus.signal(1)
     let mut nums = []int {}
     for i in 1..4 {

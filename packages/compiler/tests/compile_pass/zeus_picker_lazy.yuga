@@ -1,11 +1,9 @@
 // The calendar picker must be one lazy 7x6 grid, not 12 pre-built month
 // grids: flipping month/year updates the visible cells through prop thunks
-// and never rebuilds. Regression for the lazy-DatePicker work
-// (docs/zeus_kit_downsides.md §2 and §11).
+// never rebuilds. Regression for the lazy-DatePicker work.
 
 import "std:fmt"
 import "std:sys"
-import "std:kit"
 import "std:zeus"
 
 fn expect(ok: bool, what: string) {
@@ -21,8 +19,8 @@ fn main() {
     let m = zeus.signal(9)
     let d = zeus.signal(3)
     zeus.snapshot(340, 420, fn() -> Node {
-        kit.Page() {
-            kit.DatePicker(y, m, d)
+        zeus.Page() {
+            zeus.DatePicker(y, m, d)
         }
     })
     // A closed picker is one grid of 42 cells plus rails and weekday header:

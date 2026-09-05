@@ -5,7 +5,7 @@ import "../screen.yuga"
 
 fn main() {
     let win = zeus.window_size()
-    zeus.App("Zeus Kit", win.width, win.height, fn() {
+    zeus.App("Zeus Gallery", win.width, win.height, fn() {
         screen.Screen()
     })
 }

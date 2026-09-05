@@ -1,143 +1,142 @@
 // Catalog screens. Components mirror the shadcn/ui catalogue (default zinc
-// theme): every row here demos one `std:kit` widget with its SVG icons.
+// theme): every row here demos one `std:zeus` component with its SVG icons.
 // Dark restyles the whole palette via `zeus.appearance()`.
 import "std:zeus"
-import "std:kit"
 import "std:kv"
 
 fn Navbar(page: Signal<int>) {
-    kit.Column(0) {
+    zeus.Column(0) {
         zeus.Box(align_direction = DIRECTION.Row, spacing = SPACE.Md,
-                 align_items = ALIGN.Center, height = kit.BAR) {
-            zeus.Box(width = 22, height = 22, radius = 6, background = kit.ink())
-            zeus.Text("Zeus", color = kit.ink(), font = kit.FONT_TITLE)
-            kit.NavTab("Foundations", page, 0)
-            kit.NavTab("Components", page, 1)
-            kit.NavTab("Patterns", page, 2)
-            kit.Grow()
-            zeus.Text("Dark", color = kit.mute(), font = kit.FONT_CONTROL)
-            kit.Switch(zeus.appearance())
+                 align_items = ALIGN.Center, height = zeus.BAR) {
+            zeus.Box(width = 22, height = 22, radius = 6, background = zeus.ink())
+            zeus.Text("Zeus", color = zeus.ink(), font = zeus.FONT_TITLE)
+            zeus.NavTab("Foundations", page, 0)
+            zeus.NavTab("Components", page, 1)
+            zeus.NavTab("Patterns", page, 2)
+            zeus.Grow()
+            zeus.Text("Dark", color = zeus.mute(), font = zeus.FONT_CONTROL)
+            zeus.Switch(zeus.appearance())
         }
-        kit.Separator()
+        zeus.Separator()
     }
 }
 
 fn ProjectCard() {
     let ticks = zeus.signal(0)
-    kit.Card() {
-        kit.Row(SPACE.Sm) {
-            kit.Title("Project card")
-            kit.Grow()
-            kit.Badge("In progress", kit.TINT.Ok)
+    zeus.Card() {
+        zeus.Row(SPACE.Sm) {
+            zeus.Title("Project card")
+            zeus.Grow()
+            zeus.Badge("In progress", zeus.TINT.Ok)
         }
-        kit.Body("A card with a title, supporting copy, and a footer of actions. Shadcn chrome: rounded-xl, hairline border, white surface.")
-        kit.Row(SPACE.Sm) {
-            kit.Button("Cancel", kit.LOOK.Outline, kit.SIZE.Md, fn() => ticks.set(ticks.get() + 1))
-            kit.Button("Save", kit.LOOK.Solid, kit.SIZE.Md, fn() => ticks.set(ticks.get() + 1))
-            kit.Grow()
-            zeus.Text("{{ticks.get()}}", color = kit.mute(), font = kit.FONT_CAPTION)
+        zeus.Body("A card with a title, supporting copy, and a footer of actions. Shadcn chrome: rounded-xl, hairline border, white surface.")
+        zeus.Row(SPACE.Sm) {
+            zeus.Button("Cancel", look = zeus.LOOK.Outline, size = zeus.SIZE.Md, on_click =  fn() => ticks.set(ticks.get() + 1))
+            zeus.Button("Save", look = zeus.LOOK.Solid, size = zeus.SIZE.Md, on_click =  fn() => ticks.set(ticks.get() + 1))
+            zeus.Grow()
+            zeus.Text("{{ticks.get()}}", color = zeus.mute(), font = zeus.FONT_CAPTION)
         }
     }
 }
 
 fn Foundations() {
-    kit.Breadcrumbs("Zeus", "Examples", "Gallery")
-    kit.Column(SPACE.Exs) {
-        kit.Display("Build interfaces with Zeus")
-        kit.Body("Zinc tokens, neutral primary, and lucide SVG icons. Dark inverts every token that reads appearance.")
+    zeus.Breadcrumbs("Zeus", "Examples", "Gallery")
+    zeus.Column(SPACE.Exs) {
+        zeus.Display("Build interfaces with Zeus")
+        zeus.Body("Zinc tokens, neutral primary, and lucide SVG icons. Dark inverts every token that reads appearance.")
     }
-    kit.Row(SPACE.Sm) {
-        kit.Chip("Stable", kit.TINT.Ok)
-        kit.Chip("Canvas2D", kit.TINT.Ink)
-        kit.Badge("kit", kit.TINT.Mute)
-        kit.Kbd("⌘K")
+    zeus.Row(SPACE.Sm) {
+        zeus.Chip("Stable", zeus.TINT.Ok)
+        zeus.Chip("Canvas2D", zeus.TINT.Ink)
+        zeus.Badge("zeus", zeus.TINT.Mute)
+        zeus.Kbd("⌘K")
     }
-    kit.Alert("Heads up", "Signals update on click. Hover and press are engine fades — no DOM.")
-    kit.AlertDestructive("Session expired", "Sign back in to keep syncing. Your drafts are saved locally.")
+    zeus.Alert("Heads up", "Signals update on click. Hover and press are engine fades — no DOM.")
+    zeus.AlertDestructive("Session expired", "Sign back in to keep syncing. Your drafts are saved locally.")
     ProjectCard()
 }
 
 fn ButtonScale() {
-    kit.SectionHeader("Actions", "Buttons",
+    zeus.SectionHeader("Actions", "Buttons",
         "The six shadcn variants across three sizes. Primary is the neutral ink fill; it inverts with appearance.")
-    kit.Card() {
-        kit.Overline("Primary · Secondary · Outline · Ghost · Destructive · Link")
-        kit.Note("small")
-        kit.RowWrap(SPACE.Sm) {
-            kit.Button("Solid", kit.LOOK.Solid, kit.SIZE.Sm)
-            kit.Button("Soft", kit.LOOK.Soft, kit.SIZE.Sm)
-            kit.Button("Outline", kit.LOOK.Outline, kit.SIZE.Sm)
-            kit.Button("Ghost", kit.LOOK.Ghost, kit.SIZE.Sm)
-            kit.Button("Danger", kit.LOOK.Danger, kit.SIZE.Sm)
-            kit.Button("Link", kit.LOOK.Link, kit.SIZE.Sm)
+    zeus.Card() {
+        zeus.Overline("Primary · Secondary · Outline · Ghost · Destructive · Link")
+        zeus.Note("small")
+        zeus.RowWrap(SPACE.Sm) {
+            zeus.Button("Solid", look = zeus.LOOK.Solid, size = zeus.SIZE.Sm)
+            zeus.Button("Soft", look = zeus.LOOK.Soft, size = zeus.SIZE.Sm)
+            zeus.Button("Outline", look = zeus.LOOK.Outline, size = zeus.SIZE.Sm)
+            zeus.Button("Ghost", look = zeus.LOOK.Ghost, size = zeus.SIZE.Sm)
+            zeus.Button("Danger", look = zeus.LOOK.Danger, size = zeus.SIZE.Sm)
+            zeus.Button("Link", look = zeus.LOOK.Link, size = zeus.SIZE.Sm)
         }
-        kit.Note("medium")
-        kit.RowWrap(SPACE.Sm) {
-            kit.Button("Solid", kit.LOOK.Solid, kit.SIZE.Md)
-            kit.Button("Soft", kit.LOOK.Soft, kit.SIZE.Md)
-            kit.Button("Outline", kit.LOOK.Outline, kit.SIZE.Md)
-            kit.Button("Ghost", kit.LOOK.Ghost, kit.SIZE.Md)
-            kit.Button("Danger", kit.LOOK.Danger, kit.SIZE.Md)
-            kit.Button("Link", kit.LOOK.Link, kit.SIZE.Md)
+        zeus.Note("medium")
+        zeus.RowWrap(SPACE.Sm) {
+            zeus.Button("Solid", look = zeus.LOOK.Solid, size = zeus.SIZE.Md)
+            zeus.Button("Soft", look = zeus.LOOK.Soft, size = zeus.SIZE.Md)
+            zeus.Button("Outline", look = zeus.LOOK.Outline, size = zeus.SIZE.Md)
+            zeus.Button("Ghost", look = zeus.LOOK.Ghost, size = zeus.SIZE.Md)
+            zeus.Button("Danger", look = zeus.LOOK.Danger, size = zeus.SIZE.Md)
+            zeus.Button("Link", look = zeus.LOOK.Link, size = zeus.SIZE.Md)
         }
-        kit.Note("large")
-        kit.RowWrap(SPACE.Sm) {
-            kit.Button("Solid", kit.LOOK.Solid, kit.SIZE.Lg)
-            kit.Button("Soft", kit.LOOK.Soft, kit.SIZE.Lg)
-            kit.Button("Outline", kit.LOOK.Outline, kit.SIZE.Lg)
-            kit.Button("Ghost", kit.LOOK.Ghost, kit.SIZE.Lg)
-            kit.Button("Danger", kit.LOOK.Danger, kit.SIZE.Lg)
-            kit.Button("Link", kit.LOOK.Link, kit.SIZE.Lg)
+        zeus.Note("large")
+        zeus.RowWrap(SPACE.Sm) {
+            zeus.Button("Solid", look = zeus.LOOK.Solid, size = zeus.SIZE.Lg)
+            zeus.Button("Soft", look = zeus.LOOK.Soft, size = zeus.SIZE.Lg)
+            zeus.Button("Outline", look = zeus.LOOK.Outline, size = zeus.SIZE.Lg)
+            zeus.Button("Ghost", look = zeus.LOOK.Ghost, size = zeus.SIZE.Lg)
+            zeus.Button("Danger", look = zeus.LOOK.Danger, size = zeus.SIZE.Lg)
+            zeus.Button("Link", look = zeus.LOOK.Link, size = zeus.SIZE.Lg)
         }
-        kit.Note("icon — square, 16px lucide glyphs in every look")
-        kit.RowWrap(SPACE.Sm) {
-            kit.IconButton(kit.IC_PLUS, kit.LOOK.Solid, kit.SIZE.Sm, "Add")
-            kit.IconButton(kit.IC_MINUS, kit.LOOK.Soft, kit.SIZE.Md, "Remove")
-            kit.IconButton(kit.IC_X, kit.LOOK.Outline, kit.SIZE.Md, "Close")
-            kit.IconButton(kit.IC_CHEV_LEFT, kit.LOOK.Ghost, kit.SIZE.Md, "Back")
-            kit.IconButton(kit.IC_ALERT_CIRCLE, kit.LOOK.Danger, kit.SIZE.Lg, "Warn")
+        zeus.Note("icon — square, 16px lucide glyphs in every look")
+        zeus.RowWrap(SPACE.Sm) {
+            zeus.IconButton(zeus.IC_PLUS, zeus.LOOK.Solid, zeus.SIZE.Sm, "Add")
+            zeus.IconButton(zeus.IC_MINUS, zeus.LOOK.Soft, zeus.SIZE.Md, "Remove")
+            zeus.IconButton(zeus.IC_X, zeus.LOOK.Outline, zeus.SIZE.Md, "Close")
+            zeus.IconButton(zeus.IC_CHEV_LEFT, zeus.LOOK.Ghost, zeus.SIZE.Md, "Back")
+            zeus.IconButton(zeus.IC_ALERT_CIRCLE, zeus.LOOK.Danger, zeus.SIZE.Lg, "Warn")
         }
     }
 }
 
 fn DisplayRow() {
-    kit.SectionTitle("Display", "Chips, badges, keys")
-    kit.Card() {
-        kit.Note("chips")
-        kit.Row(SPACE.Sm) {
-            kit.Chip("Iris", kit.TINT.Ink)
-            kit.Chip("Live", kit.TINT.Ok)
-            kit.Chip("Quiet", kit.TINT.Mute)
-            kit.Chip("Faint", kit.TINT.Dim)
-            kit.Chip("Alert", kit.TINT.Danger)
+    zeus.SectionTitle("Display", "Chips, badges, keys")
+    zeus.Card() {
+        zeus.Note("chips")
+        zeus.Row(SPACE.Sm) {
+            zeus.Chip("Iris", zeus.TINT.Ink)
+            zeus.Chip("Live", zeus.TINT.Ok)
+            zeus.Chip("Quiet", zeus.TINT.Mute)
+            zeus.Chip("Faint", zeus.TINT.Dim)
+            zeus.Chip("Alert", zeus.TINT.Danger)
         }
-        kit.Note("badges")
-        kit.Row(SPACE.Sm) {
-            kit.Badge("secondary", kit.TINT.Mute)
-            kit.Badge("default", kit.TINT.Ink)
-            kit.Badge("success", kit.TINT.Ok)
-            kit.Badge("outline", kit.TINT.Dim)
-            kit.Badge("destructive", kit.TINT.Danger)
+        zeus.Note("badges")
+        zeus.Row(SPACE.Sm) {
+            zeus.Badge("secondary", zeus.TINT.Mute)
+            zeus.Badge("default", zeus.TINT.Ink)
+            zeus.Badge("success", zeus.TINT.Ok)
+            zeus.Badge("outline", zeus.TINT.Dim)
+            zeus.Badge("destructive", zeus.TINT.Danger)
         }
-        kit.Note("kbd")
-        kit.Row(SPACE.Sm) {
-            kit.Kbd("Esc")
-            kit.Kbd("⌘S")
-            kit.Kbd("Ctrl K")
+        zeus.Note("kbd")
+        zeus.Row(SPACE.Sm) {
+            zeus.Kbd("Esc")
+            zeus.Kbd("⌘S")
+            zeus.Kbd("Ctrl K")
         }
     }
 }
 
 fn Field(name: Signal<string>, note: Signal<string>, st: Store) {
-    kit.SectionHeader("Forms", "Input",
+    zeus.SectionHeader("Forms", "Input",
         "A label + input pair, shadcn style: h-9, rounded-md, hairline border.")
-    kit.Card() {
-        kit.Field("Name", name, "Your name")
+    zeus.Card() {
+        zeus.Field("Name", name, "Your name")
         zeus.Text(if name.get().len < 3 { "Name must be at least 3 characters." } else { "" },
-                  color = kit.danger(), font = kit.FONT_CONTROL)
-        kit.TextArea(note, "Draft — saved as you type", fn() => kv.set(st, "draft", note.get()))
-        kit.Note("{{note.get().len}} chars · std:kv under Application Support")
-        kit.Button("Submit", kit.LOOK.Solid, kit.SIZE.Md, fn() => name.set(name.get()))
+                  color = zeus.danger(), font = zeus.FONT_CONTROL)
+        zeus.TextArea(note, "Draft — saved as you type", fn() => kv.set(st, "draft", note.get()))
+        zeus.Note("{{note.get().len}} chars · std:kv under Application Support")
+        zeus.Button("Submit", look = zeus.LOOK.Solid, size = zeus.SIZE.Md, on_click =  fn() => name.set(name.get()))
     }
 }
 
@@ -145,10 +144,10 @@ fn DateSection() {
     let year = zeus.signal(2026)
     let month = zeus.signal(10)
     let day = zeus.signal(17)
-    kit.SectionHeader("Forms", "Date picker",
+    zeus.SectionHeader("Forms", "Date picker",
         "Input-like trigger with a calendar icon; the sheet floats above the page, so the scroller cannot clip it.")
-    kit.Card() {
-        kit.DatePicker(year, month, day)
+    zeus.Card() {
+        zeus.DatePicker(year, month, day)
     }
 }
 
@@ -157,20 +156,20 @@ fn Choice() {
     let size = zeus.signal(1)
     let mode = zeus.signal(1)
     let group = zeus.signal(0)
-    kit.SectionHeader("Choice", "Tabs, select, radio, toggle",
+    zeus.SectionHeader("Choice", "Tabs, select, radio, toggle",
         "A muted tray for tabs, a dropdown for sizes, radio dots for one pick, and an accent-pressed toggle group.")
-    kit.Card() {
-        kit.Note("tabs — active trigger is the card surface")
-        kit.Tabs(tab, []string { "One", "Two", "Three" })
-        kit.Note("select — the menu floats below the trigger")
-        kit.Select(size, []string { "Small", "Medium", "Large" })
-        kit.Note("radio group — filled dot on the picked row")
-        kit.RadioGroup(mode, []string { "Default", "Comfortable", "Compact" })
-        kit.Note("toggle group — muted fill when pressed")
-        kit.ToggleGroup(group, []string { "Bold", "Italic", "Underline" })
-        kit.Note("toggle — borderless until pressed")
+    zeus.Card() {
+        zeus.Note("tabs — active trigger is the card surface")
+        zeus.Tabs(tab, []string { "One", "Two", "Three" })
+        zeus.Note("select — the menu floats below the trigger")
+        zeus.Select(size, []string { "Small", "Medium", "Large" })
+        zeus.Note("radio group — filled dot on the picked row")
+        zeus.RadioGroup(mode, []string { "Default", "Comfortable", "Compact" })
+        zeus.Note("toggle group — muted fill when pressed")
+        zeus.ToggleGroup(group, []string { "Bold", "Italic", "Underline" })
+        zeus.Note("toggle — borderless until pressed")
         let blink = zeus.signal(1)
-        kit.Toggle("Blink cursor", blink)
+        zeus.Toggle("Blink cursor", blink)
     }
 }
 
@@ -178,18 +177,18 @@ fn Controls() {
     let on = zeus.signal(1)
     let notes = zeus.signal(0)
     let vol = zeus.signal(42)
-    kit.SectionHeader("Controls", "Switch, check, slider, toggle",
+    zeus.SectionHeader("Controls", "Switch, check, slider, toggle",
         "The switch eases onto its track; drag the slider thumb or use the arrow keys. Progress echoes the value.")
-    kit.Card() {
-        kit.Row(SPACE.Md) {
-            kit.Switch(on)
-            zeus.Text(if on.get() == 1 { "On" } else { "Off" }, color = kit.ink(), font = kit.FONT_BODY)
-            kit.Grow()
-            kit.Checkbox("Notify me", notes)
+    zeus.Card() {
+        zeus.Row(SPACE.Md) {
+            zeus.Switch(on)
+            zeus.Text(if on.get() == 1 { "On" } else { "Off" }, color = zeus.ink(), font = zeus.FONT_BODY)
+            zeus.Grow()
+            zeus.Checkbox("Notify me", notes)
         }
-        kit.Note("volume  {{vol.get()}}%")
-        kit.Slider(vol)
-        kit.Progress(vol)
+        zeus.Note("volume  {{vol.get()}}%")
+        zeus.Slider(vol)
+        zeus.Progress(vol)
     }
 }
 
@@ -201,40 +200,40 @@ let IMG_BAG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1P
 let IMG_MUG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mMQ2NkIAAInAUt79MTdAAAAAElFTkSuQmCC"
 
 fn People() {
-    kit.SectionTitle("People", "Avatars and stats")
-    kit.Row(SPACE.Md) {
-        kit.Card() {
-            kit.User("AP", "Ada Park", "Operator", IMG_ADA)
-            kit.User("BL", "Bea Liu", "Editor", IMG_BEA)
-            kit.Row(SPACE.Xs) {
-                kit.Avatar("AP", 32, IMG_ADA)
-                kit.Avatar("BL", 40, IMG_BEA)
-                kit.Avatar("CD", 48)
+    zeus.SectionTitle("People", "Avatars and stats")
+    zeus.Row(SPACE.Md) {
+        zeus.Card() {
+            zeus.User("AP", "Ada Park", "Operator", IMG_ADA)
+            zeus.User("BL", "Bea Liu", "Editor", IMG_BEA)
+            zeus.Row(SPACE.Xs) {
+                zeus.Avatar("AP", 32, IMG_ADA)
+                zeus.Avatar("BL", 40, IMG_BEA)
+                zeus.Avatar("CD", 48)
             }
         }
-        kit.Stat("Uptime", "99.9%", kit.TINT.Ok)
-        kit.Stat("Errors", "2", kit.TINT.Danger)
+        zeus.Stat("Uptime", "99.9%", zeus.TINT.Ok)
+        zeus.Stat("Errors", "2", zeus.TINT.Danger)
     }
 }
 
 fn Catalog() {
-    kit.SectionHeader("Media", "Product shots",
+    zeus.SectionHeader("Media", "Product shots",
         "Raster images (PNG, JPEG, WebP, GIF). fit is stretch, contain, or cover; radius clips.")
-    kit.Row(SPACE.Md) {
-        kit.Card() {
-            kit.Image(IMG_SHOE, width = 160, height = 100, radius = 8)
-            kit.Title("Runner")
-            kit.Body("$128")
+    zeus.Row(SPACE.Md) {
+        zeus.Card() {
+            zeus.Image(IMG_SHOE, width = 160, height = 100, radius = 8)
+            zeus.Title("Runner")
+            zeus.Body("$128")
         }
-        kit.Card() {
-            kit.Image(IMG_BAG, width = 160, height = 100, radius = 8)
-            kit.Title("Tote")
-            kit.Body("$64")
+        zeus.Card() {
+            zeus.Image(IMG_BAG, width = 160, height = 100, radius = 8)
+            zeus.Title("Tote")
+            zeus.Body("$64")
         }
-        kit.Card() {
-            kit.Image(IMG_MUG, width = 160, height = 100, radius = 8)
-            kit.Title("Mug")
-            kit.Body("$18")
+        zeus.Card() {
+            zeus.Image(IMG_MUG, width = 160, height = 100, radius = 8)
+            zeus.Title("Mug")
+            zeus.Body("$18")
         }
     }
 }
@@ -243,14 +242,14 @@ fn Upload() {
     let photo = zeus.signal("")
     let pw = zeus.signal(0)
     let ph = zeus.signal(0)
-    kit.SectionHeader("Media", "Upload",
+    zeus.SectionHeader("Media", "Upload",
         "Choose a PNG, JPEG, WebP, or GIF. The preview keeps aspect and shrinks to the card.")
-    kit.Card() {
-        kit.Row(SPACE.Sm) {
-            kit.Button("Choose image", kit.LOOK.Solid, kit.SIZE.Md, fn() {
+    zeus.Card() {
+        zeus.Row(SPACE.Sm) {
+            zeus.Button("Choose image", look = zeus.LOOK.Solid, size = zeus.SIZE.Md, on_click =  fn() {
                 zeus.pick_image(photo, pw, ph)
             })
-            kit.Button("Clear", kit.LOOK.Ghost, kit.SIZE.Md, fn() {
+            zeus.Button("Clear", look = zeus.LOOK.Ghost, size = zeus.SIZE.Md, on_click =  fn() {
                 photo.set("")
                 pw.set(0)
                 ph.set(0)
@@ -261,14 +260,14 @@ fn Upload() {
             align_items = ALIGN.Center,
             justify = ALIGN.Center,
             radius = 8,
-            background = kit.raised(),
+            background = zeus.raised(),
             max_width = || {
                 let w = pw.get()
                 if w > 0 { w } else { 100000 }
             }) {
-            zeus.Text("No image yet", color = kit.mute(), font = kit.FONT_CAPTION,
+            zeus.Text("No image yet", color = zeus.mute(), font = zeus.FONT_CAPTION,
                       show = || { photo.get().len == 0 })
-            kit.Image(|| { photo.get() },
+            zeus.Image(|| { photo.get() },
                        position = zeus.pos_absolute(), left = 0, top = 0, right = 0, bottom = 0,
                        radius = 8, fit = IMAGE_FIT.Contain,
                        show = || { photo.get().len > 0 })
@@ -291,15 +290,15 @@ fn Upload() {
 
 fn Data() {
     let page = zeus.signal(3)
-    kit.SectionTitle("Data", "Table and pagination")
-    kit.Card() {
-        kit.TableHead("Name", "Role", "Status")
-        kit.TableRow("Ada", "Operator", "Active")
-        kit.TableRow("Bea", "Editor", "Away")
-        kit.TableRow("Cal", "Viewer", "Active")
+    zeus.SectionTitle("Data", "Table and pagination")
+    zeus.Card() {
+        zeus.TableHead("Name", "Role", "Status")
+        zeus.TableRow("Ada", "Operator", "Active")
+        zeus.TableRow("Bea", "Editor", "Away")
+        zeus.TableRow("Cal", "Viewer", "Active")
     }
-    kit.Note("Pagination — {{page.get()}} / 5 · ghost pages, outline current")
-    kit.Pagination(page, 5)
+    zeus.Note("Pagination — {{page.get()}} / 5 · ghost pages, outline current")
+    zeus.Pagination(page, 5)
 }
 
 fn Components() {
@@ -319,28 +318,28 @@ fn Components() {
 }
 
 fn NameRow(name: string) -> Node {
-    kit.Row(SPACE.Sm) {
-        kit.Pip(kit.mute(), 6)
-        kit.Body(name)
+    zeus.Row(SPACE.Sm) {
+        zeus.Pip(zeus.mute(), 6)
+        zeus.Body(name)
     }
 }
 
 fn LiveList() {
     let n = zeus.signal(2)
-    kit.SectionHeader("Lists", "Growing rows",
+    zeus.SectionHeader("Lists", "Growing rows",
         "Add and remove rows. Extra rows are shown, not rebuilt with zeus.For.")
-    kit.Card() {
+    zeus.Card() {
         zeus.show_ge(NameRow("Ada"), n, 1)
         zeus.show_ge(NameRow("Bea"), n, 2)
         zeus.show_ge(NameRow("Row"), n, 3)
         zeus.show_ge(NameRow("Row"), n, 4)
-        kit.Row(SPACE.Sm) {
-            kit.Button("Add row", kit.LOOK.Solid, kit.SIZE.Md, fn() {
+        zeus.Row(SPACE.Sm) {
+            zeus.Button("Add row", look = zeus.LOOK.Solid, size = zeus.SIZE.Md, on_click =  fn() {
                 if n.get() < 4 {
                     n.set(n.get() + 1)
                 }
             })
-            kit.Button("Remove", kit.LOOK.Ghost, kit.SIZE.Md, fn() {
+            zeus.Button("Remove", look = zeus.LOOK.Ghost, size = zeus.SIZE.Md, on_click =  fn() {
                 if n.get() > 0 {
                     n.set(n.get() - 1)
                 }
@@ -350,23 +349,23 @@ fn LiveList() {
 }
 
 fn Cards() {
-    kit.SectionTitle("Surfaces", "Cards")
+    zeus.SectionTitle("Surfaces", "Cards")
     zeus.Grid(config = GridConfig(columns = 3, gap = SPACE.Md)) {
-        kit.Card() { kit.Pip(kit.accent(), 8) kit.Title("Small") kit.Body("Neutral primary on paper.") }
-        kit.Card() { kit.Pip(kit.ok(), 8) kit.Title("Medium") kit.Body("Rounded-xl is the card radius.") }
-        kit.Card() { kit.Pip(kit.danger(), 8) kit.Title("Large") kit.Body("Badges and caps mark status.") }
+        zeus.Card() { zeus.Pip(zeus.accent(), 8) zeus.Title("Small") zeus.Body("Neutral primary on paper.") }
+        zeus.Card() { zeus.Pip(zeus.ok(), 8) zeus.Title("Medium") zeus.Body("Rounded-xl is the card radius.") }
+        zeus.Card() { zeus.Pip(zeus.danger(), 8) zeus.Title("Large") zeus.Body("Badges and caps mark status.") }
     }
 }
 
 fn Skeletons() {
-    kit.SectionHeader("Feedback", "Skeleton",
+    zeus.SectionHeader("Feedback", "Skeleton",
         "Placeholder fills while content loads. Radius matches the shape it replaces.")
-    kit.Card() {
-        kit.Row(SPACE.Md) {
-            kit.Skeleton(40, 40, 20)
-            kit.Column(SPACE.Exs) {
-                kit.Skeleton(220, 14, 7)
-                kit.Skeleton(160, 14, 7)
+    zeus.Card() {
+        zeus.Row(SPACE.Md) {
+            zeus.Skeleton(40, 40, 20)
+            zeus.Column(SPACE.Exs) {
+                zeus.Skeleton(220, 14, 7)
+                zeus.Skeleton(160, 14, 7)
             }
         }
     }
@@ -375,33 +374,33 @@ fn Skeletons() {
 fn Overlays() {
     let open = zeus.signal(0)
     let ask = zeus.signal(0)
-    kit.SectionTitle("Overlay", "Dialog and alert dialog")
-    kit.Row(SPACE.Sm) {
-        kit.Button("Dialog", kit.LOOK.Solid, kit.SIZE.Md, fn() => open.set(1))
-        kit.Button("Alert dialog", kit.LOOK.Outline, kit.SIZE.Md, fn() => ask.set(1))
+    zeus.SectionTitle("Overlay", "Dialog and alert dialog")
+    zeus.Row(SPACE.Sm) {
+        zeus.Button("Dialog", look = zeus.LOOK.Solid, size = zeus.SIZE.Md, on_click =  fn() => open.set(1))
+        zeus.Button("Alert dialog", look = zeus.LOOK.Outline, size = zeus.SIZE.Md, on_click =  fn() => ask.set(1))
     }
-    kit.Body("Dialog has a corner X; alert dialog does not. Cancel is ghost or outline; the destructive action closes.")
-    kit.Dialog(open) {
-        kit.Title("Share the link?")
-        kit.Body("Anyone with the link can view this project. You can revoke access later.")
-        kit.Row(SPACE.Sm) {
-            kit.Grow()
-            kit.Button("Cancel", kit.LOOK.Ghost, kit.SIZE.Md, fn() => open.set(0))
-            kit.Button("Share", kit.LOOK.Solid, kit.SIZE.Md, fn() => open.set(0))
+    zeus.Body("Dialog has a corner X; alert dialog does not. Cancel is ghost or outline; the destructive action closes.")
+    zeus.Dialog(open) {
+        zeus.Title("Share the link?")
+        zeus.Body("Anyone with the link can view this project. You can revoke access later.")
+        zeus.Row(SPACE.Sm) {
+            zeus.Grow()
+            zeus.Button("Cancel", look = zeus.LOOK.Ghost, size = zeus.SIZE.Md, on_click =  fn() => open.set(0))
+            zeus.Button("Share", look = zeus.LOOK.Solid, size = zeus.SIZE.Md, on_click =  fn() => open.set(0))
         }
     }
-    kit.AlertDialog(ask) {
-        kit.Title("Discard changes?")
-        kit.Body("This cannot be undone. The working tree keeps whatever you have not saved.")
-        kit.Row(SPACE.Sm) {
-            kit.Grow()
-            kit.Button("Cancel", kit.LOOK.Outline, kit.SIZE.Md, fn() => ask.set(0))
-            kit.Button("Discard", kit.LOOK.Danger, kit.SIZE.Md, fn() => ask.set(0))
+    zeus.AlertDialog(ask) {
+        zeus.Title("Discard changes?")
+        zeus.Body("This cannot be undone. The working tree keeps whatever you have not saved.")
+        zeus.Row(SPACE.Sm) {
+            zeus.Grow()
+            zeus.Button("Cancel", look = zeus.LOOK.Outline, size = zeus.SIZE.Md, on_click =  fn() => ask.set(0))
+            zeus.Button("Discard", look = zeus.LOOK.Danger, size = zeus.SIZE.Md, on_click =  fn() => ask.set(0))
         }
     }
 }
 
-// --- Charts (Patterns page): shadcn chart cards over `std:kit` plots ---
+// --- Charts (Patterns page): shadcn chart cards over zeus plots ---
 
 let mut chart_labs: []string = []string {}
 let mut chart_series: []string = []string {}
@@ -448,22 +447,22 @@ fn ChartCards() {
         push(chart_vals, 170)
         push(chart_vals, 260)
     }
-    kit.SectionHeader("Data", "Charts",
+    zeus.SectionHeader("Data", "Charts",
         "Hover a column or a point: the floating tooltip lists every series value, like the recharts cursor. The plot re-fits its card on window resize.")
-    kit.Card() {
-        kit.Title("Bar chart · Total visitors")
-        kit.Body("Desktop and mobile sessions by month, grouped per category.")
-        kit.BarChart(chart_labs, chart_series, chart_vals, 850, 216)
+    zeus.Card() {
+        zeus.Title("Bar chart · Total visitors")
+        zeus.Body("Desktop and mobile sessions by month, grouped per category.")
+        zeus.BarChart(chart_labs, chart_series, chart_vals, 850, 216)
     }
-    kit.Card() {
-        kit.Title("Line chart · Trend")
-        kit.Body("Straight segments with a dot on every data point; the stroke follows the series color.")
-        kit.LineChart(chart_labs, chart_series, chart_vals, 850, 216)
+    zeus.Card() {
+        zeus.Title("Line chart · Trend")
+        zeus.Body("Straight segments with a dot on every data point; the stroke follows the series color.")
+        zeus.LineChart(chart_labs, chart_series, chart_vals, 850, 216)
     }
-    kit.Card() {
-        kit.Title("Area chart · Volume")
-        kit.Body("A tinted wash under the line; the fill restyles with the appearance.")
-        kit.AreaChart(chart_labs, chart_series, chart_vals, 850, 216)
+    zeus.Card() {
+        zeus.Title("Area chart · Volume")
+        zeus.Body("A tinted wash under the line; the fill restyles with the appearance.")
+        zeus.AreaChart(chart_labs, chart_series, chart_vals, 850, 216)
     }
 }
 
@@ -475,22 +474,22 @@ fn Patterns() {
     Overlays()
 }
 
-fn Kit() {
+fn Showcase() {
     let page = zeus.signal(1)
-    kit.Page() {
+    zeus.Page() {
         Navbar(page)
-        zeus.show_eq(kit.Column(kit.SECTION) {
+        zeus.show_eq(zeus.Column(zeus.SECTION) {
             Foundations()
         }, page, 0)
-        zeus.show_eq(kit.Column(kit.SECTION) {
+        zeus.show_eq(zeus.Column(zeus.SECTION) {
             Components()
         }, page, 1)
-        zeus.show_eq(kit.Column(kit.SECTION) {
+        zeus.show_eq(zeus.Column(zeus.SECTION) {
             Patterns()
         }, page, 2)
     }
 }
 
 fn Screen() {
-    Kit()
+    Showcase()
 }
