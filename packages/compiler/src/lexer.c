@@ -75,6 +75,18 @@ const char *token_kind_name(TokenKind k) {
         case TOK_MINUS_EQ: return "-=";
         case TOK_STAR_EQ: return "*=";
         case TOK_SLASH_EQ: return "/=";
+        case TOK_PERCENT_EQ: return "%=";
+        case TOK_PLUS_PLUS: return "++";
+        case TOK_MINUS_MINUS: return "--";
+        case TOK_AMP_EQ: return "&=";
+        case TOK_PIPE_EQ: return "|=";
+        case TOK_CARET_EQ: return "^=";
+        case TOK_SHL_EQ: return "<<=";
+        case TOK_SHR_EQ: return ">>=";
+        case TOK_SHL: return "<<";
+        case TOK_SHR: return ">>";
+        case TOK_CARET: return "^";
+        case TOK_TILDE: return "~";
         case TOK_EQ_EQ: return "==";
         case TOK_BANG_EQ: return "!=";
         case TOK_LT: return "<";
@@ -226,6 +238,16 @@ Token lexer_next(Lexer *l) {
     if (c == '-' && l->pos[1] == '=') { advance(l, 2); return make_token(l, TOK_MINUS_EQ, start, sl, sc); }
     if (c == '*' && l->pos[1] == '=') { advance(l, 2); return make_token(l, TOK_STAR_EQ, start, sl, sc); }
     if (c == '/' && l->pos[1] == '=') { advance(l, 2); return make_token(l, TOK_SLASH_EQ, start, sl, sc); }
+    if (c == '%' && l->pos[1] == '=') { advance(l, 2); return make_token(l, TOK_PERCENT_EQ, start, sl, sc); }
+    if (c == '+' && l->pos[1] == '+') { advance(l, 2); return make_token(l, TOK_PLUS_PLUS, start, sl, sc); }
+    if (c == '-' && l->pos[1] == '-') { advance(l, 2); return make_token(l, TOK_MINUS_MINUS, start, sl, sc); }
+    if (c == '&' && l->pos[1] == '=') { advance(l, 2); return make_token(l, TOK_AMP_EQ, start, sl, sc); }
+    if (c == '|' && l->pos[1] == '=') { advance(l, 2); return make_token(l, TOK_PIPE_EQ, start, sl, sc); }
+    if (c == '^' && l->pos[1] == '=') { advance(l, 2); return make_token(l, TOK_CARET_EQ, start, sl, sc); }
+    if (c == '<' && l->pos[1] == '<' && l->pos[2] == '=') { advance(l, 3); return make_token(l, TOK_SHL_EQ, start, sl, sc); }
+    if (c == '>' && l->pos[1] == '>' && l->pos[2] == '=') { advance(l, 3); return make_token(l, TOK_SHR_EQ, start, sl, sc); }
+    if (c == '<' && l->pos[1] == '<') { advance(l, 2); return make_token(l, TOK_SHL, start, sl, sc); }
+    if (c == '>' && l->pos[1] == '>') { advance(l, 2); return make_token(l, TOK_SHR, start, sl, sc); }
     if (c == '=' && l->pos[1] == '=') { advance(l, 2); return make_token(l, TOK_EQ_EQ, start, sl, sc); }
     if (c == '!' && l->pos[1] == '=') { advance(l, 2); return make_token(l, TOK_BANG_EQ, start, sl, sc); }
     if (c == '<' && l->pos[1] == '=') { advance(l, 2); return make_token(l, TOK_LT_EQ, start, sl, sc); }
@@ -258,6 +280,8 @@ Token lexer_next(Lexer *l) {
         case '&': return make_token(l, TOK_AMP, start, sl, sc);
         case '!': return make_token(l, TOK_BANG, start, sl, sc);
         case '#': return make_token(l, TOK_HASH, start, sl, sc);
+        case '^': return make_token(l, TOK_CARET, start, sl, sc);
+        case '~': return make_token(l, TOK_TILDE, start, sl, sc);
         default:  return make_token(l, TOK_UNKNOWN, start, sl, sc);
     }
 }

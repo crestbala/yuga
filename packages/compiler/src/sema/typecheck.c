@@ -1963,6 +1963,14 @@ static Type *check_expr_ty(AstNode *n, Type *expect) {
                 n->ty = ty_bool();
                 return n->ty;
             }
+            /* Bitwise & shifts: int only (wrapping, like the wrapping_* fns). */
+            if (op == TOK_AMP || op == TOK_PIPE || op == TOK_CARET || op == TOK_SHL ||
+                op == TOK_SHR) {
+                if (!type_eq(l, ty_int()) || !type_eq(r, ty_int()))
+                    err(n->loc, "bitwise operator requires int operands");
+                n->ty = ty_int();
+                return n->ty;
+            }
             if (type_eq(l, ty_float()) && type_eq(r, ty_float())) {
                 if (op == TOK_PERCENT)
                     err(n->loc, "%% is not defined for float");
@@ -1979,12 +1987,26 @@ static Type *check_expr_ty(AstNode *n, Type *expect) {
             if (n->as.unary.op == TOK_BANG) {
                 if (!type_eq(o, ty_bool())) err(n->loc, "! requires bool");
                 n->ty = ty_bool();
+            } else if (n->as.unary.op == TOK_TILDE) {
+                if (!type_eq(o, ty_int())) err(n->loc, "~ requires int");
+                n->ty = ty_int();
             } else if (type_eq(o, ty_float())) {
                 n->ty = ty_float();
             } else {
                 if (!type_eq(o, ty_int())) err(n->loc, "unary minus requires int or float");
                 n->ty = ty_int();
             }
+            return n->ty;
+        }
+        case AST_INCDEC: {
+            Type *o = check_expr(n->as.incdec.operand);
+            if (!n->as.incdec.operand->place_mut)
+                err(n->loc, n->as.incdec.is_dec ? "cannot decrement immutable place"
+                                                : "cannot increment immutable place");
+            if (o && o->kind != TY_INT && o->kind != TY_FLOAT)
+                err(n->loc, n->as.incdec.is_dec ? "-- requires int or float"
+                                                : "++ requires int or float");
+            n->ty = o;
             return n->ty;
         }
         case AST_CAST: {
@@ -2335,10 +2357,18 @@ static void check_stmt(AstNode *n) {
                 if (!type_eq(l, r))
                     err(n->loc, "cannot assign %s to %s", type_name(r), type_name(l));
             } else {
+                TokenKind aop = n->as.assign.op;
+                int bit_mod = aop == TOK_PERCENT_EQ || aop == TOK_AMP_EQ ||
+                              aop == TOK_PIPE_EQ || aop == TOK_CARET_EQ ||
+                              aop == TOK_SHL_EQ || aop == TOK_SHR_EQ;
                 int ok = (type_eq(l, ty_int()) && type_eq(r, ty_int())) ||
-                         (type_eq(l, ty_float()) && type_eq(r, ty_float()));
-                if (!ok)
-                    err(n->loc, "compound assignment requires int or float");
+                         (!bit_mod && type_eq(l, ty_float()) && type_eq(r, ty_float()));
+                if (!ok) {
+                    if (bit_mod)
+                        err(n->loc, "%=, &=, |=, ^=, <<=, >>= require int operands");
+                    else
+                        err(n->loc, "compound assignment requires int or float");
+                }
             }
             break;
         }
@@ -2926,6 +2956,9 @@ static void walk_instantiate(AstNode *n, const char **names, Type **args, size_t
         case AST_ASSIGN:
             walk_instantiate(n->as.assign.left, names, args, na, added);
             walk_instantiate(n->as.assign.right, names, args, na, added);
+            break;
+        case AST_INCDEC:
+            walk_instantiate(n->as.incdec.operand, names, args, na, added);
             break;
         case AST_BINARY:
             walk_instantiate(n->as.binary.left, names, args, na, added);

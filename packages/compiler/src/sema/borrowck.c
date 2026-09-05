@@ -349,6 +349,9 @@ static int check_expr(AstNode *n, int as_move) {
             return check_expr(n->as.binary.right, 0);
         case AST_UNARY:
             return check_expr(n->as.unary.operand, 0);
+        case AST_INCDEC:
+            /* Reads and writes the operand place (like an assignment). */
+            return check_expr(n->as.incdec.operand, 0);
         case AST_CAST:
             return check_expr(n->as.cast.expr, 0);
         case AST_CLOSURE: {

@@ -373,6 +373,12 @@ static int assign_to_bin(int op) {
     if (op == TOK_MINUS_EQ) return TOK_MINUS;
     if (op == TOK_STAR_EQ) return TOK_STAR;
     if (op == TOK_SLASH_EQ) return TOK_SLASH;
+    if (op == TOK_PERCENT_EQ) return TOK_PERCENT;
+    if (op == TOK_AMP_EQ) return TOK_AMP;
+    if (op == TOK_PIPE_EQ) return TOK_PIPE;
+    if (op == TOK_CARET_EQ) return TOK_CARET;
+    if (op == TOK_SHL_EQ) return TOK_SHL;
+    if (op == TOK_SHR_EQ) return TOK_SHR;
     return 0;
 }
 
@@ -758,6 +764,85 @@ static int lower_expr(AstNode *n) {
             i->binop = (int)n->as.unary.op;
             i->ty = ir_subst(n->ty);
             return d;
+        }
+        case AST_INCDEC: {
+            TokenKind bop = n->as.incdec.is_dec ? TOK_MINUS : TOK_PLUS;
+            /* Closure-captured `let mut`: same signal path as compound assign. */
+            if (ident_is_state(n->as.incdec.operand)) {
+                int sid = state_sig_local(n->as.incdec.operand);
+                if (sid < 0) {
+                    F->lowered = 0;
+                    return -1;
+                }
+                int cur = emit_state_get(sid, n->loc);
+                int one = new_local(ty_int(), NULL, 0);
+                IrInst *k = emit(IR_CONST_INT, n->loc);
+                k->dst = one;
+                k->imm = 1;
+                k->ty = ty_int();
+                int nx = new_local(ty_int(), NULL, 0);
+                IrInst *b = emit(IR_BIN, n->loc);
+                b->dst = nx;
+                b->a = cur;
+                b->b = one;
+                b->binop = (int)bop;
+                b->ty = ty_int();
+                b->checked = 1;
+                emit_state_set(sid, nx, n->loc);
+                return n->as.incdec.is_post ? cur : nx;
+            }
+            IrPlace *p = lower_place(n->as.incdec.operand);
+            if (!p) {
+                F->lowered = 0;
+                return -1;
+            }
+            int src;
+            if (p->kind == IR_PL_LOCAL) {
+                if (n->as.incdec.is_post) {
+                    /* The store below overwrites the local; keep the old
+                       value in a fresh temp so postfix yields it. */
+                    int ld = new_local(n->ty, NULL, 0);
+                    IrInst *mv = emit(IR_MOVE, n->loc);
+                    mv->dst = ld;
+                    mv->a = p->local;
+                    mv->ty = ir_subst(n->ty);
+                    src = ld;
+                } else {
+                    src = p->local;
+                }
+            } else {
+                int ld = new_local(n->ty, NULL, 0);
+                IrInst *l = emit(IR_LOAD, n->loc);
+                l->dst = ld;
+                l->place = p;
+                l->ty = ir_subst(n->ty);
+                src = ld;
+            }
+            int one = new_local(n->ty, NULL, 0);
+            if (n->ty && n->ty->kind == TY_FLOAT) {
+                IrInst *k = emit(IR_CONST_FLOAT, n->loc);
+                k->dst = one;
+                k->fimm = 1.0;
+                k->ty = ir_subst(n->ty);
+            } else {
+                IrInst *k = emit(IR_CONST_INT, n->loc);
+                k->dst = one;
+                k->imm = 1;
+                k->ty = ir_subst(n->ty);
+            }
+            int nx = new_local(n->ty, NULL, 0);
+            IrInst *b = emit(IR_BIN, n->loc);
+            b->dst = nx;
+            b->a = src;
+            b->b = one;
+            b->binop = (int)bop;
+            b->ty = ir_subst(n->ty);
+            if (n->ty && n->ty->kind != TY_FLOAT) b->checked = 1;
+            IrInst *st = emit(IR_STORE, n->loc);
+            st->place = clone_place(p);
+            st->a = nx;
+            st->ty = ir_subst(n->ty);
+            return n->as.incdec.is_post ? src : nx;
         }
         case AST_CAST: {
             int a = lower_expr(n->as.cast.expr);
@@ -1228,6 +1313,9 @@ static void collect_clos(AstNode *n) {
         case AST_UNARY:
             collect_clos(n->as.unary.operand);
             break;
+        case AST_INCDEC:
+            collect_clos(n->as.incdec.operand);
+            break;
         case AST_CAST:
             collect_clos(n->as.cast.expr);
             break;
@@ -1419,6 +1507,9 @@ static void lower_clos_in(IrModule *m, AstNode *n) {
             break;
         case AST_UNARY:
             lower_clos_in(m, n->as.unary.operand);
+            break;
+        case AST_INCDEC:
+            lower_clos_in(m, n->as.incdec.operand);
             break;
         case AST_CAST:
             lower_clos_in(m, n->as.cast.expr);

@@ -1,0 +1,10 @@
+// `++`/`--` and bitwise operators are rejected on the wrong targets/types.
+
+import "std:fmt"
+import "std:sys"
+
+fn main() {
+    let i = 1
+    i++
+    fmt.println(i)
+}

@@ -64,6 +64,7 @@ typedef enum {
     AST_ADDR,
     AST_TYPE,
     AST_CLOSURE,
+    AST_INCDEC,
 } AstKind;
 
 typedef struct AstNode AstNode;
@@ -253,6 +254,11 @@ struct AstNode {
             AstNode **targs; /* named type arguments: Pair<int> */
             size_t targ_count;
         } type;
+        struct {
+            AstNode *operand;
+            int is_dec;  /* 1 = --, 0 = ++ */
+            int is_post; /* 1 = i++, 0 = ++i */
+        } incdec;
     } as;
 };
 
@@ -279,6 +285,7 @@ AstNode *ast_expr_stmt(AstNode *expr, SourceLoc loc);
 AstNode *ast_assign(TokenKind op, AstNode *l, AstNode *r, SourceLoc loc);
 AstNode *ast_binary(TokenKind op, AstNode *l, AstNode *r, SourceLoc loc);
 AstNode *ast_unary(TokenKind op, AstNode *opnd, SourceLoc loc);
+AstNode *ast_incdec(AstNode *opnd, int is_dec, int is_post, SourceLoc loc);
 AstNode *ast_cast(AstNode *expr, AstNode *type, SourceLoc loc);
 AstNode *ast_call(AstNode *callee, AstNode **args, size_t n, SourceLoc loc);
 AstNode *ast_index(AstNode *target, AstNode *idx, SourceLoc loc);

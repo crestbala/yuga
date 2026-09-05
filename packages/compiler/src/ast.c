@@ -123,6 +123,9 @@ void ast_free(AstNode *node) {
             ast_free(node->as.assign.left);
             ast_free(node->as.assign.right);
             break;
+        case AST_INCDEC:
+            ast_free(node->as.incdec.operand);
+            break;
         case AST_BINARY:
             ast_free(node->as.binary.left);
             ast_free(node->as.binary.right);
@@ -334,6 +337,14 @@ AstNode *ast_unary(TokenKind op, AstNode *opnd, SourceLoc loc) {
     AstNode *n = ast_new(AST_UNARY, loc);
     n->as.unary.op = op;
     n->as.unary.operand = opnd;
+    return n;
+}
+
+AstNode *ast_incdec(AstNode *opnd, int is_dec, int is_post, SourceLoc loc) {
+    AstNode *n = ast_new(AST_INCDEC, loc);
+    n->as.incdec.operand = opnd;
+    n->as.incdec.is_dec = is_dec;
+    n->as.incdec.is_post = is_post;
     return n;
 }
 
