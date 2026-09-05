@@ -74,6 +74,8 @@ fn plat_edit_reset(slot: int) {}
 /// Free an interned handler/thunk: release its captured env and make the id
 /// reusable. No-op for ids that are already free.
 fn plat_intern_free(id: int) {}
+/// 1 = overlay scroll hosts (iOS/Android): thumb drag is disabled in input
+/// and the track/thumb is not painted — panes scroll by touch only.
 fn plat_overlay_scroll() -> int {}
 fn plat_inset_top() -> int {}
 fn plat_inset_right() -> int {}

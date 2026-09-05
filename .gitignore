@@ -31,6 +31,9 @@ examples/zeus/gallery/frontend/build/
 examples/zeus/gallery/frontend/node_modules/
 examples/zeus/gallery/backend/build/
 examples/zeus/gallery/macos/build/
+examples/zeus/gallery/ios/build/
+examples/zeus/gallery/android/build/
+examples/zeus/gallery/android/.sdk-env
 www/frontend/node_modules/
 www/frontend/build/
 www/backend/build/

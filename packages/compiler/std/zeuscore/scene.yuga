@@ -250,6 +250,13 @@ fn paint_button(id: int) {
 }
 
 fn paint_scrollbar(id: int) {
+    // iOS/Android: panes scroll by touch; the desktop-style track/thumb is
+    // never painted (input already ignores it via plat_overlay_scroll), so
+    // the main scroll and nested panes stay clean, like native mobile
+    // scrollbars that appear only during a scroll.
+    if platform.plat_overlay_scroll() != 0 {
+        return
+    }
     let ox = arena.draw_x(id)
     let oy = arena.draw_y(id)
     let rgb = arena.hover_rgb()
