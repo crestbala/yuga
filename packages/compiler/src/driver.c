@@ -2,7 +2,7 @@
  * driver.c — `yugac` CLI: check, emit C, or compile+link with cc.
  *
  * Default: write a binary next to the source under build/. Generated C is
- * gnu99. The frontend is cheap (~50ms for a kit app); wall time is `cc` on
+ * The frontend is cheap (~50ms for a zeus app); wall time is `cc` on
  * ~800KB of generated C plus Cocoa. Runtime .c/.m files compile once into
  * `runtime/.obj/` and are reused. `ZEUS_HEADLESS=1` skips Cocoa entirely.
  * Set `YUGA_TIME=1` to print check / codegen / cc timings on stderr.

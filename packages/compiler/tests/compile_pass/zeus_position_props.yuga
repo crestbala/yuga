@@ -1,6 +1,6 @@
 // position / left / top / right / bottom / z_index are declarative widget
-// props (the former `zeus.position(n, ...)` chain the kit used for menus,
-// dialogs, and chart overlays), so a pinned child needs no post-build node
+// props (the former `zeus.position(n, ...)` chain used for menus, dialogs,
+// and chart overlays), so a pinned child needs no post-build node
 // mutation. Pins resolve against the parent content box on the next layout,
 // and a pin thunk that reads a signal re-pins in place without a rebuild.
 

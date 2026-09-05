@@ -1584,7 +1584,7 @@ static void load_std_names(void) {
         closedir(d);
     }
     if (!nstd_names) {
-        const char *fb[] = {"fmt", "async", "zeus", "kit", "http", "sys", "net",
+        const char *fb[] = {"fmt", "async", "zeus", "http", "sys", "net",
                             "maya", "kv", NULL};
         for (int i = 0; fb[i] && nstd_names < 32; i++) {
             snprintf(std_names[nstd_names], sizeof std_names[0], "%s", fb[i]);

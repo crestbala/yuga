@@ -67,8 +67,7 @@ Call imported items as `foo.bar(...)`.
 | Import | What it is |
 |---|---|
 | `std:fmt` | Stdout. `fmt.println` is compile-time lowering to length-based writes, not `printf`. |
-| `std:zeus` | UI toolkit. One `Node` tree, signals, `Box` / `Text` / `App` / `For`. Same source on Cocoa, iOS, Android, and wasm Canvas2D (no HTML DOM). |
-| `std:kit` | Shared Zeus look: Card, Button, Dialog, Tabs, Navbar, growing lists with `zeus.For`. |
+| `std:zeus` | UI toolkit + design system in one module: one `Node` tree, signals, `Box` / `Text` / `Button` / `App`, themed chrome (`Card`, `Button` with `LOOK` / `SIZE`, `Dialog`, `Tabs`, `Navbar`, charts, `DatePicker`). Same source on Cocoa, iOS, Android, and wasm Canvas2D (no HTML DOM). |
 | `std:http` | Unary RPC over gRPC-Web (HTTP/1.1) and h2c. `#[proto]` structs, no REST routes. |
 | `std:maya` | Tiny 3D/2D engine. Scene and tracer in Yuga; C is the event loop and present. |
 | `std:net` | TCP connect / listen / read / write. Used by `http`; not an app-level import. |
@@ -101,10 +100,11 @@ fn main() {
 }
 ```
 
-Kit look is [`import "std:kit"`](packages/compiler/std/kit.yuga). The catalog
-is [`examples/zeus/gallery/gallery.yuga`](examples/zeus/gallery/gallery.yuga).
-Zeus paints its own theme on every host; Cocoa / UIKit / Android widgets are
-not used. Map: [packages/zeus/README.md](packages/zeus/README.md). Architecture:
+The themed look (zinc palette, `Card`, `Button` with `LOOK` / `SIZE`, dialogs,
+charts, `DatePicker`) ships inside [`std:zeus`](packages/compiler/std/zeus.yuga).
+The catalog is [`examples/zeus/gallery`](examples/zeus/gallery). Zeus paints
+its own theme on every host; Cocoa / UIKit / Android widgets are not used.
+Map: [packages/zeus/README.md](packages/zeus/README.md). Architecture:
 [docs/zeus.md](docs/zeus.md), [packages/zeus/docs/spec.md](packages/zeus/docs/spec.md).
 
 ## Platforms
@@ -173,7 +173,7 @@ Golden programs under `packages/compiler/tests/golden/` (hello, fib, fizzbuzz,
 
 | App | What it is |
 |---|---|
-| `gallery` | Every `std:kit` widget in isolation. Start here to see the component library. |
+| `gallery` | Every zeus component in isolation. Start here to see the component library. |
 | `dashboard` | A small dashboard: stats, activity, dialog, signals. |
 | `counter` | Full-stack: shared `#[proto]` contract, Yuga backend, Zeus UI on web / macOS / iOS / Android. |
 
@@ -208,11 +208,11 @@ Step-by-step: [examples/zeus/counter/android/guide.md](examples/zeus/counter/and
 
 ```
 packages/compiler/     yugac, yuga-lsp, std/, runtime/, tests
-packages/zeus/         UI kit + Cocoa / iOS / Android / Canvas2D hosts
+packages/zeus/         Zeus UI hosts: desktop/ Cocoa, ios/, android/, web/
 packages/tree-sitter-yuga/
 packages/editors/      Zed extension
 examples/language/     standalone .yuga programs
-examples/zeus/         kit, dashboard, full-stack counter
+examples/zeus/         gallery (component catalog), dashboard, full-stack counter
 www/                   Zeus + gRPC docs (Vite serves wasm, no Svelte)
 docs/                  language, Zeus, C boundary
                        zeus_std.md = std/zeus.yuga API + custom components

@@ -76,12 +76,12 @@ yuga/
       std/          language libraries (Yuga)
       runtime/      yuga_rt (language) + host shims (not library protocol C)
       tests/        compile_pass / compile_fail / golden (fixtures w/ .expected)
-    zeus/           UI kit + hosts: desktop/ Cocoa, ios/ UIKit, android/ Canvas, web/ Canvas2D
+    zeus/           Zeus UI + hosts: desktop/ Cocoa, ios/ UIKit, android/ Canvas, web/ Canvas2D
     tree-sitter-yuga/  grammar
     editors/        editor integrations (Zed, Cursor/VS Code)
   examples/
     language/       standalone demo .yuga programs (not test fixtures)
-    zeus/           zeus apps (dashboard, kit) + full-stack counter example
+    zeus/           zeus apps (gallery, dashboard) + full-stack counter example
   bin/yugac       the compiler
   bin/yuga-lsp    editor diagnostics / hover (incl. doc comments) / go-to-def / completion / semantic tokens
 ```

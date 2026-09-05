@@ -1,10 +1,10 @@
 //! Shared counter UI. Wasm, iOS, macOS, and Android all pass RPC results in.
 //!
-//! Chrome comes from `std:kit`. `users` / `jobs` / `uptime` are static strings
-//! from `Counter.Stats`; `count0` / `load0` seed signals.
+//! Themed chrome comes from `std:zeus` (design system merged in). `users` /
+//! `jobs` / `uptime` are static strings from `Counter.Stats`; `count0` /
+//! `load0` seed signals.
 
 import "std:zeus"
-import "std:kit"
 
 const TILE: int = 36
 const BAR_H: int = 4
@@ -20,18 +20,18 @@ struct Job {
 }
 
 fn Stat(label: string, value: string, kind: int) {
-    kit.Card() {
-        zeus.Box(width = TILE, height = 4, radius = 2, background = kit.tint_of(kind))
-        zeus.Text(label, color = kit.dim(), font = kit.FONT_CAPTION)
-        zeus.Text(value, color = kit.ink(), font = FONT_DISPLAY)
+    zeus.Card() {
+        zeus.Box(width = TILE, height = 4, radius = 2, background = zeus.tint_of(kind))
+        zeus.Text(label, color = zeus.dim(), font = zeus.FONT_CAPTION)
+        zeus.Text(value, color = zeus.ink(), font = FONT_DISPLAY)
     }
 }
 
 fn StatCount(label: string, sig: Signal<int>, kind: int) {
-    kit.Card() {
-        zeus.Box(width = TILE, height = 4, radius = 2, background = kit.tint_of(kind))
-        zeus.Text(label, color = kit.dim(), font = kit.FONT_CAPTION)
-        zeus.Text("{{sig.get()}}", color = kit.ink(), font = FONT_DISPLAY)
+    zeus.Card() {
+        zeus.Box(width = TILE, height = 4, radius = 2, background = zeus.tint_of(kind))
+        zeus.Text(label, color = zeus.dim(), font = zeus.FONT_CAPTION)
+        zeus.Text("{{sig.get()}}", color = zeus.ink(), font = FONT_DISPLAY)
     }
 }
 
@@ -46,106 +46,106 @@ fn clamp(v: int) -> int {
 }
 
 fn Bar(sig: Signal<int>) {
-    zeus.Box(height = BAR_H, radius = 2, background = kit.rule(), grow = 1) {
+    zeus.Box(height = BAR_H, radius = 2, background = zeus.rule(), grow = 1) {
         // Scale 2 → max 200px at 100, so the fill never overflows the row
         // (an overflowing flex child pushes the trailing buttons to a new
         // line instead of shrinking).
-        zeus.Box(height = BAR_H, radius = 2, background = kit.ink(),
+        zeus.Box(height = BAR_H, radius = 2, background = zeus.ink(),
                  width = clamp(sig.get()) * 2)
     }
 }
 
 fn Header(title: string, chip: string) {
-    kit.Row(SPACE.Md) {
-        zeus.Box(width = 8, height = 24, radius = 4, background = kit.ink())
-        zeus.Text(title, color = kit.ink(), font = kit.FONT_TITLE)
-        kit.Chip(chip, kit.TINT.Mute)
-        kit.Badge("live", kit.TINT.Ok)
-        kit.Grow()
-        zeus.Text("Dark", color = kit.mute(), font = kit.FONT_BODY)
-        kit.Switch(zeus.appearance())
+    zeus.Row(SPACE.Md) {
+        zeus.Box(width = 8, height = 24, radius = 4, background = zeus.ink())
+        zeus.Text(title, color = zeus.ink(), font = zeus.FONT_TITLE)
+        zeus.Chip(chip, zeus.TINT.Mute)
+        zeus.Badge("live", zeus.TINT.Ok)
+        zeus.Grow()
+        zeus.Text("Dark", color = zeus.mute(), font = zeus.FONT_BODY)
+        zeus.Switch(zeus.appearance())
     }
 }
 
 fn Stats(users: string, jobs: string, uptime: string, count: Signal<int>) {
     zeus.Grid(config = GridConfig(columns = 2, gap = SPACE.Md)) {
-        Stat("Users", users, kit.TINT.Ink)
-        Stat("Jobs", jobs, kit.TINT.Mute)
-        Stat("Uptime", uptime, kit.TINT.Ok)
-        StatCount("Count", count, kit.TINT.Danger)
+        Stat("Users", users, zeus.TINT.Ink)
+        Stat("Jobs", jobs, zeus.TINT.Mute)
+        Stat("Uptime", uptime, zeus.TINT.Ok)
+        StatCount("Count", count, zeus.TINT.Danger)
     }
 }
 
 fn CountCard(count: Signal<int>, open: Signal<int>) {
-    kit.Card() {
-        kit.Title("Count")
-        kit.Note("Buttons write a signal. The starting value came from protobuf.")
-        kit.Row(SPACE.Sm) {
-            kit.Button("-1", kit.LOOK.Ghost, kit.SIZE.Md, fn() => count.set(count.get() - 1))
+    zeus.Card() {
+        zeus.Title("Count")
+        zeus.Note("Buttons write a signal. The starting value came from protobuf.")
+        zeus.Row(SPACE.Sm) {
+            zeus.Button("-1", look = zeus.LOOK.Ghost, size = zeus.SIZE.Md, on_click =  fn() => count.set(count.get() - 1))
             // Fixed-width slot: digits may change, but the buttons beside the
             // value never slide left or right.
             zeus.Box(align_direction = DIRECTION.Row, justify = ALIGN.Center, width = 64) {
-                zeus.Text("{{count.get()}}", color = kit.ink(), font = 16)
+                zeus.Text("{{count.get()}}", color = zeus.ink(), font = 16)
             }
-            kit.Button("+1", kit.LOOK.Solid, kit.SIZE.Md, fn() => count.set(count.get() + 1))
+            zeus.Button("+1", look = zeus.LOOK.Solid, size = zeus.SIZE.Md, on_click =  fn() => count.set(count.get() + 1))
         }
         Bar(count)
-        kit.Divider()
-        kit.Button("Open Dialog", kit.LOOK.Solid, kit.SIZE.Md, fn() => open.set(1))
+        zeus.Divider()
+        zeus.Button("Open Dialog", look = zeus.LOOK.Solid, size = zeus.SIZE.Md, on_click =  fn() => open.set(1))
     }
 }
 
 fn Load(load: Signal<int>) {
-    kit.Row(SPACE.Md) {
-        zeus.Text("Load", color = kit.dim(), font = kit.FONT_BODY)
+    zeus.Row(SPACE.Md) {
+        zeus.Text("Load", color = zeus.dim(), font = zeus.FONT_BODY)
         Bar(load)
         // Fixed-width slot so the trailing buttons do not shift with the digits.
         zeus.Box(align_direction = DIRECTION.Row, justify = ALIGN.End, width = 44) {
-            zeus.Text("{{load.get()}}%", color = kit.mute(), font = kit.FONT_BODY)
+            zeus.Text("{{load.get()}}%", color = zeus.mute(), font = zeus.FONT_BODY)
         }
-        kit.Button("+10", kit.LOOK.Soft, kit.SIZE.Md, fn() => load.set(clamp(load.get() + 10)))
-        kit.Button("-10", kit.LOOK.Soft, kit.SIZE.Md, fn() => load.set(clamp(load.get() - 10)))
+        zeus.Button("+10", look = zeus.LOOK.Soft, size = zeus.SIZE.Md, on_click =  fn() => load.set(clamp(load.get() + 10)))
+        zeus.Button("-10", look = zeus.LOOK.Soft, size = zeus.SIZE.Md, on_click =  fn() => load.set(clamp(load.get() - 10)))
     }
 }
 
 fn FeedRow(i: int, s: string) {
     zeus.Box(align_direction = DIRECTION.Row, align_items = ALIGN.Center,
              height = ROW_H, spacing = SPACE.Exs, padding_x = SPACE.Exs) {
-        zeus.Text(s, color = kit.ink(), font = kit.FONT_BODY, grow = 1)
+        zeus.Text(s, color = zeus.ink(), font = zeus.FONT_BODY, grow = 1)
     }
 }
 
 fn JobRow(i: int, r: Job) {
     zeus.Box(align_direction = DIRECTION.Row, align_items = ALIGN.Center,
              height = ROW_H, spacing = SPACE.Sm, padding_x = SPACE.Exs) {
-        zeus.basis0(zeus.Text(r.name, color = kit.ink(), font = kit.FONT_BODY, grow = 1))
-        zeus.basis0(zeus.Text(r.role, color = kit.mute(), font = kit.FONT_BODY, grow = 1))
-        zeus.basis0(zeus.Text(r.status, color = kit.dim(), font = kit.FONT_BODY, grow = 1))
+        zeus.basis0(zeus.Text(r.name, color = zeus.ink(), font = zeus.FONT_BODY, grow = 1))
+        zeus.basis0(zeus.Text(r.role, color = zeus.mute(), font = zeus.FONT_BODY, grow = 1))
+        zeus.basis0(zeus.Text(r.status, color = zeus.dim(), font = zeus.FONT_BODY, grow = 1))
     }
 }
 
 fn FeedCard(feed: Signal<[]string>) {
     let list_id = zeus.signal(0)
-    kit.Card() {
-        kit.Title("Feed")
-        kit.Note("{{feed.get().len}} windowed rows. Only the visible window is mounted.")
-        kit.Row(SPACE.Sm) {
-            kit.Button("Append", kit.LOOK.Soft, kit.SIZE.Md, fn() {
+    zeus.Card() {
+        zeus.Title("Feed")
+        zeus.Note("{{feed.get().len}} windowed rows. Only the visible window is mounted.")
+        zeus.Row(SPACE.Sm) {
+            zeus.Button("Append", look = zeus.LOOK.Soft, size = zeus.SIZE.Md, on_click =  fn() {
                 let n = feed.get().len
                 zeus.push_item(feed, "msg {{n}}  appended")
             })
-            kit.Button("Insert", kit.LOOK.Soft, kit.SIZE.Md, fn() {
+            zeus.Button("Insert", look = zeus.LOOK.Soft, size = zeus.SIZE.Md, on_click =  fn() {
                 zeus.insert_item(feed, 0, "msg inserted at top")
                 zeus.scroll_to_index(Node { id: list_id.get() }, 0)
             })
-            kit.Button("Mid", kit.LOOK.Ghost, kit.SIZE.Md, fn() {
+            zeus.Button("Mid", look = zeus.LOOK.Ghost, size = zeus.SIZE.Md, on_click =  fn() {
                 zeus.scroll_to_index(Node { id: list_id.get() }, FEED_N / 2)
             })
-            kit.Button("Top", kit.LOOK.Ghost, kit.SIZE.Md, fn() {
+            zeus.Button("Top", look = zeus.LOOK.Ghost, size = zeus.SIZE.Md, on_click =  fn() {
                 zeus.scroll_to_index(Node { id: list_id.get() }, 0)
             })
         }
-        zeus.Box(height = LIST_H, border = 1, border_color = kit.rule(), radius = 8) {
+        zeus.Box(height = LIST_H, border = 1, border_color = zeus.rule(), radius = 8) {
             let list = zeus.VirtualList(feed, ROW_H, FeedRow)
             list_id.set(list.id)
         }
@@ -153,11 +153,11 @@ fn FeedCard(feed: Signal<[]string>) {
 }
 
 fn JobsCard(jobs: Signal<[]Job>, cols: []TableCol) {
-    kit.Card() {
-        kit.Title("Jobs")
-        kit.Note("VirtualTable of Job structs. Columns are TableCol { title, width }.")
-        zeus.Box(height = LIST_H, border = 1, border_color = kit.rule(), radius = 8) {
-            kit.VirtualTable(jobs, cols, ROW_H, JobRow)
+    zeus.Card() {
+        zeus.Title("Jobs")
+        zeus.Note("VirtualTable of Job structs. Columns are TableCol { title, width }.")
+        zeus.Box(height = LIST_H, border = 1, border_color = zeus.rule(), radius = 8) {
+            zeus.VirtualTable(jobs, cols, ROW_H, JobRow)
         }
     }
 }
@@ -172,18 +172,18 @@ fn Dialog(open: Signal<int>) {
             width = 360,
             padding = SPACE.Xl,
             spacing = SPACE.Md,
-            background = kit.plate(),
+            background = zeus.plate(),
             border = 1,
-            border_color = kit.rule(),
+            border_color = zeus.rule(),
             radius = 16,
             on_click = fn() { return }
         ) {
-            kit.Title("Dialog")
-            kit.Body("How are you feeling today?")
-            kit.Row(SPACE.Sm) {
-                kit.Grow()
-                kit.Button("Close", kit.LOOK.Ghost, kit.SIZE.Md, fn() => open.set(0))
-                kit.Button("Save", kit.LOOK.Solid, kit.SIZE.Md, fn() => open.set(0))
+            zeus.Title("Dialog")
+            zeus.Body("How are you feeling today?")
+            zeus.Row(SPACE.Sm) {
+                zeus.Grow()
+                zeus.Button("Close", look = zeus.LOOK.Ghost, size = zeus.SIZE.Md, on_click =  fn() => open.set(0))
+                zeus.Button("Save", look = zeus.LOOK.Solid, size = zeus.SIZE.Md, on_click =  fn() => open.set(0))
             }
         }
     }
@@ -222,9 +222,9 @@ fn Screen(title: string, chip: string, users: string, jobs: string, uptime: stri
     push(cols, TableCol { title: "Status", width: 0 })
 
     zeus.Box(align_direction = DIRECTION.Column, spacing = SPACE.Exs,
-             padding = kit.PAGE_PAD, background = kit.paper(), grow = 1) {
+             padding = zeus.PAGE_PAD, background = zeus.paper(), grow = 1) {
         Header(title, chip),
-        kit.Alert("RPC", "Count is Counter.Hello. Cards are Counter.Stats."),
+        zeus.Alert("RPC", "Count is Counter.Hello. Cards are Counter.Stats."),
         Stats(users, jobs, uptime, count),
         CountCard(count, open),
         Load(load),

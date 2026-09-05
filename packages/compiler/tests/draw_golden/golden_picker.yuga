@@ -2,7 +2,6 @@
 // grid, dynamic month label, live year, selected day. Keep this file free of
 // prints: stdout is the golden.
 
-import "std:kit"
 import "std:zeus"
 
 fn main() {
@@ -10,8 +9,8 @@ fn main() {
     let m = zeus.signal(9)
     let d = zeus.signal(15)
     zeus.snapshot(400, 420, fn() -> Node {
-        kit.Page() {
-            kit.DatePicker(y, m, d)
+        zeus.Page() {
+            zeus.DatePicker(y, m, d)
         }
     })
     zeus.engine_click_text("Pick a date")

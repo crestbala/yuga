@@ -59,7 +59,7 @@ fn of(id: int) -> PageResp {
         return pack(
             "Libraries",
             "Language libraries live in packages/compiler/std/. Import with import \"std:name\".",
-            "std:fmt — stdout, not printf. std:zeus — UI Node tree and Signal<T>. std:kit — shared look (Card, Button, Dialog, Navbar, For lists). std:http — unary RPC, #[proto], gRPC-Web and h2c. std:maya — 3D/2D, integer world units. std:sys — env, files, exec (native). std:net — TCP; used by http, not a typical app import.\n\nImport std:kit; do not copy the gallery.",
+            "std:fmt — stdout, not printf. std:zeus — UI Node tree, Signal<T>, and the whole themed design system (Card, Button with LOOK/SIZE, Dialog, Navbar, For lists). std:http — unary RPC, #[proto], gRPC-Web and h2c. std:maya — 3D/2D, integer world units. std:sys — env, files, exec (native). std:net — TCP; used by http, not a typical app import.\n\nWidgets and components share one import: std:zeus.",
             "import \"std:fmt\"\n\nfn main() {\n    fmt.println(\"hello, yuga\")\n}"
         )
     }

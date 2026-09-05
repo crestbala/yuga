@@ -1,14 +1,14 @@
 # Zeus / Yuga — production roadmap
 
-Phase-by-phase plan for turning `std/zeus.yuga` + `std/kit.yuga` (+ `std/net`,
-`std/http`, the C runtime) into a stack you can build real products on —
-ecommerce tools, team chat (Slack/Teams-shaped), social apps.
+Phase-by-phase plan for turning `std/zeus.yuga` (engine + design system)
+(+ `std/net`, `std/http`, the C runtime) into a stack you can build real
+products on — ecommerce tools, team chat (Slack/Teams-shaped), social apps.
 
 Related: this file is the living plan; the sharp-edge catalog it grew from
-(`zeus_kit_downsides.md`) and the API/spec docs were removed with the rest
-of `docs/` — the roadmap below is written to stand alone, and each phase
-re-states its own rationale. Status: tick phases off as they land, with
-their exit criteria as the definition of done.
+and the API/spec docs were removed with the rest of `docs/` — the roadmap
+below is written to stand alone, and each phase re-states its own rationale.
+Status: tick phases off as they land, with their exit criteria as the
+definition of done.
 
 ---
 
@@ -24,7 +24,7 @@ their exit criteria as the definition of done.
 | Media | inline SVG + raster `Image` (PNG / JPEG / WebP / GIF, host decode) | gradients |
 | Text | one weight per host; kind 10 multiline + caret/selection; mac IME; wasm paste | rich text spans, emoji metrics |
 | Server | single-threaded Yuga accept loop (HTTP/1.1 + h2c + one SSE/ws client per connection) | concurrency model for chat-class servers |
-| Kit | ~50 shadcn widgets, palette tokens, goldens | monolith namespace, no DCE, fixed-pixel tuning |
+| Design system | ~50 shadcn widgets, palette tokens, goldens | monolith namespace, no DCE, fixed-pixel tuning |
 
 ## 2. Already fixed (do not re-plan)
 
@@ -35,7 +35,7 @@ Landmarks that are done and tested — the roadmap starts past them:
 - Lazy DatePicker: one 7×6 signal-driven grid, no rebuild on month/year change.
 - Row shrink-before-wrap; `grow = 1` is elastic by default (CSS `flex: 1`), `shrink` prop overrides.
 - Single following chart tooltip + cursor + band driven by one `act` signal.
-- Palette tokens; no bare hex left in kit chrome.
+- Palette tokens; no bare hex left in the chrome.
 - Headless layout tests + byte-exact DRAW goldens wired into `make test`.
 - Declarative props: `position`/`left`/`top`/`right`/`bottom`/`z_index`, `width`/`height` (all widgets incl. `Svg`), `grow`/`shrink`, `show` (bool thunk; signal shows win).
 - Language: default/optional trailing parameters (`press: fn() = __noop`), incl. the declaring-module binding fix.
@@ -77,12 +77,12 @@ demos. Phase column points into §6.
 | 3 | ~~`For` rebuilds the whole list per push (recycling yes, O(n) still)~~ **Phase 5** | `VirtualList` / windowed `For` / `VirtualTable`; `push_item` / `insert_item` | — | 5 |
 | 4 | Nested scroll chaining (momentum + overscroll **Phase 5**) | nested feed/page scrollers | medium | 5b |
 | 5 | `Signal<int>` only (no float/date/bool scalar store) | smooth animation, timestamps, charts | small-med | 6b |
-| 6 | Kit monolith, no dead-code elimination | web bundle size, componentization | medium | 7 |
+| 6 | Zeus monolith, no dead-code elimination | web bundle size, componentization | medium | 7 |
 | 7 | a11y = labels only; no focus ring, thin keyboard model | enterprise + compliance | ongoing | 7b |
 | 8 | Fixed-pixel tuning; no density/font scaling | devices, accessibility | small | 7c |
 | 9 | No TLS | anything beyond localhost | med | 6 |
 | 10 | ~~No KV/persistence beyond whole-file read/write~~ **Phase 4** | `std:kv` file-backed; wasm is memory-only | — | 4 |
-| 11 | Gallery wasm first paint ~3 min (counter wasm is instant) | kit catalog in the browser | med | follow-up |
+| 11 | Gallery wasm first paint ~3 min (counter wasm is instant) | catalog in the browser | med | follow-up |
 
 Resolved by the landed phases: blocking sockets/async runtime (Phase 1), and no realtime transport (Phase 1b) — ws/SSE + the auth/session convention exist; what remains for chat-class servers is the §5.3 reactor (concurrent connections) and wasm ws via the browser's WebSocket.
 
@@ -177,12 +177,12 @@ thread.
 - [x] Host decode of PNG / JPEG / WebP / GIF (ImageIO, Canvas `Image`, BitmapFactory); `zeus.Image(...)` widget + `SvgProps`-style props (`width` / `height` / `radius` clip).
 - [x] Network image + cache by `src` (path, `data:` URI, or `http(s):` URL; http loads off the UI thread, next frame paints).
 - **Exit:** a golden fixture with an image draw op; avatars/product shots render in gallery. **Green** (`draw_golden/golden_image`; gallery People + Catalog).
-- [ ] Follow-up (not Vite): `examples/zeus/gallery` wasm takes ~3 minutes to fully paint the UI in the browser. `app.wasm` (~428K) and `loader.js` arrive in milliseconds on Vite and on a plain static host; counter wasm loads immediately. The stall is `zeus_start` / first layout of the kit catalog (all three tabs via `show_eq`, SVG-heavy widgets). Cocoa gallery is fine. Check later: construct only the visible tab without losing `kit.Page` section gaps; idle rAF like mac (`engine_next_ms`); skip layout of `show_eq`-hidden subtrees on wasm.
+- [ ] Follow-up (not Vite): `examples/zeus/gallery` wasm takes ~3 minutes to fully paint the UI in the browser. `app.wasm` (~428K) and `loader.js` arrive in milliseconds on Vite and on a plain static host; counter wasm loads immediately. The stall is `zeus_start` / first layout of the gallery catalog (all three tabs via `show_eq`, SVG-heavy widgets). Cocoa gallery is fine. Check later: construct only the visible tab without losing `Page` section gaps; idle rAF like mac (`engine_next_ms`); skip layout of `show_eq`-hidden subtrees on wasm.
 
 ### Phase 3 — Multiline text + IME
 - [x] Multiline text input (kind 10 `multiline` / `wrap`): line breaks, caret, click-to-caret, arrow/home/end, shift-select.
 - [x] IME composition on mac (`NSTextInputClient`); canvas/wasm ASCII + paste + compositionend.
-- [x] Kit: `TextArea` widget (shadcn-style chrome reusing `Input` tokens).
+- [x] Components: `TextArea` widget (shadcn-style chrome reusing `Input` tokens).
 - **Exit:** a chat-compose headless test (type, edit, bind signal) + golden. **Green** (`zeus_textarea.yuga`, `draw_golden/golden_textarea`).
 
 ### Phase 4 — KV persistence
@@ -206,10 +206,10 @@ thread.
 - [ ] `Signal<float>` / timestamp scalar store (sigs backend extends beyond `[]int`).
 - **Exit:** `https` client test (skipped when offline), float-driven animation prop test.
 
-### Phase 7 — Kit & a11y growth discipline
-- [ ] Kit namespace pass or per-widget opt-in (DCE) before the monolith doubles.
+### Phase 7 — Design system & a11y growth discipline
+- [ ] Zeus namespace pass or per-widget opt-in (DCE) before the monolith doubles.
 - [ ] Focus ring painting + visible tab order on native hosts.
-- [ ] Density/font-scale tokens (kit reads a scale signal, not constants).
+- [ ] Density/font-scale tokens (components read a scale signal, not constants).
 - **Exit:** gallery unchanged visually at scale 1.0 (golden); a11y probe test asserts roles/focus order.
 
 ### Phase 8 — Revisit only if demanded

@@ -1,7 +1,7 @@
 // A row that overflows shrinks its flexible (grow = 1) children instead of
 // wrapping trailing children onto a second line; when the flexible children
 // cannot absorb the whole deficit, it still wraps. Regression for the
-// shrink-before-wrap layout work (docs/zeus_kit_downsides.md §4).
+// shrink-before-wrap layout work.
 
 import "std:fmt"
 import "std:sys"

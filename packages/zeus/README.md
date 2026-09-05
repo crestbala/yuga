@@ -36,11 +36,12 @@ fn main() {
 ```
 
 Public widgets in `std:zeus`: `App`, `Box`, `Text`, `Button`, `Input`, `Grid`,
-`Overlay`, `Scroll`, `Svg`, `If`, `Each`, `For`. Kit look is
-[`import "std:kit"`](../../packages/compiler/std/kit.yuga). Growing lists:
+`Overlay`, `Scroll`, `Svg`, `If`, `Each`, `For`. The themed design system
+(look + palette + `Card` / `Dialog` / `Tabs` / charts / `DatePicker`) lives
+in the same module. Growing lists:
 `zeus.signal([]string {})` + `zeus.For` + `zeus.push_item`.
 SVG path strings live in [`lib/ui/display/icons.yuga`](lib/ui/display/icons.yuga).
-Theme tokens live in [`lib/theme.yuga`](lib/theme.yuga) and `std:kit`.
+Theme tokens live in [`lib/theme.yuga`](lib/theme.yuga) and `std:zeus`.
 Web is **Canvas2D wasm** — not HTML/DOM.
 
 `zeus.App` builds the tree **once**. A signal write re-runs only the props that
