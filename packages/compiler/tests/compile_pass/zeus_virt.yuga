@@ -1,0 +1,119 @@
+// Phase 5: windowed For / VirtualList / VirtualTable + scroll physics.
+// A 10k-row feed must stay under a node budget while scrolling; items paint
+// on demand. Table items are row structs; columns are TableCol structs.
+
+import "std:fmt"
+import "std:sys"
+import "std:zeus"
+
+struct Person {
+    name: string,
+    role: string,
+    status: string,
+}
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn RowOf(i: int, s: string) {
+    zeus.Text(s)
+}
+
+fn PersonRow(i: int, p: Person) {
+    zeus.Box(align_direction = DIRECTION.Row, height = 36) {
+        // Zero basis + grow: cells split the row evenly, so columns stay
+        // under the header no matter how long the strings are.
+        zeus.basis0(zeus.Text(p.name, grow = 1))
+        zeus.basis0(zeus.Text(p.role, grow = 1))
+        zeus.basis0(zeus.Text(p.status, grow = 1))
+    }
+}
+
+fn main() {
+    let mut xs = []string {}
+    let mut i = 0
+    while i < 10000 {
+        push(xs, "row {{i}}")
+        i = i + 1
+    }
+    let items = zeus.signal(xs)
+
+    let mut people = []Person {}
+    i = 0
+    while i < 10000 {
+        push(people, Person { name: "n{{i}}", role: "op", status: "ok" })
+        i = i + 1
+    }
+    let rows = zeus.signal(people)
+    let mut cols = []TableCol {}
+    push(cols, TableCol { title: "Name", width: 0 })
+    push(cols, TableCol { title: "Role", width: 0 })
+    push(cols, TableCol { title: "Status", width: 0 })
+
+    zeus.snapshot(240, 240, fn() -> Node {
+        zeus.Box(align_direction = DIRECTION.Column) {
+            zeus.VirtualList(items, 36, RowOf)
+            zeus.Box(height = 200) {
+                zeus.VirtualTable(rows, cols, 36, PersonRow)
+            }
+        }
+    })
+
+    let n0 = zeus.arena_nodes()
+    expect(n0 < 400, "10k virt stays small")
+    expect(zeus.engine_find_text("row 0") != 0, "first row paints")
+    expect(zeus.engine_find_text("row 5000") == 0, "far row not mounted")
+    expect(zeus.engine_find_text("Name") != 0, "table header")
+    expect(zeus.engine_find_text("n0") != 0, "table first row")
+    expect(zeus.engine_find_text("n5000") == 0, "far table row not mounted")
+
+    let list = zeus.engine_find_role("list")
+    expect(list > 0, "list role")
+    zeus.scroll_to_index(Node { id: list }, 5000)
+    zeus.engine_layout(240, 240)
+    expect(zeus.engine_find_text("row 5000") != 0, "windowed row paints")
+    expect(zeus.engine_find_text("row 0") == 0, "offscreen row dropped")
+    let n1 = zeus.arena_nodes()
+    expect(n1 < 400, "scroll stays small")
+    expect(n1 <= n0 + 40, "scroll does not grow the arena")
+
+    zeus.push_item(items, "row appended")
+    zeus.engine_layout(240, 240)
+    let n2 = zeus.arena_nodes()
+    expect(n2 < 400, "append stays small")
+
+    zeus.insert_item(items, 5000, "row inserted")
+    zeus.engine_layout(240, 240)
+    expect(zeus.engine_find_text("row inserted") != 0, "insert in window")
+    let n3 = zeus.arena_nodes()
+    expect(n3 < 400, "insert stays small")
+
+    zeus.scroll_to_index(Node { id: list }, 0)
+    zeus.engine_layout(240, 240)
+    expect(zeus.engine_find_text("row 0") != 0, "scroll_to top")
+
+    // Overscroll: fling past the end, then physics rubber-bands back.
+    let maxs = zeus.node_scroll_max(list)
+    expect(maxs > 0, "list overflows")
+    zeus.scroll_to(Node { id: list }, maxs)
+    zeus.engine_layout(240, 240)
+    zeus.engine_scroll(20, 20, 0, 400)
+    zeus.engine_layout(240, 240)
+    let over = zeus.node_scroll_y(list)
+    expect(over > maxs, "overshoot past max")
+    let mut k = 0
+    while k < 120 {
+        zeus.engine_layout(240, 240)
+        k = k + 1
+    }
+    let back = zeus.node_scroll_y(list)
+    expect(back >= 0, "overscroll y >= 0")
+    expect(back <= maxs, "overscroll clamped to max")
+
+    fmt.println("virt ok", n0, n1, n3, back)
+}

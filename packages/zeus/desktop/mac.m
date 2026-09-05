@@ -838,7 +838,10 @@ static NSCursor *zeus_cursor_for(const char *name) {
     NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
     CGFloat dx = [event scrollingDeltaX];
     CGFloat dy = [event scrollingDeltaY];
-    if (![event hasPreciseScrollingDeltas]) {
+    BOOL precise = [event hasPreciseScrollingDeltas];
+    if (!precise) {
+        /* Mouse notches are discrete: scale lines to points and stop exactly
+           there — no coast, no rubber-band, like the platform scroll view. */
         dx *= 16.0;
         dy *= 16.0;
     }
@@ -846,8 +849,12 @@ static NSCursor *zeus_cursor_for(const char *name) {
         dx = dy;
         dy = 0.0;
     }
-    if (zeus_handle_scroll((int64_t)p.x, (int64_t)p.y, (int64_t)(-dx), (int64_t)(-dy)))
-        [self setNeedsDisplay:YES];
+    int dirty;
+    if (precise)
+        dirty = zeus_handle_scroll((int64_t)p.x, (int64_t)p.y, (int64_t)(-dx), (int64_t)(-dy));
+    else
+        dirty = zeus_handle_scroll_step((int64_t)p.x, (int64_t)p.y, (int64_t)(-dx), (int64_t)(-dy));
+    if (dirty) [self setNeedsDisplay:YES];
 }
 
 - (int)zeusMods:(NSEvent *)event {

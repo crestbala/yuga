@@ -302,6 +302,7 @@ int64_t yuga_zeus_engine_step(void);
 int64_t yuga_zeus_engine_next_ms(void);
 int64_t yuga_zeus_engine_click(int64_t x, int64_t y);
 int64_t yuga_zeus_engine_scroll(int64_t x, int64_t y, int64_t dx, int64_t dy);
+int64_t yuga_zeus_engine_scroll_step(int64_t x, int64_t y, int64_t dx, int64_t dy);
 int64_t yuga_zeus_engine_drag(int64_t x, int64_t y);
 int64_t yuga_zeus_engine_hover(int64_t x, int64_t y);
 void yuga_zeus_engine_mouseup(void);
@@ -338,6 +339,8 @@ int zeus_handle_text(const char *utf8, int n);
 /** IME composition overlay; n = 0 clears the mark. */
 int zeus_handle_marked(const char *utf8, int n);
 int zeus_handle_scroll(int64_t x, int64_t y, int64_t dx, int64_t dy);
+/** Discrete scroll (mouse notch / web line wheel): delta only, no momentum. */
+int zeus_handle_scroll_step(int64_t x, int64_t y, int64_t dx, int64_t dy);
 int zeus_handle_drag(int64_t x, int64_t y);
 void zeus_handle_mouseup(void);
 const char *zeus_window_title(void);

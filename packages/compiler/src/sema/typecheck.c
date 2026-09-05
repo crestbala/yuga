@@ -956,7 +956,7 @@ static Type *finish_proc_call(AstNode *n, Type *ft, AstNode *named) {
        marks those tail args as pre-checked so the loop below skips them. */
     size_t pre = n->as.call.arg_count;
     int filled = 0;
-    if (named && !nt && pre < ft->param_count) {
+    if (named && pre < ft->param_count) {
         size_t ok = 1;
         for (size_t i = pre; i < ft->param_count; i++)
             if (i >= named->as.fn.param_count || !named->as.fn.params[i].def)
@@ -976,10 +976,11 @@ static Type *finish_proc_call(AstNode *n, Type *ft, AstNode *named) {
                 Gcur = module_of_decl(named);
                 cur_mod_name = Gmods[Gcur].name;
                 Type *pt = ft->params[i];
-                Type *dt = check_arg_ty(&cp, pt);
+                Type *expect = type_has_param(pt) ? NULL : pt;
+                Type *dt = check_arg_ty(&cp, expect);
                 Gcur = save_cur;
                 cur_mod_name = save_mod;
-                if (dt && !type_eq(dt, pt))
+                if (dt && expect && !type_eq(dt, pt))
                     err(n->loc, "default for parameter '%s' of '%s' has type %s, expected %s",
                         named->as.fn.params[i].name, nm, type_name(dt), type_name(pt));
                 AstNode **na = (AstNode **)realloc(
@@ -1023,6 +1024,18 @@ static Type *finish_proc_call(AstNode *n, Type *ft, AstNode *named) {
             if (!type_has_param(want)) match_arg(&n->as.call.args[i], want, at);
         } else {
             match_arg(&n->as.call.args[i], pt, at);
+        }
+    }
+    /* Defaults filled above were checked in the declaring module. For a
+       generic call they still have to unify so `fn f<T>(x: T = 5)` can
+       infer T from the default when every argument is omitted. */
+    if (nt && filled) {
+        for (size_t i = pre; i < ft->param_count; i++) {
+            Type *at = n->as.call.args[i] ? n->as.call.args[i]->ty : NULL;
+            Type *pt = ft->params[i];
+            if (!at || !pt) continue;
+            if (!unify(pt, at, named->as.fn.tparams, bound, nt))
+                err(n->loc, "cannot match %s to %s", type_name(at), type_name(pt));
         }
     }
     Type *ret = ft->ret ? ft->ret : ty_void();
@@ -2467,9 +2480,6 @@ static void check_fn(AstNode *fn) {
                 continue;
             }
             seen_default = 1;
-            if (fn->as.fn.tparam_count)
-                err(fn->loc, "generic function '%s' cannot have defaulted parameters",
-                    fn->as.fn.name ? fn->as.fn.name : "fn");
             if (!clone_const(def)) {
                 err(fn->as.fn.params[i].loc,
                     "default for parameter '%s' must be a constant expression",
@@ -2477,8 +2487,12 @@ static void check_fn(AstNode *fn) {
                 continue;
             }
             Type *pt = (i < ft->param_count) ? ft->params[i] : ty_void();
-            Type *dt = check_expr_ty(def, pt);
-            if (dt && pt && !type_eq(dt, pt))
+            /* A default may mention a type parameter (`x: T = 5`): the
+               expression is checked on its own, and the call site unifies
+               it with T after the other arguments have bound T — or, if
+               every argument is omitted, from the default itself. */
+            Type *dt = check_expr_ty(def, type_has_param(pt) ? NULL : pt);
+            if (dt && pt && !type_eq(dt, pt) && !type_has_param(pt))
                 err(fn->as.fn.params[i].loc,
                     "default for parameter '%s' has type %s, expected %s",
                     fn->as.fn.params[i].name, type_name(dt), type_name(pt));
@@ -2793,6 +2807,175 @@ static void check_duplicate_decls(AstNode *prog) {
     }
 }
 
+/** The generic fn a call refers to, or NULL. */
+static AstNode *call_generic_fn(AstNode *call) {
+    if (!call || call->kind != AST_CALL) return NULL;
+    AstNode *cal = call->as.call.callee;
+    if (cal && cal->kind == AST_IDENT && cal->as.ident.resolved &&
+        cal->as.ident.resolved->kind == AST_FN_DECL &&
+        cal->as.ident.resolved->as.fn.tparam_count)
+        return cal->as.ident.resolved;
+    if (cal && cal->kind == AST_FIELD && cal->as.access.resolved &&
+        cal->as.access.resolved->kind == AST_FN_DECL &&
+        cal->as.access.resolved->as.fn.tparam_count)
+        return cal->as.access.resolved;
+    return NULL;
+}
+
+/** Instantiate a generic callee of `call` under the caller's type subst.
+    Returns the monomorphized C name, or NULL if T cannot be bound yet. */
+const char *typecheck_callee_cname(AstNode *call, const char **names, Type **args, size_t n) {
+    if (!call || call->kind != AST_CALL) return NULL;
+    AstNode *fn = call_generic_fn(call);
+    if (!fn) return call->as.call.resolved_cname;
+    if (!n || !names || !args) return call->as.call.resolved_cname;
+    Type *ft = fn_type_of(fn);
+    if (!ft) return NULL;
+    size_t nt = fn->as.fn.tparam_count;
+    Type **bound = calloc(nt, sizeof(Type *));
+    if (!bound) yuga_fatal("out of memory");
+    for (size_t i = 0; i < call->as.call.arg_count && i < ft->param_count; i++) {
+        if (!call->as.call.args[i]) continue;
+        Type *at = subst_type(call->as.call.args[i]->ty, names, args, n);
+        unify(ft->params[i], at, fn->as.fn.tparams, bound, nt);
+    }
+    for (size_t i = 0; i < nt; i++) {
+        if (bound[i]) bound[i] = subst_type(bound[i], names, args, n);
+        if (!bound[i] || type_has_param(bound[i])) {
+            free(bound);
+            return NULL;
+        }
+    }
+    char *cn = mono_cname(fn, bound, nt);
+    record_mono(fn, bound, nt, cn);
+    const char *out = NULL;
+    for (int i = 0; i < nmono; i++) {
+        if (monos[i].fn == fn && strcmp(monos[i].cname, cn) == 0) {
+            out = monos[i].cname;
+            break;
+        }
+        if (monos[i].fn == fn && monos[i].n == nt) {
+            int same = 1;
+            for (size_t k = 0; k < nt; k++)
+                if (!type_eq(monos[i].args[k], bound[k])) same = 0;
+            if (same) {
+                out = monos[i].cname;
+                break;
+            }
+        }
+    }
+    free(bound);
+    return out ? out : cn;
+}
+
+static void walk_instantiate(AstNode *n, const char **names, Type **args, size_t na, int *added);
+
+static void walk_instantiate(AstNode *n, const char **names, Type **args, size_t na, int *added) {
+    if (!n) return;
+    if (n->kind == AST_CALL) {
+        int before = nmono;
+        typecheck_callee_cname(n, names, args, na);
+        if (nmono > before) *added = 1;
+        walk_instantiate(n->as.call.callee, names, args, na, added);
+        for (size_t i = 0; i < n->as.call.arg_count; i++)
+            walk_instantiate(n->as.call.args[i], names, args, na, added);
+        return;
+    }
+    if (n->kind == AST_CLOSURE) {
+        walk_instantiate(n->as.fn.body, names, args, na, added);
+        return;
+    }
+    switch (n->kind) {
+        case AST_FN_DECL:
+            walk_instantiate(n->as.fn.body, names, args, na, added);
+            break;
+        case AST_BLOCK:
+            for (size_t i = 0; i < n->as.block.stmt_count; i++)
+                walk_instantiate(n->as.block.stmts[i], names, args, na, added);
+            break;
+        case AST_IF:
+            walk_instantiate(n->as.if_stmt.cond, names, args, na, added);
+            walk_instantiate(n->as.if_stmt.then_block, names, args, na, added);
+            walk_instantiate(n->as.if_stmt.else_block, names, args, na, added);
+            break;
+        case AST_FOR:
+            walk_instantiate(n->as.for_stmt.iter, names, args, na, added);
+            walk_instantiate(n->as.for_stmt.body, names, args, na, added);
+            break;
+        case AST_WHILE:
+            walk_instantiate(n->as.if_stmt.cond, names, args, na, added);
+            walk_instantiate(n->as.if_stmt.then_block, names, args, na, added);
+            break;
+        case AST_MATCH:
+            walk_instantiate(n->as.match_stmt.scrut, names, args, na, added);
+            for (size_t i = 0; i < n->as.match_stmt.arm_count; i++)
+                walk_instantiate(n->as.match_stmt.arms[i], names, args, na, added);
+            break;
+        case AST_MATCH_ARM:
+            walk_instantiate(n->as.match_arm.body, names, args, na, added);
+            break;
+        case AST_RETURN:
+            walk_instantiate(n->as.ret.expr, names, args, na, added);
+            break;
+        case AST_EXPR_STMT:
+            walk_instantiate(n->as.expr_stmt.expr, names, args, na, added);
+            break;
+        case AST_VAR_DECL:
+            walk_instantiate(n->as.var.init, names, args, na, added);
+            break;
+        case AST_ASSIGN:
+            walk_instantiate(n->as.assign.left, names, args, na, added);
+            walk_instantiate(n->as.assign.right, names, args, na, added);
+            break;
+        case AST_BINARY:
+            walk_instantiate(n->as.binary.left, names, args, na, added);
+            walk_instantiate(n->as.binary.right, names, args, na, added);
+            break;
+        case AST_UNARY:
+            walk_instantiate(n->as.unary.operand, names, args, na, added);
+            break;
+        case AST_CAST:
+            walk_instantiate(n->as.cast.expr, names, args, na, added);
+            break;
+        case AST_DEREF:
+        case AST_ADDR:
+            walk_instantiate(n->as.access.target, names, args, na, added);
+            break;
+        case AST_INDEX:
+        case AST_FIELD:
+            walk_instantiate(n->as.access.target, names, args, na, added);
+            walk_instantiate(n->as.access.index, names, args, na, added);
+            break;
+        case AST_STRUCT_LIT:
+            for (size_t i = 0; i < n->as.struct_lit.field_count; i++)
+                walk_instantiate(n->as.struct_lit.fields[i].init, names, args, na, added);
+            break;
+        case AST_ARRAY_LIT:
+        case AST_TUPLE:
+            for (size_t i = 0; i < n->as.array_lit.count; i++)
+                walk_instantiate(n->as.array_lit.elems[i], names, args, na, added);
+            break;
+        default:
+            break;
+    }
+}
+
+/** Walk each monomorphized body and instantiate generic calls inside it
+    (generic-calls-generic, including closures). Repeats until a fixpoint. */
+static void instantiate_nested(void) {
+    int added = 1;
+    while (added) {
+        added = 0;
+        int n = nmono;
+        for (int i = 0; i < n; i++) {
+            AstNode *fn = monos[i].fn;
+            if (!fn) continue;
+            walk_instantiate(fn->as.fn.body, fn->as.fn.tparams, monos[i].args, monos[i].n,
+                             &added);
+        }
+    }
+}
+
 /**
  * Pass 1: types and C names, mark std intrinsics.
  * Pass 2: check bodies. Returns 1 if any error.
@@ -2901,6 +3084,8 @@ int typecheck_modules(YugaModule *mods, int nmods) {
         }
         scope_pop();
     }
+
+    instantiate_nested();
 
     while (scope) scope_pop();
     return Gerr;

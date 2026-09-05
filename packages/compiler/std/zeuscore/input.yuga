@@ -221,45 +221,24 @@ fn click(px: int, py: int) -> int {
     }
     if arena.nodes[id].kind == 11 {
         if hit_h_scrollbar(id, px, py) != 0 {
-            let maxs = arena.scroll_max_x(id)
-            let tx = arena.bar_hx(id, arena.nodes[id].x)
-            let tw = arena.bar_track_w(id)
-            let thw = arena.bar_thumb_w(id)
-            let range = geometry.max2(tw - thw, 1)
-            let mut nx = (px - tx) * maxs / range
-            if nx < 0 {
-                nx = 0
-            }
-            if nx > maxs {
-                nx = maxs
-            }
-            arena.nodes[id].scroll_x = nx
+            // Grab the thumb where it is: the drag moves it from its current
+            // scroll, so the content never jumps under the pointer.
             arena.bar_on(id)
             arena.drag_id = id
             arena.drag_bar = 2
             arena.drag_ay = px
-            arena.drag_as = nx
+            arena.drag_as = arena.nodes[id].scroll_x
             return 1
         }
         if hit_scrollbar(id, px, py) != 0 {
+            // Grab the thumb where it is: the drag moves it from its current
+            // scroll, so the content never jumps under the pointer.
             let maxs = arena.scroll_max(id)
-            let ty = arena.bar_y(id, arena.nodes[id].y)
-            let th = arena.bar_track_h(id)
-            let thh = arena.bar_thumb_h(id)
-            let range = geometry.max2(th - thh, 1)
-            let mut ny = (py - ty) * maxs / range
-            if ny < 0 {
-                ny = 0
-            }
-            if ny > maxs {
-                ny = maxs
-            }
-            arena.nodes[id].scroll_y = ny
             arena.bar_on(id)
             arena.drag_id = id
             arena.drag_bar = 1
             arena.drag_ay = py
-            arena.drag_as = ny
+            arena.drag_as = arena.nodes[id].scroll_y
             return 1
         }
     }
@@ -370,6 +349,8 @@ fn find_scroll_axis(id: int, px: int, py: int, horiz: int) -> int {
     return 0
 }
 
+/// Pan / precise-wheel scroll with momentum: the delta is applied now and
+/// becomes the velocity the physics coast decays from (touch, trackpads).
 fn scroll(px: int, py: int, dx: int, dy: int) -> int {
     arena.ensure()
     if arena.root_id <= 0 {
@@ -384,16 +365,7 @@ fn scroll(px: int, py: int, dx: int, dy: int) -> int {
     if dy != 0 {
         let s = find_scroll_axis(arena.root_id, px, py, 0)
         if s > 0 {
-            let maxs = arena.scroll_max(s)
-            let mut ny = arena.nodes[s].scroll_y + dy
-            if ny < 0 {
-                ny = 0
-            }
-            if ny > maxs {
-                ny = maxs
-            }
-            if ny != arena.nodes[s].scroll_y {
-                arena.nodes[s].scroll_y = ny
+            if arena.apply_delta_y(s, dy, 1) != 0 {
                 changed = 1
             }
             arena.bar_on(s)
@@ -402,16 +374,42 @@ fn scroll(px: int, py: int, dx: int, dy: int) -> int {
     if dx != 0 {
         let s = find_scroll_axis(arena.root_id, px, py, 1)
         if s > 0 {
-            let maxs = arena.scroll_max_x(s)
-            let mut nx = arena.nodes[s].scroll_x + dx
-            if nx < 0 {
-                nx = 0
+            if arena.apply_delta_x(s, dx, 1) != 0 {
+                changed = 1
             }
-            if nx > maxs {
-                nx = maxs
+            arena.bar_on(s)
+        }
+    }
+    return changed
+}
+
+/// Discrete wheel click (mouse notches, web line/page wheels): the delta is
+/// applied exactly and no velocity is stored, so the scroller never coasts
+/// past where the user clicked.
+fn scroll_step(px: int, py: int, dx: int, dy: int) -> int {
+    arena.ensure()
+    if arena.root_id <= 0 {
+        return 0
+    }
+    if dx == 0 {
+        if dy == 0 {
+            return 0
+        }
+    }
+    let mut changed = 0
+    if dy != 0 {
+        let s = find_scroll_axis(arena.root_id, px, py, 0)
+        if s > 0 {
+            if arena.apply_delta_y(s, dy, 0) != 0 {
+                changed = 1
             }
-            if nx != arena.nodes[s].scroll_x {
-                arena.nodes[s].scroll_x = nx
+            arena.bar_on(s)
+        }
+    }
+    if dx != 0 {
+        let s = find_scroll_axis(arena.root_id, px, py, 1)
+        if s > 0 {
+            if arena.apply_delta_x(s, dx, 0) != 0 {
                 changed = 1
             }
             arena.bar_on(s)
@@ -426,9 +424,12 @@ fn drag(px: int, py: int) -> int {
         return 0
     }
     if arena.drag_id >= arena.nodes.len {
+        arena.drag_id = 0
+        arena.drag_bar = 0
         return 0
     }
-    if arena.nodes[arena.drag_id].kind == 13 {
+    let kind = arena.nodes[arena.drag_id].kind
+    if kind == 13 {
         let kd = 14
         let travel = geometry.max2(arena.nodes[arena.drag_id].w - kd, 1)
         let mut rel = px - arena.nodes[arena.drag_id].x - kd / 2
@@ -443,39 +444,43 @@ fn drag(px: int, py: int) -> int {
         arena.store_sig(sid, v)
         return 1
     }
-    if arena.nodes[arena.drag_id].kind == 11 {
-        if arena.drag_bar == 2 {
-            let maxs = arena.scroll_max_x(arena.drag_id)
-            let tw = arena.bar_track_w(arena.drag_id)
-            let thw = arena.bar_thumb_w(arena.drag_id)
-            let range = geometry.max2(tw - thw, 1)
-            let mut nx = arena.drag_as + (px - arena.drag_ay) * maxs / range
-            if nx < 0 {
-                nx = 0
-            }
-            if nx > maxs {
-                nx = maxs
-            }
-            arena.nodes[arena.drag_id].scroll_x = nx
-            arena.bar_on(arena.drag_id)
-            return 1
+    if kind != 11 {
+        // The dragged node was recycled into another kind by a tree rebuild
+        // (shape changed mid-drag): cancel the drag.
+        arena.drag_id = 0
+        arena.drag_bar = 0
+        return 0
+    }
+    if arena.drag_bar == 2 {
+        let maxs = arena.scroll_max_x(arena.drag_id)
+        let tw = arena.bar_track_w(arena.drag_id)
+        let thw = arena.bar_thumb_w(arena.drag_id)
+        let range = geometry.max2(tw - thw, 1)
+        let mut nx = arena.drag_as + (px - arena.drag_ay) * maxs / range
+        if nx < 0 {
+            nx = 0
         }
-        let maxs = arena.scroll_max(arena.drag_id)
-        let th = arena.bar_track_h(arena.drag_id)
-        let thh = arena.bar_thumb_h(arena.drag_id)
-        let range = geometry.max2(th - thh, 1)
-        let mut ny = arena.drag_as + (py - arena.drag_ay) * maxs / range
-        if ny < 0 {
-            ny = 0
+        if nx > maxs {
+            nx = maxs
         }
-        if ny > maxs {
-            ny = maxs
-        }
-        arena.nodes[arena.drag_id].scroll_y = ny
+        arena.nodes[arena.drag_id].scroll_x = nx
         arena.bar_on(arena.drag_id)
         return 1
     }
-    return 0
+    let maxs = arena.scroll_max(arena.drag_id)
+    let th = arena.bar_track_h(arena.drag_id)
+    let thh = arena.bar_thumb_h(arena.drag_id)
+    let range = geometry.max2(th - thh, 1)
+    let mut ny = arena.drag_as + (py - arena.drag_ay) * maxs / range
+    if ny < 0 {
+        ny = 0
+    }
+    if ny > maxs {
+        ny = maxs
+    }
+    arena.nodes[arena.drag_id].scroll_y = ny
+    arena.bar_on(arena.drag_id)
+    return 1
 }
 
 fn mouseup() {

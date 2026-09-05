@@ -1,0 +1,31 @@
+// Generic functions may have trailing constant defaults. A default that does
+// not mention T is filled like a non-generic default. A default of type T is
+// unified at the call site, so omitting every argument infers T from it.
+
+import "std:fmt"
+import "std:sys"
+
+fn expect(ok: bool, what: string) {
+    if ok {
+        return
+    }
+    fmt.println("FAIL", what)
+    sys.exit(1)
+}
+
+fn wrap<T>(x: T = 5) -> T {
+    return x
+}
+
+fn tagged<T>(x: T, tag: string = "ok") -> string {
+    return tag
+}
+
+fn main() {
+    expect(wrap() == 5, "infer T from default")
+    expect(wrap(9) == 9, "override default")
+    expect(wrap(true) == true, "T = bool, default unused")
+    expect(tagged(1) == "ok", "generic + non-T default")
+    expect(tagged("a", "hi") == "hi", "override tag")
+    fmt.println("default generic ok")
+}

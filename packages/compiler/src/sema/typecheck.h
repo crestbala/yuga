@@ -31,6 +31,10 @@ Type *typecheck_struct_inst(int i);
 
 Type *typecheck_subst(Type *t, const char **names, Type **args, size_t n);
 
+/** C name of a generic callee under the caller's type subst, recording a
+    monomorphized instance when T becomes concrete. NULL if T is still open. */
+const char *typecheck_callee_cname(AstNode *call, const char **names, Type **args, size_t n);
+
 /** Module-level `let` bindings, visible as `name` in the same module and as
     `mod.name` from importers. */
 int typecheck_global_count(void);

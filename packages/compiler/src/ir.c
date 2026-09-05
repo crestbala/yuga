@@ -524,9 +524,13 @@ static int lower_call(AstNode *n) {
     if (n->as.call.is_fn_val)
         callee_local = lower_expr(n->as.call.callee);
 
-    const char *callee = n->as.call.is_fn_val ? NULL
-                                              : (n->as.call.resolved_cname ? n->as.call.resolved_cname
-                                                                           : resolve_callee(n->as.call.callee));
+    const char *callee = NULL;
+    if (!n->as.call.is_fn_val) {
+        if (subst_n)
+            callee = typecheck_callee_cname(n, subst_names, subst_args, subst_n);
+        if (!callee) callee = n->as.call.resolved_cname;
+        if (!callee) callee = resolve_callee(n->as.call.callee);
+    }
     int bind_state = callee && strcmp(callee, "yuga_zeus_bind_n") == 0 &&
                      n->as.call.arg_count >= 2 && ident_is_state(n->as.call.args[1]);
 
@@ -835,8 +839,11 @@ static int lower_expr(AstNode *n) {
             i->nargs = nc;
             i->ty = ir_subst(n->ty);
             {
-                char buf[32];
-                snprintf(buf, sizeof buf, "yuga_clos_%d", n->as.fn.clos_id);
+                char buf[256];
+                if (cname_override)
+                    snprintf(buf, sizeof buf, "yuga_clos_%d_%s", n->as.fn.clos_id, cname_override);
+                else
+                    snprintf(buf, sizeof buf, "yuga_clos_%d", n->as.fn.clos_id);
                 i->callee = yuga_dup(buf);
             }
             return d;
@@ -1170,7 +1177,9 @@ static void collect_clos(AstNode *n) {
                 collect_clos(n->as.program.decls[i]);
             break;
         case AST_FN_DECL:
-            collect_clos(n->as.fn.body);
+            /* Closures inside a generic template are lowered per instance
+               (with that instance's type subst), not from the template. */
+            if (!n->as.fn.tparam_count) collect_clos(n->as.fn.body);
             break;
         case AST_BLOCK:
             for (size_t i = 0; i < n->as.block.stmt_count; i++)
@@ -1293,8 +1302,11 @@ static void lower_closure(IrModule *m, AstNode *d) {
     F = &m->fns[m->nfns++];
     memset(F, 0, sizeof(*F));
     {
-        char buf[32];
-        snprintf(buf, sizeof buf, "yuga_clos_%d", d->as.fn.clos_id);
+        char buf[256];
+        if (cname_override)
+            snprintf(buf, sizeof buf, "yuga_clos_%d_%s", d->as.fn.clos_id, cname_override);
+        else
+            snprintf(buf, sizeof buf, "yuga_clos_%d", d->as.fn.clos_id);
         F->cname = yuga_dup(buf);
     }
     F->name = d->as.fn.name;
@@ -1303,8 +1315,15 @@ static void lower_closure(IrModule *m, AstNode *d) {
     F->clos_id = d->as.fn.clos_id;
     F->env_local = -1;
     F->caps = d->as.fn.caps;
-    F->cap_types = d->as.fn.cap_types;
     F->ncaps = (int)d->as.fn.cap_count;
+    if (F->ncaps) {
+        Type **ct = (Type **)calloc((size_t)F->ncaps, sizeof(Type *));
+        for (int k = 0; k < F->ncaps; k++)
+            ct[k] = ir_subst(d->as.fn.cap_types ? d->as.fn.cap_types[k] : NULL);
+        F->cap_types = ct;
+    } else {
+        F->cap_types = d->as.fn.cap_types;
+    }
 
     scopes = NULL;
     sdepth = 0;
@@ -1345,6 +1364,89 @@ static void lower_closure(IrModule *m, AstNode *d) {
     if (!block_closed()) term_ret(-1, d->loc);
     emit_drops_at_exits();
     scope_pop_to(-1);
+}
+
+/** Lower closures nested in a generic instance, with the instance's subst. */
+static void lower_clos_in(IrModule *m, AstNode *n) {
+    if (!n) return;
+    if (n->kind == AST_CLOSURE) {
+        lower_closure(m, n);
+        lower_clos_in(m, n->as.fn.body);
+        return;
+    }
+    switch (n->kind) {
+        case AST_BLOCK:
+            for (size_t i = 0; i < n->as.block.stmt_count; i++)
+                lower_clos_in(m, n->as.block.stmts[i]);
+            break;
+        case AST_IF:
+            lower_clos_in(m, n->as.if_stmt.cond);
+            lower_clos_in(m, n->as.if_stmt.then_block);
+            lower_clos_in(m, n->as.if_stmt.else_block);
+            break;
+        case AST_FOR:
+            lower_clos_in(m, n->as.for_stmt.iter);
+            lower_clos_in(m, n->as.for_stmt.body);
+            break;
+        case AST_WHILE:
+            lower_clos_in(m, n->as.if_stmt.cond);
+            lower_clos_in(m, n->as.if_stmt.then_block);
+            break;
+        case AST_MATCH:
+            lower_clos_in(m, n->as.match_stmt.scrut);
+            for (size_t i = 0; i < n->as.match_stmt.arm_count; i++)
+                lower_clos_in(m, n->as.match_stmt.arms[i]);
+            break;
+        case AST_MATCH_ARM:
+            lower_clos_in(m, n->as.match_arm.body);
+            break;
+        case AST_RETURN:
+            lower_clos_in(m, n->as.ret.expr);
+            break;
+        case AST_EXPR_STMT:
+            lower_clos_in(m, n->as.expr_stmt.expr);
+            break;
+        case AST_VAR_DECL:
+            lower_clos_in(m, n->as.var.init);
+            break;
+        case AST_ASSIGN:
+            lower_clos_in(m, n->as.assign.left);
+            lower_clos_in(m, n->as.assign.right);
+            break;
+        case AST_BINARY:
+            lower_clos_in(m, n->as.binary.left);
+            lower_clos_in(m, n->as.binary.right);
+            break;
+        case AST_UNARY:
+            lower_clos_in(m, n->as.unary.operand);
+            break;
+        case AST_CAST:
+            lower_clos_in(m, n->as.cast.expr);
+            break;
+        case AST_CALL:
+            lower_clos_in(m, n->as.call.callee);
+            for (size_t i = 0; i < n->as.call.arg_count; i++)
+                lower_clos_in(m, n->as.call.args[i]);
+            break;
+        case AST_INDEX:
+        case AST_FIELD:
+        case AST_DEREF:
+        case AST_ADDR:
+            lower_clos_in(m, n->as.access.target);
+            lower_clos_in(m, n->as.access.index);
+            break;
+        case AST_STRUCT_LIT:
+            for (size_t i = 0; i < n->as.struct_lit.field_count; i++)
+                lower_clos_in(m, n->as.struct_lit.fields[i].init);
+            break;
+        case AST_ARRAY_LIT:
+        case AST_TUPLE:
+            for (size_t i = 0; i < n->as.array_lit.count; i++)
+                lower_clos_in(m, n->as.array_lit.elems[i]);
+            break;
+        default:
+            break;
+    }
 }
 
 static void lower_fn(IrModule *m, AstNode *d) {
@@ -1459,6 +1561,7 @@ IrModule *ir_lower(YugaModule *mods, int nmods) {
         subst_n = typecheck_mono_nargs(i);
         cname_override = typecheck_mono_cname(i);
         lower_fn(m, fn);
+        lower_clos_in(m, fn->as.fn.body);
         subst_names = NULL;
         subst_args = NULL;
         subst_n = 0;
